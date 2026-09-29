@@ -222,7 +222,7 @@ export const App: React.FC = () => {
 
       {/* SIWE Auth Modal Overlay */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#05080ec7] p-4 backdrop-blur-sm">
           <div className="relative w-full max-w-lg">
             <AuthScreen
               onAuthSuccess={(newUser) => {
