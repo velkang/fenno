@@ -1,0 +1,18 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "stillwater-web",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-18",
+  "assets": {
+    "directory": "dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1/*", "/health", "/health/*"],
+  },
+  "services": [
+    {
+      "binding": "API",
+      "service": "stillwater-api",
+    },
+  ],
+  "observability": { "enabled": true },
+}

@@ -110,6 +110,24 @@ describe("managed wallet indexer", () => {
     expect(seenBlocks.every((block) => block === 700n)).toBe(true);
   });
 
+  it("indexes a bounded batch per run instead of failing when wallets outgrow it", async () => {
+    const store = new MemoryWalletStore();
+    store.wallets = Array.from({ length: 5 }, (_, index) => ({ id: `wallet-${index}`, address }));
+    let requestedLimit = 0;
+    const list = store.listManagedWallets.bind(store);
+    store.listManagedWallets = async (limit) => { requestedLimit = limit; return list(limit); };
+
+    const result = await indexManagedWallets({
+      client: fakeClient([]),
+      store,
+      block: { number: 700n, hash: blockHash },
+      now: () => 1_000,
+    });
+
+    expect(requestedLimit).toBe(3);
+    expect(result.map((value) => value.walletId)).toEqual(["wallet-0", "wallet-1", "wallet-2"]);
+  });
+
   it("treats any position difference as a reconciliation failure", () => {
     const snapshot = [...new MemoryWalletStore().snapshots.values()][0] ?? {
       walletId: "wallet-1",

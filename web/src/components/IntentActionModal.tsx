@@ -556,9 +556,6 @@ export const IntentActionModal: React.FC<Props> = ({
           cirBTC
         </span>
       </div>
-      <div className="mt-1 flex items-center justify-between text-[11px] text-[#aab6c8]">
-        <span>Limit: 0.0005 cirBTC per action</span>
-      </div>
       <PercentageButtons onSelect={(pct) => handleCirBtcPercent(pct, "mint")} />
     </div>
   );
@@ -597,9 +594,6 @@ export const IntentActionModal: React.FC<Props> = ({
         <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#aab6c8] pointer-events-none">
           USDC
         </span>
-      </div>
-      <div className="mt-1 flex items-center justify-between text-[11px] text-[#aab6c8]">
-        <span>Limit: 10 USDC per action</span>
       </div>
       <PercentageButtons onSelect={(pct) => handleUsdcPercent(pct, "mint")} />
     </div>
@@ -1123,7 +1117,7 @@ export const IntentActionModal: React.FC<Props> = ({
                 })()}
 
                 <div className="rounded-xl border border-[#145c47] bg-[#092820] p-3.5 text-xs leading-relaxed text-[#e7edf5]">
-                  Confirming sends <strong className="text-[#e7edf5]">1 transaction</strong> from your Stillwater wallet on Arc Mainnet. Each action is limited to 10 USDC or 0.0005 cirBTC, and Stillwater checks the exact transaction again before sending it.
+                  Confirming sends <strong className="text-[#e7edf5]">1 transaction</strong> from your Stillwater wallet on Arc Mainnet. Stillwater checks the exact transaction again before sending it.
                 </div>
 
                 <div className="text-[11px] text-[#aab6c8] break-all">

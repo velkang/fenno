@@ -7,7 +7,6 @@ import {
   readArcV4Position,
   quoteArcV4Swap,
   readArcV4Pool,
-  positionManagerAbi,
   quoteSwap,
   type Swap,
   withdrawalDomain,
@@ -21,7 +20,7 @@ import {
   type ArcV4Pool,
   type PoolDiscoveryClient,
 } from "@stillwater/chain";
-import { decodeFunctionData, verifyTypedData, type Address, type Hex } from "viem";
+import { verifyTypedData, type Address, type Hex } from "viem";
 import type { EncryptedWallet } from "./crypto";
 import {
   validateMainnetIntent,
@@ -46,8 +45,6 @@ export type LoadedMainnetIntent = {
     fee: number;
     tickSpacing: number;
     tokenDecimals?: number;
-    tokenAmountQuoted?: bigint;
-    tokenNotionalUsdc?: bigint;
   };
   v4Mint?: {
     pool: ArcV4Pool;
@@ -124,7 +121,6 @@ export async function evaluateMainnetIntent(input: {
   intentId: string;
   store: MainnetEvaluationStore;
   client: MainnetAuditClient;
-  limits: { maxUsdc: bigint; maxCirBtc: bigint };
   emergencyStop: boolean;
   now?: () => number;
 }): Promise<MainnetEvaluation> {
@@ -137,7 +133,6 @@ export async function evaluateLoadedMainnetIntent(input: {
   loaded: LoadedMainnetIntent;
   store: Pick<MainnetEvaluationStore, "save">;
   client: MainnetAuditClient;
-  limits: { maxUsdc: bigint; maxCirBtc: bigint };
   emergencyStop: boolean;
   now?: () => number;
 }): Promise<MainnetEvaluation> {
@@ -196,14 +191,7 @@ export async function evaluateLoadedMainnetIntent(input: {
       const transaction = buildArcV4Approval({ poolId: fresh.id, token: stored.token,
         stage: stored.stage, amount: stored.amount, expiration: stored.expiration,
         spender: stored.spender });
-      const quote = stored.token === ARC_TOKENS.USDC.address ? { amountOut: stored.amount }
-        : await quoteArcV4Swap({ client: input.client, pool: fresh,
-          account: loaded.wallet.address, tokenIn: stored.token, amountIn: stored.amount,
-          blockNumber: safeBlock.number });
-      const native = fresh.currency0 === "0x0000000000000000000000000000000000000000";
-      const usdcNotional = native && stored.token !== ARC_TOKENS.USDC.address
-        ? (quote.amountOut + 999_999_999_999n) / 1_000_000_000_000n : quote.amountOut;
-      v4Approval = { transaction, usdcNotional };
+      v4Approval = { transaction };
     }
     if (loaded.v4Swap) {
       const stored = loaded.v4Swap;
@@ -218,14 +206,7 @@ export async function evaluateLoadedMainnetIntent(input: {
       const quoted = await quoteArcV4Swap({ client: input.client, pool: fresh,
         account: loaded.wallet.address, tokenIn: stored.tokenIn,
         amountIn: stored.amountIn, blockNumber: safeBlock.number });
-      const usdcNative = fresh.currency0 === "0x0000000000000000000000000000000000000000";
-      // USDC may be either pool currency; when it is spent, the cap applies to the input amount.
-      const usdcIn = transaction.tokenIn === "0x0000000000000000000000000000000000000000" ||
-        transaction.tokenIn === ARC_TOKENS.USDC.address;
-      const usdcAmount = usdcIn ? stored.amountIn : quoted.amountOut;
-      const usdcNotional = usdcNative
-        ? (usdcAmount + 999_999_999_999n) / 1_000_000_000_000n : usdcAmount;
-      v4Swap = { transaction, freshAmountOut: quoted.amountOut, usdcNotional };
+      v4Swap = { transaction, freshAmountOut: quoted.amountOut };
     }
     if (loaded.v4Mint) {
       const stored = loaded.v4Mint;
@@ -241,19 +222,7 @@ export async function evaluateLoadedMainnetIntent(input: {
         abi: [{ type: "function", name: "decimals", stateMutability: "view", inputs: [],
           outputs: [{ type: "uint8" }] }], functionName: "decimals", blockNumber: safeBlock.number });
       if (decimals !== stored.tokenDecimals) throw new Error("V4 token decimals changed");
-      const transaction = buildArcV4Mint(stored);
-      const tokenAmount = token === stored.pool.currency0
-        ? transaction.amount0Max : transaction.amount1Max;
-      const quote = await quoteArcV4Swap({ client: input.client, pool: fresh,
-        account: loaded.wallet.address, tokenIn: token, amountIn: tokenAmount,
-        blockNumber: safeBlock.number });
-      const native = fresh.currency0 === "0x0000000000000000000000000000000000000000";
-      const tokenNotionalUsdc = native
-        ? (quote.amountOut + 999_999_999_999n) / 1_000_000_000_000n : quote.amountOut;
-      const usdcMax = token === stored.pool.currency0
-        ? transaction.amount1Max : transaction.amount0Max;
-      const usdcAmount = native ? (usdcMax + 999_999_999_999n) / 1_000_000_000_000n : usdcMax;
-      v4Mint = { transaction, tokenNotionalUsdc, usdcAmount };
+      v4Mint = { transaction: buildArcV4Mint(stored) };
     }
     if (loaded.swap) {
       if (!input.client.getCode) throw new Error("Pool verification unavailable");
@@ -326,20 +295,6 @@ export async function evaluateLoadedMainnetIntent(input: {
         },
         blockNumber: safeBlock.number,
       });
-      if (tokenAddress !== ARC_TOKENS.cirBTC.address) {
-        const decoded = decodeFunctionData({ abi: positionManagerAbi, data: loaded.transaction.data });
-        if (decoded.functionName !== "mint") throw new Error("Mint calldata unavailable");
-        const amountToken = loaded.mintPool.token0 === tokenAddress
-          ? decoded.args[0].amount0Desired : decoded.args[0].amount1Desired;
-        const quote = await quoteSwap({
-          client: input.client as unknown as Parameters<typeof quoteSwap>[0]["client"],
-          pool: { fee: loaded.mintPool.fee }, account: loaded.wallet.address,
-          tokenIn: tokenAddress, tokenOut: ARC_TOKENS.USDC.address,
-          amountIn: amountToken, blockNumber: safeBlock.number,
-        });
-        loaded.mintPool.tokenAmountQuoted = amountToken;
-        loaded.mintPool.tokenNotionalUsdc = quote.amountOut;
-      }
     }
     if (loaded.tokenId !== undefined) {
       const current = await verifyAlphaPositionImport({
@@ -378,7 +333,6 @@ export async function evaluateLoadedMainnetIntent(input: {
   const decision = validateMainnetIntent({
     now: now(),
     emergencyStop: input.emergencyStop,
-    limits: input.limits,
     wallet: loaded.wallet,
     intent: {
       kind: loaded.kind,

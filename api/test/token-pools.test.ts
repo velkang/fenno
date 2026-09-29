@@ -30,7 +30,8 @@ describe("token pool discovery route", () => {
       tick: 0, liquidity: "1000000", lp_fee: 3000, block_number: 100, updated_at: 123 };
     const db = { prepare(sql: string) { return { bind() { return this; },
       async first() { return sql.includes("managed_wallets") ? { id: "wallet-1", address: owner } : row; },
-      async all() { return { results: [{ transaction_hash: `0x${"ab".repeat(32)}`, pool_id: poolId }] }; },
+      async all() { return { results: [{ transaction_hash: `0x${"ab".repeat(32)}`,
+        minted_pool_id: poolId, ...row }] }; },
     }; } } as unknown as D1Database;
     const topics = encodeEventTopics({ abi: v4PositionManagerReadAbi, eventName: "Transfer",
       args: { from: zeroAddress, to: owner, tokenId: 7n } });
@@ -48,15 +49,15 @@ describe("token pool discovery route", () => {
         throw new Error("Unexpected read");
       },
     } as unknown as ChainReadClient;
-    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_DOMAIN: "localhost:8787",
-      AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
     const response = await createApp({ createAuthStore: () => authStore,
       createChainClient: () => chainClient }).request("/v1/wallets/v4/positions", {
       headers: { cookie: `stillwater_session=${sessionToken}` },
     }, env);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ positions: [{ tokenId: "7",
-      tickLower: -60, tickUpper: 60, liquidity: "100000" }] });
+      tickLower: -60, tickUpper: 60, liquidity: "100000",
+      pool: { address: poolId, token: { symbol: "MEME" } } }] });
   });
 
   it("prepares a v4 full withdrawal only for an owned position that simulates", async () => {
@@ -94,8 +95,7 @@ describe("token pool discovery route", () => {
       async estimateFeesPerGas() { return { maxFeePerGas: 1_000_000_000n }; },
       async getBalance() { return 10n ** 18n; },
     } as unknown as ChainReadClient;
-    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_DOMAIN: "localhost:8787",
-      AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
     const app = createApp({ createAuthStore: () => authStore,
       createChainClient: () => chainClient, now: () => 2_000_000_000_000 });
     const response = await app.request("/v1/wallets/v4/positions/actions/prepare", {
@@ -161,7 +161,6 @@ describe("token pool discovery route", () => {
     const env = {
       DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
       SIGNER: {} as Fetcher,
-      AUTH_DOMAIN: "localhost:8787",
       AUTH_URI: "http://localhost:8787",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",
     } satisfies Bindings;
@@ -209,7 +208,6 @@ describe("token pool discovery route", () => {
     const env = {
       DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
       SIGNER: {} as Fetcher,
-      AUTH_DOMAIN: "localhost:8787",
       AUTH_URI: "http://localhost:8787",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",
     } satisfies Bindings;
@@ -241,7 +239,7 @@ describe("token pool discovery route", () => {
     const env = {
       DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
       SIGNER: {} as Fetcher,
-      AUTH_DOMAIN: "localhost:8787", AUTH_URI: "http://localhost:8787",
+      AUTH_URI: "http://localhost:8787",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",
     } satisfies Bindings;
     const response = await createApp().request(`/v1/pools?q=${token}`, {}, env);
@@ -285,8 +283,7 @@ describe("token pool discovery route", () => {
       async estimateGas() { return 100_000n; },
       async estimateFeesPerGas() { return { maxFeePerGas: 1_000_000_000n }; },
     } as unknown as ChainReadClient;
-    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_DOMAIN: "localhost:8787",
-      AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
     const app = createApp({ createAuthStore: () => authStore, createChainClient: () => chainClient });
     const headers = { cookie: `stillwater_session=${sessionToken}`, "content-type": "application/json" };
     const request = { poolId, tokenIn: zeroAddress, amountIn: "100000000000000000", slippageBps: 100 };
@@ -357,7 +354,6 @@ describe("token pool discovery route", () => {
     const env = {
       DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
       SIGNER: {} as Fetcher,
-      AUTH_DOMAIN: "localhost:8787",
       AUTH_URI: "http://localhost:8787",
       AUTH_COOKIE_SECURE: "false",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",

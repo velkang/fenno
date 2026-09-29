@@ -56,7 +56,9 @@ export interface WalletIndexerStore {
   saveReconciliation(value: WalletReconciliation): Promise<void>;
 }
 
-const MAX_WALLETS_PER_RUN = 100;
+// Sized for the free plan's 50 subrequests per invocation; the store rotates
+// wallets so each one is reached across runs.
+const WALLETS_PER_RUN = 3;
 const comparableFields = [
   "blockHash",
   "address",
@@ -149,18 +151,18 @@ export async function indexManagedWallets(input: {
   if (!Number.isSafeInteger(blockNumber)) {
     throw new Error("Arc block number exceeds safe integer range");
   }
-  const wallets = await input.store.listManagedWallets(MAX_WALLETS_PER_RUN + 1);
-  if (wallets.length > MAX_WALLETS_PER_RUN) {
-    throw new Error("Managed wallet indexing limit exceeded");
-  }
+  const wallets = await input.store.listManagedWallets(WALLETS_PER_RUN);
+  // Read concurrently so the transport batches the chain calls together.
+  const summaries = await Promise.all(wallets.map((wallet) =>
+    readAlphaWalletSummary(input.client, wallet.address, {
+      blockNumber: input.block.number,
+    })));
 
   const results: WalletReconciliation[] = [];
-  for (const wallet of wallets) {
+  for (const [index, wallet] of wallets.entries()) {
     const direct = snapshotFromSummary({
       wallet,
-      summary: await readAlphaWalletSummary(input.client, wallet.address, {
-        blockNumber: input.block.number,
-      }),
+      summary: summaries[index],
       blockNumber,
       blockHash: input.block.hash,
       observedAt: now(),

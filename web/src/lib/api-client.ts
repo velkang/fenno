@@ -432,13 +432,4 @@ export const api = {
       method: "POST",
     });
   },
-
-  async executeTestnetProof() {
-    return request<{
-      intentId: string;
-      status: string;
-      transactionHash: string;
-      blockNumber: number;
-    }>("/v1/wallets/proof", { method: "POST" });
-  },
 };

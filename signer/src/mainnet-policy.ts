@@ -65,7 +65,6 @@ export type MainnetIntentKind =
 export type MainnetPolicyRequest = {
   now: number;
   emergencyStop: boolean;
-  limits: { maxUsdc: bigint; maxCirBtc: bigint };
   wallet: { address: Address; state: WalletState };
   intent: {
     kind: MainnetIntentKind;
@@ -87,12 +86,10 @@ export type MainnetPolicyRequest = {
     fee: number;
     tickSpacing: number;
     tokenDecimals?: number;
-    tokenAmountQuoted?: bigint;
-    tokenNotionalUsdc?: bigint;
   };
-  v4Mint?: { transaction: ArcV4Mint; tokenNotionalUsdc: bigint; usdcAmount: bigint };
-  v4Approval?: { transaction: ArcV4Approval; usdcNotional: bigint };
-  v4Swap?: { transaction: ArcV4Swap; freshAmountOut: bigint; usdcNotional: bigint };
+  v4Mint?: { transaction: ArcV4Mint };
+  v4Approval?: { transaction: ArcV4Approval };
+  v4Swap?: { transaction: ArcV4Swap; freshAmountOut: bigint };
   v4PositionAction?: { transaction: ArcV4PositionAction };
   position?: {
     tokenId: bigint;
@@ -208,9 +205,6 @@ export function validateMainnetIntent(
         !same(mint.recipient, request.wallet.address) || !validDeadline(mint.deadline, request.now)) {
       return reject("V4_MINT_PARAMETERS_INVALID");
     }
-    if (context.usdcAmount > request.limits.maxUsdc ||
-        context.tokenNotionalUsdc > request.limits.maxUsdc ||
-        context.tokenNotionalUsdc <= 0n) return reject("VALUE_CAP_EXCEEDED");
     return arcV4MintPayloadHash(mint) === request.intent.payloadHash
       ? { allowed: true, reason: "POLICY_ALLOWED" }
       : reject("PAYLOAD_HASH_MISMATCH");
@@ -237,8 +231,7 @@ export function validateMainnetIntent(
     if (!context) return reject("V4_APPROVAL_CONTEXT_MISSING");
     const approval = context.transaction;
     if (!same(request.transaction.to, approval.to) || request.transaction.data !== approval.data ||
-        request.transaction.value !== 0n || context.usdcNotional <= 0n ||
-        context.usdcNotional > request.limits.maxUsdc) return reject("V4_APPROVAL_INVALID");
+        request.transaction.value !== 0n || approval.amount <= 0n) return reject("V4_APPROVAL_INVALID");
     if (approval.stage === "permit2" && !validDeadline(approval.expiration, request.now)) {
       return reject("PERMIT2_EXPIRATION_INVALID");
     }
@@ -254,8 +247,7 @@ export function validateMainnetIntent(
     if (!same(request.transaction.to, swap.to) || request.transaction.data !== swap.data ||
         request.transaction.value !== swap.value || !validDeadline(swap.deadline, request.now) ||
         context.freshAmountOut <= 0n ||
-        swap.amountOutMinimum < minimumAllowed(context.freshAmountOut) ||
-        context.usdcNotional > request.limits.maxUsdc) return reject("V4_SWAP_LIMITS_INVALID");
+        swap.amountOutMinimum < minimumAllowed(context.freshAmountOut)) return reject("V4_SWAP_LIMITS_INVALID");
     return arcV4SwapPayloadHash(swap) === request.intent.payloadHash
       ? { allowed: true, reason: "POLICY_ALLOWED" }
       : reject("PAYLOAD_HASH_MISMATCH");
@@ -279,9 +271,6 @@ export function validateMainnetIntent(
     if (!same(swap.tokenIn, context.tokenAddress) && !same(swap.tokenOut, context.tokenAddress)) {
       return reject("SWAP_PAIR_INVALID");
     }
-    const usdcNotional = same(swap.tokenIn, ARC_TOKENS.USDC.address)
-      ? swap.amountIn : context.freshAmountOut;
-    if (usdcNotional > request.limits.maxUsdc) return reject("VALUE_CAP_EXCEEDED");
     let decoded;
     try {
       decoded = decodeFunctionData({ abi: swapRouterAbi, data: request.transaction.data });
@@ -329,14 +318,6 @@ export function validateMainnetIntent(
       return reject("SPENDER_NOT_ALLOWED");
     }
     if (amount <= 0n) return reject("APPROVAL_AMOUNT_INVALID");
-    const isGenericToken = request.approval &&
-      !same(request.transaction.to, ARC_TOKENS.USDC.address) &&
-      !same(request.transaction.to, ARC_TOKENS.cirBTC.address);
-    if (!isGenericToken) {
-      const cap = same(request.transaction.to, ARC_TOKENS.USDC.address)
-        ? request.limits.maxUsdc : request.limits.maxCirBtc;
-      if (amount > cap) return reject("VALUE_CAP_EXCEEDED");
-    }
     const hash = approvalPayloadHash({
       chainId: ARC_CHAIN_ID,
       tokenSymbol: request.approval ? "TOKEN" : same(request.transaction.to, ARC_TOKENS.USDC.address) ? "USDC" : "cirBTC",
@@ -387,18 +368,6 @@ export function validateMainnetIntent(
     if (parameters.amount0Desired <= 0n || parameters.amount1Desired <= 0n) {
       return reject("POSITION_AMOUNT_INVALID");
     }
-    const usdcAmount = same(parameters.token0, ARC_TOKENS.USDC.address)
-      ? parameters.amount0Desired : parameters.amount1Desired;
-    const tokenAmount = same(parameters.token0, ARC_TOKENS.USDC.address)
-      ? parameters.amount1Desired : parameters.amount0Desired;
-    if (usdcAmount > request.limits.maxUsdc) {
-      return reject("VALUE_CAP_EXCEEDED");
-    }
-    if (pool && !same(pool.token0, ARC_TOKENS.cirBTC.address) &&
-      !same(pool.token1, ARC_TOKENS.cirBTC.address)) {
-      if (pool.tokenAmountQuoted !== tokenAmount || pool.tokenNotionalUsdc === undefined ||
-        pool.tokenNotionalUsdc > request.limits.maxUsdc) return reject("VALUE_CAP_EXCEEDED");
-    } else if (tokenAmount > request.limits.maxCirBtc) return reject("VALUE_CAP_EXCEEDED");
     if (!validDeadline(parameters.deadline, request.now)) {
       return reject("TRANSACTION_DEADLINE_EXPIRED");
     }
@@ -490,10 +459,6 @@ export function validateMainnetIntent(
         !validMin(parameters.amount1Min, parameters.amount1Desired)
       ) return reject("SLIPPAGE_EXCEEDS_POLICY");
       const increase = decoded.args[0] as unknown as { deadline: bigint };
-      if (
-        parameters.amount0Desired > request.limits.maxCirBtc ||
-        parameters.amount1Desired > request.limits.maxUsdc
-      ) return reject("VALUE_CAP_EXCEEDED");
       if (!validDeadline(increase.deadline, request.now)) {
         return reject("TRANSACTION_DEADLINE_EXPIRED");
       }

@@ -62,7 +62,6 @@ function liabilityMessage(error: unknown): string {
     if (error.code === "TOKEN_NOT_FOUND") return "That address has no usable contract bytecode on Arc.";
     if (error.code === "POOL_DISCOVERY_FAILED") return "Arc could not verify the token right now. Try again shortly.";
     if (error.code === "POOL_NOT_ALLOWED") return "That pool is not one of the canonical initialized pools returned for this token.";
-    if (error.code === "MAINNET_EXECUTION_DISABLED") return "Execution is disabled in this environment; simulation is still available.";
     return error.code.replaceAll("_", " ").toLowerCase();
   }
   return error instanceof Error ? error.message : "Something went wrong. Try again.";

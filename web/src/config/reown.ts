@@ -1,25 +1,25 @@
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { QueryClient } from "@tanstack/react-query";
-import { arc, arcTestnet } from "@stillwater/chain";
+import { arc } from "@stillwater/chain";
 
 // Reown Cloud Project ID: customizable via env with fallback for local dev
 export const projectId =
   import.meta.env.VITE_REOWN_PROJECT_ID || "b56e18d47c72ab683b10814fe9495694";
 
-export const networks = [arcTestnet, arc] as const;
+export const networks = [arc] as const;
 
 export const queryClient = new QueryClient();
 
 export const wagmiAdapter = new WagmiAdapter({
-  networks: [arcTestnet, arc],
+  networks: [arc],
   projectId,
 });
 
 export const modal = createAppKit({
   adapters: [wagmiAdapter],
-  networks: [arcTestnet, arc],
-  defaultNetwork: arcTestnet,
+  networks: [arc],
+  defaultNetwork: arc,
   projectId,
   metadata: {
     name: "Stillwater",

@@ -88,12 +88,10 @@ describe("mainnet audit-only evaluator", () => {
       call: async () => ({ data: "0x" }),
     } as unknown as MainnetAuditClient);
     const allowed = await evaluateMainnetIntent({ intentId: loaded.intentId,
-      store: new MemoryStore(loaded), client: makeChain(wallet),
-      limits: { maxUsdc: 0n, maxCirBtc: 0n }, emergencyStop: false, now: () => now });
+      store: new MemoryStore(loaded), client: makeChain(wallet), emergencyStop: false, now: () => now });
     expect(allowed.decision).toBe("allowed");
     const rejected = await evaluateMainnetIntent({ intentId: loaded.intentId,
-      store: new MemoryStore(loaded), client: makeChain(token),
-      limits: { maxUsdc: 0n, maxCirBtc: 0n }, emergencyStop: false, now: () => now });
+      store: new MemoryStore(loaded), client: makeChain(token), emergencyStop: false, now: () => now });
     expect(rejected.reasonCode).toBe("CHAIN_REVALIDATION_FAILED");
   });
   it("re-quotes and reconstructs a v4 swap before allowing signing", async () => {
@@ -120,11 +118,11 @@ describe("mainnet audit-only evaluator", () => {
       call: async () => ({ data: "0x" }),
     } as unknown as MainnetAuditClient;
     const result = await evaluateMainnetIntent({ intentId: "v4-swap-1", store,
-      client: chain, limits: { maxUsdc: 2_000_000n, maxCirBtc: 0n },
+      client: chain,
       emergencyStop: false, now: () => now });
     expect(result.decision).toBe("allowed");
   });
-  it("caps a v4 swap by USDC spent when ERC-20 USDC is currency1", async () => {
+  it("re-quotes a v4 swap when ERC-20 USDC is currency1", async () => {
     const token = "0x2222222222222222222222222222222222222222" as const;
     const key = { currency0: token, currency1: ARC_TOKENS.USDC.address, fee: 10000,
       tickSpacing: 200, hooks: zeroAddress };
@@ -149,7 +147,7 @@ describe("mainnet audit-only evaluator", () => {
       call: async () => ({ data: "0x" }),
     } as unknown as MainnetAuditClient;
     const result = await evaluateMainnetIntent({ intentId: "v4-swap-2", store,
-      client: chain, limits: { maxUsdc: 10_000_000n, maxCirBtc: 0n },
+      client: chain,
       emergencyStop: false, now: () => now });
     expect(result.reasonCode).toBe("POLICY_ALLOWED");
   });
@@ -159,7 +157,6 @@ describe("mainnet audit-only evaluator", () => {
       intentId: "approval-1",
       store,
       client: client(async () => ({ data: "0x" })),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
       emergencyStop: false,
       now: () => now,
     });
@@ -180,7 +177,6 @@ describe("mainnet audit-only evaluator", () => {
       intentId: "approval-1",
       store,
       client: client(async () => { throw new Error("RPC detail"); }),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
       emergencyStop: false,
       now: () => now,
     });
@@ -196,7 +192,6 @@ describe("mainnet audit-only evaluator", () => {
       intentId: "approval-1",
       store,
       client: client(async () => ({})),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
       emergencyStop: true,
       now: () => now,
     });

@@ -5,21 +5,15 @@
   "compatibility_date": "2026-09-18",
   "workers_dev": false,
   "preview_urls": false,
-  "vars": {
-    "ARC_TESTNET_RPC_URL": "https://rpc.testnet.arc.io",
-    "ARC_MAINNET_RPC_URL": "https://rpc.mainnet.arc.io",
-    "ALPHA_MAX_USDC_RAW": "10000000",
-    "ALPHA_MAX_CIRBTC_RAW": "50000",
-    "ALPHA_MAX_TX_FEE_RAW": "100000000000000000",
-    "MAINNET_EMERGENCY_STOP": "false",
-    "MAINNET_EXECUTION_ENABLED": "true"
-  },
+  "keep_vars": true,
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "stillwater-alpha",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "../api/migrations"
-    }
-  ]
+      "database_name": "stillwater-prod",
+      "database_id": "156f0e29-c4e7-466e-a04a-43942435f3b5",
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../api/migrations",
+    },
+  ],
+  "observability": { "enabled": true },
 }

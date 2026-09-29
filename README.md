@@ -82,7 +82,7 @@ Requires Node 22.13 or newer and pnpm 11.
 
    Open http://localhost:5173 and sign in with any wallet; the first sign-in creates your account. The web app proxies `/v1` and `/health` to the API. To use your own Reown project, set `VITE_REOWN_PROJECT_ID`.
 
-The indexer only runs on its schedule. To trigger one run by hand:
+The indexer runs three jobs on their own schedules: wallets (`*/5`), v3 pools (`1-59/5`) and v4 pools (`2-59/5`). To trigger one by hand, for example the wallet job:
 
 ```bash
 curl 'http://127.0.0.1:8788/__scheduled?cron=*/5+*+*+*+*'
@@ -90,21 +90,55 @@ curl 'http://127.0.0.1:8788/__scheduled?cron=*/5+*+*+*+*'
 
 `GET /health/indexer` on the API reports whether indexing is running and recent.
 
-## Mainnet safety settings
+## Configuration
 
-These are Worker variables in `api/wrangler.jsonc` and `signer/wrangler.jsonc`. Values in a `.dev.vars` file override them locally.
+The `wrangler.jsonc` files hold only what is not a setting: Worker names, the database binding, the links between Workers and the indexer's schedule. The D1 binding names two databases: `database_id` is production, and `preview_database_id` is the separate database used by `wrangler dev` and local D1 commands.
+
+All variables and secrets live outside the repository: in the Cloudflare dashboard for production (`keep_vars` stops deploys from overwriting them) and in each Worker's gitignored `.dev.vars` locally. Copy the `.dev.vars.example` files to start.
 
 | Variable | Worker | Meaning |
 | --- | --- | --- |
-| `MAINNET_EXECUTION_ENABLED` | api, signer | Must be exactly `true` in both for any mainnet transaction to be sent |
-| `MAINNET_EMERGENCY_STOP` | signer | `true` blocks all mainnet signing |
-| `ALPHA_MAX_USDC_RAW` | signer | Largest USDC amount per action, in raw units (`10000000` = 10 USDC) |
-| `ALPHA_MAX_CIRBTC_RAW` | signer | Largest cirBTC amount per action (`50000` = 0.0005 cirBTC); scaled to other tokens' decimals |
-| `ALPHA_MAX_TX_FEE_RAW` | signer | Largest network fee per transaction (`100000000000000000` = 0.1 USDC) |
+| `WALLET_KEK_V1` | signer | **Required secret**: the key that wraps every managed wallet key |
+| `AUTH_URI` | api | **Required**: the web app's URL; sign-in messages are bound to its host |
+| `AUTH_COOKIE_SECURE` | api | Local only: `false` allows the session cookie over plain `http`. Never set it in production |
+| `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
+| `ARC_RPC_URL` | api, signer, indexer | Optional; without it, Arc's public RPC (`https://rpc.mainnet.arc.io`) is used |
+| `WALLET_KEK_V2` | signer | Optional secret, only needed to rotate to a new wrapping key |
 
-The committed configuration currently has mainnet execution **enabled** with the emergency stop **off**, for funded local testing. Set `MAINNET_EXECUTION_ENABLED` to `false` whenever you are not deliberately testing with real funds.
+Mainnet transactions are allowed by default; there are no per-action value or fee limits.
 
 Never commit `.dev.vars` files or the `.wrangler/` state directories. Both are gitignored.
+
+## Deploying to Cloudflare
+
+Stillwater fits Cloudflare's free plan and free `*.workers.dev` addresses, and is deployed from the Cloudflare dashboard. There are four Workers: the website (`stillwater-web`) serves the app and forwards `/v1` and `/health` to the API (`stillwater-api`) through a service binding, so each has its own URL while the sign-in cookie stays on the website's host. The API reaches the private signer (`stillwater-signer`); the indexer (`stillwater-indexer`) runs on a schedule.
+
+1. **Create the production database.** In the dashboard, go to Storage & Databases → D1 and create a database named `stillwater-prod`. Copy its ID into `database_id` in `api/`, `signer/` and `indexer/wrangler.jsonc` (replacing `PASTE_PRODUCTION_D1_ID`), and push.
+
+2. **Create the Workers from the repository.** In Workers & Pages, choose Create → Import a repository, pick this repository, and create one Worker per row, in this order (the API needs the signer, and the website needs the API). The Worker name must match the `name` in that folder's `wrangler.jsonc`.
+
+   | Worker name | Root directory | Build command | Deploy command |
+   | --- | --- | --- | --- |
+   | `stillwater-signer` | `signer` | `pnpm install --frozen-lockfile` | `npx wrangler deploy` (default) |
+   | `stillwater-api` | `api` | `pnpm install --frozen-lockfile` | `npx wrangler d1 migrations apply stillwater-prod --remote && npx wrangler deploy` |
+   | `stillwater-web` | `web` | `pnpm install --frozen-lockfile && pnpm build` | `npx wrangler deploy` (default) |
+   | `stillwater-indexer` | `indexer` | `pnpm install --frozen-lockfile` | `npx wrangler deploy` (default) |
+
+   - The API's deploy command applies any new database migrations before each deploy.
+   - For `stillwater-web`, add the build variable `VITE_REOWN_PROJECT_ID` (your Reown project ID) and add the website's URL to that Reown project's allowed domains.
+   - Optionally set build watch paths so a Worker rebuilds only when its folder or `chain/` changes.
+   - If a build fails on the Node or pnpm version, add the build variables `NODE_VERSION` = `22` and `PNPM_VERSION` = `11.1.0`. If the migration step fails for lack of permission, give the build's API token D1 edit access, or run the migrations once yourself.
+
+3. **Set the two required values.** Under each Worker's Settings → Variables & Secrets:
+
+   | Worker | Name | Type | Value |
+   | --- | --- | --- | --- |
+   | `stillwater-signer` | `WALLET_KEK_V1` | Secret | Output of `openssl rand -base64 32`. Keep a copy somewhere safe: without it no managed wallet can be decrypted |
+   | `stillwater-api` | `AUTH_URI` | Text | The website's URL, shown on the `stillwater-web` Worker's page, e.g. `https://stillwater-web.<your-subdomain>.workers.dev` |
+
+4. **Open the website and sign in.** Saving a variable in the dashboard applies it immediately, so setting `EMERGENCY_STOP` to `true` on the signer halts signing without a commit.
+
+In production, Explore lists pools with trades or liquidity changes from the first indexer run onward; it does not crawl older history. The indexer's three jobs run on separate schedules so each stays within the free plan's per-run limits.
 
 ## Checks
 
@@ -121,5 +155,4 @@ pnpm test
 ## Not built yet
 
 - Automation: rebalancing when the price leaves the range, fee compounding, retries, and alerts.
-- Deployment to Cloudflare (Workers, remote D1, secrets, secure cookies).
 - An independent security review of custody, the signer policy, and withdrawals.

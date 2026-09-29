@@ -1,4 +1,4 @@
-import { arc, arcTestnet } from "@stillwater/chain";
+import { arc } from "@stillwater/chain";
 import {
   createPublicClient,
   http,
@@ -6,7 +6,6 @@ import {
   TransactionReceiptNotFoundError,
 } from "viem";
 import { importWrappingKey } from "./crypto";
-import { D1ProofStore } from "./proof-store";
 import { D1WalletLifecycleStore } from "./wallet-lifecycle-store";
 import { D1MainnetEvaluationStore } from "./mainnet-evaluation-store";
 import { D1MainnetRehearsalStore } from "./mainnet-rehearsal-store";
@@ -31,15 +30,9 @@ import {
 } from "./mainnet-reconciler";
 import { MainnetSubmissionError } from "./mainnet-submission";
 import {
-  closeEmptyTestnetProofWallet,
   rotateManagedWalletKey,
   WalletLifecycleError,
 } from "./lifecycle";
-import {
-  executeTestnetProof,
-  ProofExecutionError,
-  type ProofRpc,
-} from "./proof";
 import {
   D1WalletProvisioningStore,
   ProvisioningError,
@@ -54,13 +47,7 @@ export {
   withManagedAccount,
   type EncryptedWallet,
 } from "./crypto";
-export {
-  validateSigningRequest,
-  type PolicyDecision,
-  type SigningPolicy,
-  type SigningRequest,
-  type WalletState,
-} from "./policy";
+export type { WalletState } from "./policy";
 export {
   D1WalletProvisioningStore,
   ProvisioningError,
@@ -69,24 +56,13 @@ export {
   type StoredManagedWallet,
   type WalletProvisioningStore,
 } from "./provision";
-export {
-  executeTestnetProof,
-  ProofExecutionError,
-  type ProofExecution,
-  type ProofResult,
-  type ProofRpc,
-  type ProofStore,
-} from "./proof";
-export { D1ProofStore } from "./proof-store";
 export { D1WalletLifecycleStore } from "./wallet-lifecycle-store";
 export {
-  closeEmptyTestnetProofWallet,
   rotateManagedWalletKey,
   WalletLifecycleError,
   type LifecycleWallet,
   type WalletLifecycleStore,
 } from "./lifecycle";
-export { SigningRejectedError, signAllowedTransaction } from "./sign";
 export { D1MainnetEvaluationStore } from "./mainnet-evaluation-store";
 export {
   evaluateLoadedMainnetIntent,
@@ -138,13 +114,10 @@ type Env = {
   DB: D1Database;
   WALLET_KEK_V1: string;
   WALLET_KEK_V2?: string;
-  ARC_TESTNET_RPC_URL: string;
-  ARC_MAINNET_RPC_URL: string;
-  ALPHA_MAX_USDC_RAW: string;
-  ALPHA_MAX_CIRBTC_RAW: string;
-  ALPHA_MAX_TX_FEE_RAW: string;
-  MAINNET_EMERGENCY_STOP: string;
-  MAINNET_EXECUTION_ENABLED: string;
+  // Optional override; without it, Arc's default public RPC is used.
+  ARC_RPC_URL?: string;
+  // Optional: "true" halts all signing except USDC withdrawals.
+  EMERGENCY_STOP?: string;
 };
 
 type InternalRequest = {
@@ -175,23 +148,6 @@ async function wrappingKeys(env: Env): Promise<Map<number, CryptoKey>> {
   return keys;
 }
 
-function mainnetLimits(env: Env): {
-  maxUsdc: bigint;
-  maxCirBtc: bigint;
-  maxTransactionFee: bigint;
-} | null {
-  try {
-    const limits = {
-      maxUsdc: BigInt(env.ALPHA_MAX_USDC_RAW),
-      maxCirBtc: BigInt(env.ALPHA_MAX_CIRBTC_RAW),
-      maxTransactionFee: BigInt(env.ALPHA_MAX_TX_FEE_RAW),
-    };
-    return limits.maxUsdc < 0n || limits.maxCirBtc < 0n ||
-      limits.maxTransactionFee < 0n ? null : limits;
-  } catch {
-    return null;
-  }
-}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -228,80 +184,22 @@ export default {
       }
     }
 
-    if (url.pathname === "/internal/v1/intents/execute-testnet-proof") {
-      const input = await body(request);
-      if (input instanceof Response) return input;
-      if (!isIdentifier(input.intentId) || !isIdentifier(input.walletId)) {
-        return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
-      }
-
-      const client = createPublicClient({
-        chain: arcTestnet,
-        transport: http(env.ARC_TESTNET_RPC_URL),
-      });
-      const rpc: ProofRpc = {
-        getTransactionCount: (address) =>
-          client.getTransactionCount({ address, blockTag: "pending" }),
-        estimateFees: async () => {
-          const fees = await client.estimateFeesPerGas({ type: "eip1559" });
-          return {
-            maxFeePerGas: fees.maxFeePerGas,
-            maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-          };
-        },
-        sendRawTransaction: (serializedTransaction) =>
-          client.sendRawTransaction({ serializedTransaction }),
-        waitForReceipt: (transactionHash) =>
-          client.waitForTransactionReceipt({
-            hash: transactionHash,
-            confirmations: 1,
-            timeout: 45_000,
-          }),
-      };
-
-      try {
-        const result = await executeTestnetProof(
-          new D1ProofStore(env.DB),
-          rpc,
-          await wrappingKeys(env),
-          { intentId: input.intentId, walletId: input.walletId, now: Date.now() },
-        );
-        return Response.json(result);
-      } catch (error) {
-        if (error instanceof ProofExecutionError) {
-          const status =
-            error.code === "PROOF_INTENT_NOT_FOUND"
-              ? 404
-              : error.code === "TESTNET_WALLET_NEEDS_GAS"
-                ? 409
-                : 422;
-          return Response.json({ error: error.code }, { status });
-        }
-        return Response.json({ error: "PROOF_EXECUTION_FAILED" }, { status: 500 });
-      }
-    }
-
     if (url.pathname === "/internal/v1/intents/evaluate-mainnet") {
       const input = await body(request);
       if (input instanceof Response) return input;
       if (!isIdentifier(input.intentId)) {
         return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
       }
-      const limits = mainnetLimits(env);
-      if (!limits) {
-        return Response.json({ error: "MAINNET_POLICY_CONFIG_INVALID" }, { status: 503 });
-      }
       const client = createPublicClient({
         chain: arc,
-        transport: http(env.ARC_MAINNET_RPC_URL),
+        transport: http(env.ARC_RPC_URL),
       }) as unknown as MainnetAuditClient;
       try {
         const evaluation = await evaluateMainnetIntent({
           intentId: input.intentId,
           store: new D1MainnetEvaluationStore(env.DB),
           client,
-          limits,
-          emergencyStop: env.MAINNET_EMERGENCY_STOP !== "false",
+          emergencyStop: env.EMERGENCY_STOP === "true",
         });
         return Response.json(evaluation);
       } catch (error) {
@@ -318,13 +216,9 @@ export default {
       if (!isIdentifier(input.intentId)) {
         return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
       }
-      const limits = mainnetLimits(env);
-      if (!limits) {
-        return Response.json({ error: "MAINNET_POLICY_CONFIG_INVALID" }, { status: 503 });
-      }
       const client = createPublicClient({
         chain: arc,
-        transport: http(env.ARC_MAINNET_RPC_URL),
+        transport: http(env.ARC_RPC_URL),
       });
       try {
         const evaluationStore = new D1MainnetEvaluationStore(env.DB);
@@ -336,8 +230,7 @@ export default {
             intentId: input.intentId as string,
             store: evaluationStore,
             client: client as unknown as MainnetAuditClient,
-            limits,
-            emergencyStop: env.MAINNET_EMERGENCY_STOP !== "false",
+            emergencyStop: env.EMERGENCY_STOP === "true",
           }),
         });
         return Response.json(rehearsal);
@@ -355,16 +248,9 @@ export default {
       if (!isIdentifier(input.intentId)) {
         return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
       }
-      if (env.MAINNET_EXECUTION_ENABLED !== "true") {
-        return Response.json({ error: "MAINNET_EXECUTION_DISABLED" }, { status: 503 });
-      }
-      const limits = mainnetLimits(env);
-      if (!limits) {
-        return Response.json({ error: "MAINNET_POLICY_CONFIG_INVALID" }, { status: 503 });
-      }
       const client = createPublicClient({
         chain: arc,
-        transport: http(env.ARC_MAINNET_RPC_URL),
+        transport: http(env.ARC_RPC_URL),
       });
       try {
         const auditClient = client as unknown as MainnetAuditClient;
@@ -394,9 +280,7 @@ export default {
               client.sendRawTransaction({ serializedTransaction }),
           },
           getWrappingKeys: () => wrappingKeys(env),
-          limits,
-          maxTransactionFee: limits.maxTransactionFee,
-          emergencyStop: env.MAINNET_EMERGENCY_STOP !== "false",
+          emergencyStop: env.EMERGENCY_STOP === "true",
         });
         return Response.json(result, { status: 202 });
       } catch (error) {
@@ -419,7 +303,7 @@ export default {
       }
       const client = createPublicClient({
         chain: arc,
-        transport: http(env.ARC_MAINNET_RPC_URL),
+        transport: http(env.ARC_RPC_URL),
       });
       try {
         const reconciliation = await reconcileMainnetAttempt({
@@ -486,32 +370,6 @@ export default {
           return Response.json({ error: error.code }, { status: 409 });
         }
         return Response.json({ error: "WALLET_ROTATION_FAILED" }, { status: 500 });
-      }
-    }
-
-    if (url.pathname === "/internal/v1/wallets/close-empty-testnet-proof") {
-      const input = await body(request);
-      if (input instanceof Response) return input;
-      if (!isIdentifier(input.userId) || !isIdentifier(input.walletId)) {
-        return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
-      }
-
-      const client = createPublicClient({
-        chain: arcTestnet,
-        transport: http(env.ARC_TESTNET_RPC_URL),
-      });
-      try {
-        const result = await closeEmptyTestnetProofWallet(
-          new D1WalletLifecycleStore(env.DB),
-          (address) => client.getBalance({ address }),
-          { userId: input.userId, walletId: input.walletId, now: Date.now() },
-        );
-        return Response.json(result);
-      } catch (error) {
-        if (error instanceof WalletLifecycleError) {
-          return Response.json({ error: error.code }, { status: 409 });
-        }
-        return Response.json({ error: "WALLET_CLOSE_FAILED" }, { status: 500 });
       }
     }
 

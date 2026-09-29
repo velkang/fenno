@@ -36,7 +36,6 @@ describe("wallet summary", () => {
     const env = {
       DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
       SIGNER: {} as Fetcher,
-      AUTH_DOMAIN: "localhost:8787",
       AUTH_URI: "http://localhost:8787",
       AUTH_COOKIE_SECURE: "false",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",

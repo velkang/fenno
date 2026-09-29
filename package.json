@@ -12,8 +12,8 @@
     "dev:smoke": "wrangler dev -c api/wrangler.jsonc -c signer/wrangler.jsonc --local --persist-to .wrangler/smoke-state --port 8790",
     "web:dev": "pnpm --dir web dev",
     "web:build": "pnpm --dir web build",
-    "db:migrate:local": "wrangler d1 migrations apply stillwater-alpha --local -c api/wrangler.jsonc",
-    "db:migrate:smoke": "wrangler d1 migrations apply stillwater-alpha --local --persist-to .wrangler/smoke-state -c api/wrangler.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply stillwater-prod --local -c api/wrangler.jsonc",
+    "db:migrate:smoke": "wrangler d1 migrations apply stillwater-prod --local --persist-to .wrangler/smoke-state -c api/wrangler.jsonc",
     "smoke:local": "node api/scripts/smoke-local.mjs",
     "indexer:dev": "wrangler dev -c indexer/wrangler.jsonc --local --test-scheduled --persist-to api/.wrangler/state --port 8788"
   },

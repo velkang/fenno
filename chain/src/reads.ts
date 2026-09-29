@@ -264,19 +264,22 @@ export async function readAlphaPositions(
     throw new Error("Position enumeration limit exceeded");
   }
 
-  const positions: AlphaPosition[] = [];
-  for (let index = 0n; index < positionCount; index += 1n) {
-    const tokenId = bigint(
-      await client.readContract({
-        address: manager,
-        abi: positionManagerAbi,
-        functionName: "tokenOfOwnerByIndex",
-        args: [owner, index],
-        blockNumber: options.blockNumber,
-      }),
-      "position token ID",
-    );
-    const position = tuple(
+  // Each phase issues its calls concurrently so the transport can batch them
+  // into a few HTTP requests instead of one per position.
+  const indexes = Array.from({ length: Number(positionCount) }, (_, index) => BigInt(index));
+  const tokenIds = await Promise.all(indexes.map(async (index) => bigint(
+    await client.readContract({
+      address: manager,
+      abi: positionManagerAbi,
+      functionName: "tokenOfOwnerByIndex",
+      args: [owner, index],
+      blockNumber: options.blockNumber,
+    }),
+    "position token ID",
+  )));
+  const allPositions = await Promise.all(tokenIds.map(async (tokenId) => ({
+    tokenId,
+    position: tuple(
       await client.readContract({
         address: manager,
         abi: positionManagerAbi,
@@ -285,18 +288,14 @@ export async function readAlphaPositions(
         blockNumber: options.blockNumber,
       }),
       "position",
-    );
-    const token0 = address(position[2], "position token0");
-    const token1 = address(position[3], "position token1");
-    const fee = number(position[4], "position fee");
-    if (
-      token0 !== ALPHA_POOL.token0.address ||
-      token1 !== ALPHA_POOL.token1.address ||
-      fee !== ALPHA_POOL.fee
-    ) {
-      continue;
-    }
+    ),
+  })));
+  const alphaPositions = allPositions.filter(({ position }) =>
+    address(position[2], "position token0") === ALPHA_POOL.token0.address &&
+    address(position[3], "position token1") === ALPHA_POOL.token1.address &&
+    number(position[4], "position fee") === ALPHA_POOL.fee);
 
+  return Promise.all(alphaPositions.map(async ({ tokenId, position }): Promise<AlphaPosition> => {
     const simulation = await client.simulateContract({
       account: owner,
       address: manager,
@@ -307,7 +306,7 @@ export async function readAlphaPositions(
     });
     const claimable = tuple(simulation.result, "collect simulation");
 
-    positions.push({
+    return {
       tokenId: tokenId.toString(),
       tickLower: number(position[5], "position lower tick"),
       tickUpper: number(position[6], "position upper tick"),
@@ -328,9 +327,8 @@ export async function readAlphaPositions(
         bigint(claimable[1], "claimable token1 fees"),
         ALPHA_POOL.token1.decimals,
       ),
-    });
-  }
-  return positions;
+    };
+  }));
 }
 
 export async function readAlphaWalletSummary(

@@ -17,11 +17,6 @@ export interface WalletLifecycleStore {
     expectedKeyVersion: number;
     now: number;
   }): Promise<boolean>;
-  closeEmptyWallet(input: {
-    userId: string;
-    walletId: string;
-    now: number;
-  }): Promise<boolean>;
 }
 
 export class WalletLifecycleError extends Error {
@@ -74,23 +69,4 @@ export async function rotateManagedWalletKey(
     address: rotated.address,
     keyVersion: rotated.keyVersion,
   };
-}
-
-export async function closeEmptyTestnetProofWallet(
-  store: WalletLifecycleStore,
-  getBalance: (address: Address) => Promise<bigint>,
-  input: { userId: string; walletId: string; now: number },
-): Promise<{ walletId: string; address: Address; state: "closed" }> {
-  const wallet = await store.getWallet(input.userId, input.walletId);
-  if (!wallet) throw new WalletLifecycleError("WALLET_NOT_FOUND");
-  if (wallet.state !== "paused") {
-    throw new WalletLifecycleError("WALLET_MUST_BE_PAUSED");
-  }
-  if ((await getBalance(wallet.address)) !== 0n) {
-    throw new WalletLifecycleError("WALLET_NOT_EMPTY");
-  }
-  if (!(await store.closeEmptyWallet({ ...input }))) {
-    throw new WalletLifecycleError("WALLET_CLOSE_RACE");
-  }
-  return { walletId: wallet.walletId, address: wallet.address, state: "closed" };
 }

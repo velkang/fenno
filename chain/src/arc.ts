@@ -1,7 +1,39 @@
-import { defineChain, getAddress, type Address, type Hex } from "viem";
+import { defineChain, getAddress, http, type Address, type Hex } from "viem";
+
+// Both keyless Arc endpoints (Circle and QuickNode) rate-limit at about 20 calls
+// per second, shared per client IP and counting each call inside a batch.
+const RPC_CALLS_PER_WINDOW = 20;
+const RPC_WINDOW_MS = 1_100;
+
+/**
+ * HTTP transport that sends calls issued in the same tick as one JSON-RPC batch
+ * (Cloudflare's free plan allows 50 subrequests per invocation) and paces them
+ * under the endpoints' rate limit. Waiting costs wall time, not CPU time.
+ * One retry: each retry is another subrequest.
+ */
+// Without a URL, viem uses the chain's default RPC (Arc's public endpoint).
+export function arcRpcTransport(url?: string) {
+  let queue: Promise<void> = Promise.resolve();
+  let windowStart = 0;
+  let sentInWindow = 0;
+  const pacedFetch: typeof fetch = (input, init) => {
+    const body = typeof init?.body === "string" ? init.body : "";
+    const calls = body.startsWith("[") ? body.split('"jsonrpc"').length - 1 : 1;
+    queue = queue.then(async () => {
+      if (Date.now() - windowStart >= RPC_WINDOW_MS) { windowStart = Date.now(); sentInWindow = 0; }
+      if (sentInWindow > 0 && sentInWindow + calls > RPC_CALLS_PER_WINDOW) {
+        await new Promise((resolve) => setTimeout(resolve, windowStart + RPC_WINDOW_MS - Date.now()));
+        windowStart = Date.now();
+        sentInWindow = 0;
+      }
+      sentInWindow += calls;
+    });
+    return queue.then(() => fetch(input, init));
+  };
+  return http(url, { batch: { batchSize: RPC_CALLS_PER_WINDOW }, retryCount: 1, fetchFn: pacedFetch });
+}
 
 export const ARC_CHAIN_ID = 5_042;
-export const ARC_TESTNET_CHAIN_ID = 5_042_002;
 const USDC_INTERFACE_SCALE = 1_000_000_000_000n;
 
 export function canSpendArcUsdc(nativeBalance18: bigint, amount6: bigint, feeReserve18: bigint): boolean {
@@ -29,25 +61,6 @@ export const arc = defineChain({
   contracts: {
     multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" },
   },
-});
-
-export const arcTestnet = defineChain({
-  id: ARC_TESTNET_CHAIN_ID,
-  name: "Arc Testnet",
-  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: {
-    default: {
-      http: ["https://rpc.testnet.arc.io"],
-      webSocket: ["wss://rpc.testnet.arc.io"],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: "Arc Testnet Explorer",
-      url: "https://explorer.testnet.arc.io",
-    },
-  },
-  testnet: true,
 });
 
 type VerifiedContract = {

@@ -7,7 +7,6 @@ import {
   type EncryptedWallet,
 } from "../src/crypto";
 import {
-  closeEmptyTestnetProofWallet,
   rotateManagedWalletKey,
   WalletLifecycleError,
   type LifecycleWallet,
@@ -15,8 +14,6 @@ import {
 } from "../src/lifecycle";
 
 class MemoryLifecycleStore implements WalletLifecycleStore {
-  closed = false;
-
   constructor(public wallet: LifecycleWallet) {}
 
   async getWallet(userId: string, walletId: string) {
@@ -31,13 +28,6 @@ class MemoryLifecycleStore implements WalletLifecycleStore {
   }) {
     if (this.wallet.keyVersion !== input.expectedKeyVersion) return false;
     this.wallet = { ...this.wallet, ...input.wallet };
-    return true;
-  }
-
-  async closeEmptyWallet() {
-    if (this.wallet.state !== "paused") return false;
-    this.wallet.state = "closed";
-    this.closed = true;
     return true;
   }
 }
@@ -99,32 +89,4 @@ describe("managed wallet lifecycle", () => {
     );
   });
 
-  it("closes only a paused wallet with zero native balance", async () => {
-    const { store } = await fixture();
-    await expect(
-      closeEmptyTestnetProofWallet(store, async () => 1n, {
-        userId: "user-1",
-        walletId: "wallet-lifecycle",
-        now: 1_800_000_000_000,
-      }),
-    ).rejects.toEqual(
-      expect.objectContaining<Partial<WalletLifecycleError>>({
-        code: "WALLET_NOT_EMPTY",
-      }),
-    );
-    expect(store.closed).toBe(false);
-
-    await expect(
-      closeEmptyTestnetProofWallet(store, async () => 0n, {
-        userId: "user-1",
-        walletId: "wallet-lifecycle",
-        now: 1_800_000_000_001,
-      }),
-    ).resolves.toEqual({
-      walletId: "wallet-lifecycle",
-      address: store.wallet.address,
-      state: "closed",
-    });
-    expect(store.closed).toBe(true);
-  });
 });

@@ -43,7 +43,6 @@ function request(
   return {
     now,
     emergencyStop: false,
-    limits: { maxUsdc: 1_000_000_000n, maxCirBtc: 10_000_000n },
     wallet: { address: wallet, state: "active" },
     intent: {
       kind: "erc20_approval",
@@ -67,7 +66,7 @@ function request(
 }
 
 describe("mainnet signer policy", () => {
-  it("allows v4 collect and full withdrawal while paused without a trading cap", () => {
+  it("allows v4 collect and full withdrawal while paused", () => {
     const key = { currency0: zeroAddress, currency1: other, fee: 3000,
       tickSpacing: 60, hooks: zeroAddress };
     const pool = { ...key, id: v4PoolId(key), sqrtPriceX96: (2n ** 96n).toString(),
@@ -79,7 +78,6 @@ describe("mainnet signer policy", () => {
         deadline: BigInt(Math.floor(now / 1_000) + 600) });
       const v4Request = request({
         wallet: { address: wallet, state: "paused" },
-        limits: { maxUsdc: 0n, maxCirBtc: 0n },
         intent: { kind: kind === "collect" ? "v4_position_collect" : "v4_position_withdraw",
           status: "pending", expiresAt: now + 60_000,
           payloadHash: arcV4PositionActionPayloadHash(action) },
@@ -100,11 +98,10 @@ describe("mainnet signer policy", () => {
       amountIn: 1_000_000_000_000_000_000n, amountOutMinimum: 950n,
       deadline: BigInt(Math.floor(now / 1_000) + 600) });
     const v4Request = request({
-      limits: { maxUsdc: 10_000_000n, maxCirBtc: 0n },
       intent: { kind: "v4_single_pool_swap", status: "pending", expiresAt: now + 60_000,
         payloadHash: arcV4SwapPayloadHash(swap) },
       transaction: { chainId: ARC_CHAIN_ID, to: swap.to, data: swap.data, value: swap.value },
-      v4Swap: { transaction: swap, freshAmountOut: 1_000n, usdcNotional: 1_000_000n },
+      v4Swap: { transaction: swap, freshAmountOut: 1_000n },
     });
     expect(validateMainnetIntent(v4Request)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
     expect(validateMainnetIntent({ ...v4Request, transaction: { ...v4Request.transaction,
@@ -122,17 +119,14 @@ describe("mainnet signer policy", () => {
       amount1Desired: 1_000_000_000_000_000_000n, slippageBps: 100,
       deadline: BigInt(Math.floor(now / 1_000) + 600) });
     const v4Request = request({
-      limits: { maxUsdc: 10_000_000n, maxCirBtc: 0n },
       intent: { kind: "v4_position_mint", status: "pending", expiresAt: now + 60_000,
         payloadHash: arcV4MintPayloadHash(mint) },
       transaction: { chainId: ARC_CHAIN_ID, to: mint.to, data: mint.data, value: mint.value },
-      v4Mint: { transaction: mint, tokenNotionalUsdc: 1_000_000n, usdcAmount: 1_000_000n },
+      v4Mint: { transaction: mint },
     });
     expect(validateMainnetIntent(v4Request)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
     expect(validateMainnetIntent({ ...v4Request, transaction: { ...v4Request.transaction,
       value: mint.value + 1n } })).toEqual({ allowed: false, reason: "V4_MINT_PARAMETERS_INVALID" });
-    expect(validateMainnetIntent({ ...v4Request, v4Mint: { ...v4Request.v4Mint!,
-      usdcAmount: 11_000_000n } })).toEqual({ allowed: false, reason: "VALUE_CAP_EXCEEDED" });
   });
 
   it("requires an exact v4 Permit2 approval for the selected pool", () => {
@@ -142,7 +136,7 @@ describe("mainnet signer policy", () => {
       intent: { kind: "v4_approval", status: "pending", expiresAt: now + 60_000,
         payloadHash: arcV4ApprovalPayloadHash(approval) },
       transaction: { chainId: ARC_CHAIN_ID, to: approval.to, data: approval.data, value: 0n },
-      v4Approval: { transaction: approval, usdcNotional: 1_000_000n },
+      v4Approval: { transaction: approval },
     });
     expect(validateMainnetIntent(v4Request)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
     expect(validateMainnetIntent({ ...v4Request, transaction: { ...v4Request.transaction,
@@ -176,12 +170,6 @@ describe("mainnet signer policy", () => {
       allowed: false,
       reason: "TOKEN_NOT_ALLOWED",
     });
-  });
-
-  it("requires the configured private-alpha value cap", () => {
-    expect(validateMainnetIntent(request({
-      limits: { maxUsdc: 999_999n, maxCirBtc: 10_000_000n },
-    }))).toEqual({ allowed: false, reason: "VALUE_CAP_EXCEEDED" });
   });
 
   it.each([
@@ -282,14 +270,13 @@ describe("mainnet signer policy", () => {
     })).toEqual({ allowed: false, reason: "WITHDRAWAL_SEQUENCE_INVALID" });
   });
 
-  it("allows owner-authorized USDC exits while paused without applying the trading cap", () => {
+  it("allows owner-authorized USDC exits while paused and during an emergency stop", () => {
     const transfer = buildUsdcWithdrawal({ wallet, recipient: other, amount: 20_000_000n,
       nonce: `0x${"11".repeat(32)}`, expiresAt: BigInt(Math.floor(now / 1_000) + 120) });
     const signature = `0x${"22".repeat(65)}` as const;
     const exit = request({
       wallet: { address: wallet, state: "paused" },
       emergencyStop: true,
-      limits: { maxUsdc: 1_000_000n, maxCirBtc: 1n },
       intent: { kind: "usdc_withdrawal", status: "pending", expiresAt: now + 60_000,
         payloadHash: withdrawalPayloadHash(transfer, signature) },
       transaction: { chainId: ARC_CHAIN_ID, to: transfer.to, data: transfer.data, value: 0n },
@@ -302,7 +289,7 @@ describe("mainnet signer policy", () => {
       .toEqual({ allowed: false, reason: "WITHDRAWAL_CONTEXT_MISMATCH" });
   });
 
-  it("checks single-pool swap output, deadline, cap, and exact calldata", () => {
+  it("checks single-pool swap output, deadline, and exact calldata", () => {
     const swap = buildSwap({ poolAddress: "0x3333333333333333333333333333333333333333",
       poolFee: 3000, tokenIn: ARC_TOKENS.USDC.address, tokenOut: other,
       recipient: wallet, amountIn: 1_000_000n, amountOutMinimum: 950n,
@@ -318,13 +305,11 @@ describe("mainnet signer policy", () => {
       .toEqual({ allowed: false, reason: "SWAP_LIMITS_INVALID" });
     expect(validateMainnetIntent({ ...trade, swap: { transaction: swap, tokenAddress: wallet, freshAmountOut: 1000n } }))
       .toEqual({ allowed: false, reason: "SWAP_PAIR_INVALID" });
-    expect(validateMainnetIntent({ ...trade, limits: { maxUsdc: 999_999n, maxCirBtc: 1n } }))
-      .toEqual({ allowed: false, reason: "VALUE_CAP_EXCEEDED" });
     expect(validateMainnetIntent({ ...trade, transaction: { ...trade.transaction, data: "0x" } }))
       .toEqual({ allowed: false, reason: "SWAP_LIMITS_INVALID" });
   });
 
-  it("caps a memecoin mint by quoted USDC value instead of cirBTC-sized token units", () => {
+  it("accepts a generic-token mint only for the selected pool", () => {
     const selectedPool = "0x3333333333333333333333333333333333333333" as const;
     const mint = buildMint({ pool: { address: selectedPool,
       token0: { address: other, symbol: "MEME", decimals: 18 },
@@ -333,17 +318,15 @@ describe("mainnet signer policy", () => {
       amount0Desired: 1_000_000_000_000_000_000n, amount1Desired: 1_000_000n,
       slippageBps: 100, deadline: BigInt(Math.floor(now / 1_000) + 600) });
     const mintRequest = request({
-      limits: { maxUsdc: 10_000_000n, maxCirBtc: 50_000n },
       intent: { kind: "position_mint", status: "pending", expiresAt: now + 60_000,
         payloadHash: mintPayloadHash(mint) },
       transaction: { chainId: ARC_CHAIN_ID, to: mint.to, data: mint.data, value: 0n },
       mintPool: { poolAddress: selectedPool, token0: other, token1: ARC_TOKENS.USDC.address,
-        fee: 3000, tickSpacing: 60, tokenDecimals: 18,
-        tokenAmountQuoted: mint.amount0Desired, tokenNotionalUsdc: 2_000_000n },
+        fee: 3000, tickSpacing: 60, tokenDecimals: 18 },
     });
     expect(validateMainnetIntent(mintRequest)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
     expect(validateMainnetIntent({ ...mintRequest,
-      mintPool: { ...mintRequest.mintPool!, tokenNotionalUsdc: 11_000_000n } }))
-      .toEqual({ allowed: false, reason: "VALUE_CAP_EXCEEDED" });
+      mintPool: { ...mintRequest.mintPool!, fee: 500 } }))
+      .toEqual({ allowed: false, reason: "POOL_NOT_ALLOWED" });
   });
 });

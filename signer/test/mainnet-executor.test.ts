@@ -148,8 +148,6 @@ describe("mainnet executor", () => {
         },
       }),
       getWrappingKeys: async () => new Map([[1, wrappingKey]]),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 2_000_000_000_000_000n,
       emergencyStop: false,
       now: () => now,
     });
@@ -186,8 +184,6 @@ describe("mainnet executor", () => {
       submissionStore: state,
       rpc: rpc(),
       getWrappingKeys: async () => { keyLoads += 1; return new Map(); },
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 2_000_000_000_000_000n,
       emergencyStop: true,
       now: () => now,
     })).rejects.toMatchObject({ code: "EMERGENCY_STOP_ACTIVE", status: 422 });
@@ -210,33 +206,11 @@ describe("mainnet executor", () => {
         sendRawTransaction: async () => { broadcasts += 1; return `0x${"11".repeat(32)}`; },
       }),
       getWrappingKeys: async () => new Map([[1, wrappingKey]]),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 2_000_000_000_000_000n,
       emergencyStop: false,
       now: () => now,
     })).rejects.toMatchObject({ code: "WALLET_EXECUTION_BUSY", status: 409 });
 
     expect(broadcasts).toBe(0);
-    expect(state.submissions).toEqual([]);
-  });
-
-  it("rejects an RPC fee quote above the mandatory total transaction cap", async () => {
-    const { intent, wrappingKey } = await fixture();
-    const state = new MemoryExecutionState(intent);
-    await expect(executeMainnetIntent({
-      intentId: intent.intentId,
-      evaluationStore: new MemoryEvaluationStore(intent),
-      reservationStore: state,
-      submissionStore: state,
-      rpc: rpc(),
-      getWrappingKeys: async () => new Map([[1, wrappingKey]]),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 1n,
-      emergencyStop: false,
-      now: () => now,
-    })).rejects.toMatchObject({ code: "GAS_FEE_CAP_EXCEEDED", status: 422 });
-
-    expect(state.reservation).toBeNull();
     expect(state.submissions).toEqual([]);
   });
 
@@ -251,8 +225,6 @@ describe("mainnet executor", () => {
       submissionStore: state,
       rpc: rpc(),
       getWrappingKeys: async () => new Map([[1, wrongKey]]),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 2_000_000_000_000_000n,
       emergencyStop: false,
       now: () => now,
     })).rejects.toMatchObject({ code: "MAINNET_SIGNING_FAILED", status: 500 });
@@ -271,8 +243,6 @@ describe("mainnet executor", () => {
       submissionStore: state,
       rpc: rpc({ sendRawTransaction: async () => { throw new Error("timeout"); } }),
       getWrappingKeys: async () => new Map([[1, wrappingKey]]),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 2_000_000_000_000_000n,
       emergencyStop: false,
       now: () => now,
     });
@@ -293,8 +263,6 @@ describe("mainnet executor", () => {
         sendRawTransaction: async () => `0x${"ff".repeat(32)}`,
       }),
       getWrappingKeys: async () => new Map([[1, wrappingKey]]),
-      limits: { maxUsdc: 2_000_000n, maxCirBtc: 1n },
-      maxTransactionFee: 2_000_000_000_000_000n,
       emergencyStop: false,
       now: () => now,
     })).rejects.toMatchObject({ code: "BROADCAST_HASH_MISMATCH", status: 502 });

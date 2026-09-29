@@ -12,10 +12,16 @@ export class D1WalletIndexerStore implements WalletIndexerStore {
   constructor(private readonly db: D1Database) {}
 
   async listManagedWallets(limit: number): Promise<ManagedWallet[]> {
+    // Least recently indexed first, so every wallet is reached across runs.
     const result = await this.db
       .prepare(
         `SELECT id, address FROM managed_wallets
-         WHERE state IN ('active', 'paused') ORDER BY id LIMIT ?1`,
+         WHERE state IN ('active', 'paused')
+         ORDER BY (
+           SELECT MAX(block_number) FROM managed_wallet_snapshots s
+           WHERE s.wallet_id = managed_wallets.id
+         ) NULLS FIRST, id
+         LIMIT ?1`,
       )
       .bind(limit)
       .all<{ id: string; address: string }>();
@@ -51,30 +57,30 @@ export class D1WalletIndexerStore implements WalletIndexerStore {
           snapshot.permit2CirBtcAllowance,
           snapshot.observedAt,
         ),
-      ...snapshot.positions.map((position) =>
+      // One statement for all positions: each D1 statement counts toward the
+      // free plan's 50 queries per invocation.
+      ...(snapshot.positions.length === 0 ? [] : [
         this.db
           .prepare(
             `INSERT OR IGNORE INTO uniswap_position_snapshots (
               wallet_id, token_id, chain_id, block_number, pool_address,
               tick_lower, tick_upper, liquidity, recorded_owed0, recorded_owed1,
               claimable0, claimable1
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+            )
+            SELECT ?1, value ->> '$.tokenId', ?2, ?3, ?4,
+              value ->> '$.tickLower', value ->> '$.tickUpper', value ->> '$.liquidity',
+              value ->> '$.recordedOwed0', value ->> '$.recordedOwed1',
+              value ->> '$.claimable0', value ->> '$.claimable1'
+            FROM json_each(?5)`,
           )
           .bind(
             snapshot.walletId,
-            position.tokenId,
             snapshot.chainId,
             snapshot.blockNumber,
             ALPHA_POOL.address,
-            position.tickLower,
-            position.tickUpper,
-            position.liquidity,
-            position.recordedOwed0,
-            position.recordedOwed1,
-            position.claimable0,
-            position.claimable1,
+            JSON.stringify(snapshot.positions),
           ),
-      ),
+      ]),
     ];
     await this.db.batch(statements);
   }

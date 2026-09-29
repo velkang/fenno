@@ -1,7 +1,6 @@
 export {
   ALPHA_POOL,
   ARC_CHAIN_ID,
-  ARC_TESTNET_CHAIN_ID,
   ARC_TOKENS,
   ERC20_INTERFACE_USDC_CODE,
   UNISWAP_SHARED_ARC,
@@ -9,7 +8,7 @@ export {
   UNISWAP_V4_ARC,
   UNISWAP_SWAP_ARC,
   arc,
-  arcTestnet,
+  arcRpcTransport,
   canSpendArcUsdc,
   maxArcUsdcAmount,
 } from "./arc";
@@ -35,7 +34,6 @@ export {
   type ArcV4Approval,
   type ArcV4Swap,
 } from "./v4";
-export { ARC_TESTNET_PROOF_KIND, arcTestnetProofPayloadHash } from "./proof";
 export {
   buildUsdcWithdrawal,
   withdrawalDomain,

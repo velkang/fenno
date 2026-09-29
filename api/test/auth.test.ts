@@ -91,7 +91,6 @@ describe("private-alpha authentication", () => {
     signerRequests = [];
     env = {
       DB: {} as D1Database,
-      AUTH_DOMAIN: "localhost:8787",
       AUTH_URI: "http://localhost:8787",
       AUTH_COOKIE_SECURE: "false",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",
@@ -163,16 +162,6 @@ describe("private-alpha authentication", () => {
     expect(meResponse.status).toBe(200);
     expect(await meResponse.json()).toEqual({
       user: { id: expect.any(String), ownerAddress: account.address },
-    });
-
-    const disabledExecution = await app.request(
-      "/v1/wallets/intents/approval-1/execute",
-      { method: "POST", headers: { cookie } },
-      env,
-    );
-    expect(disabledExecution.status).toBe(503);
-    expect(await disabledExecution.json()).toEqual({
-      error: "MAINNET_EXECUTION_DISABLED",
     });
 
     const firstProvision = await app.request(

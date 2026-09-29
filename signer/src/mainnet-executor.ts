@@ -62,8 +62,6 @@ export async function executeMainnetIntent(input: {
   submissionStore: MainnetSubmissionStore;
   rpc: MainnetExecutionRpc;
   getWrappingKeys: () => Promise<ReadonlyMap<number, CryptoKey>>;
-  limits: { maxUsdc: bigint; maxCirBtc: bigint };
-  maxTransactionFee: bigint;
   emergencyStop: boolean;
   now?: () => number;
 }): Promise<MainnetExecutionResult> {
@@ -77,7 +75,6 @@ export async function executeMainnetIntent(input: {
     loaded,
     store: input.evaluationStore,
     client: input.rpc,
-    limits: input.limits,
     emergencyStop: input.emergencyStop,
     now,
   });
@@ -120,12 +117,6 @@ export async function executeMainnetIntent(input: {
     throw new MainnetExecutionError("GAS_ESTIMATE_INVALID", 503);
   }
   const gasLimit = (estimatedGas * 120n + 99n) / 100n;
-  if (
-    input.maxTransactionFee < 0n ||
-    gasLimit * fees.maxFeePerGas > input.maxTransactionFee
-  ) {
-    throw new MainnetExecutionError("GAS_FEE_CAP_EXCEEDED", 422);
-  }
   if (loaded.kind === "usdc_withdrawal") {
     if (!loaded.withdrawal || !input.rpc.getBalance) {
       throw new MainnetExecutionError("WITHDRAWAL_BALANCE_UNAVAILABLE", 503);

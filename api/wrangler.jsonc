@@ -3,22 +3,21 @@
   "name": "stillwater-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-18",
-  "vars": {
-    "ARC_RPC_URL": "https://rpc.mainnet.arc.io",
-    "MAINNET_EXECUTION_ENABLED": "true"
-  },
+  "keep_vars": true,
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "stillwater-alpha",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
-    }
+      "database_name": "stillwater-prod",
+      "database_id": "156f0e29-c4e7-466e-a04a-43942435f3b5",
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
   ],
   "services": [
     {
       "binding": "SIGNER",
-      "service": "stillwater-signer"
-    }
-  ]
+      "service": "stillwater-signer",
+    },
+  ],
+  "observability": { "enabled": true },
 }

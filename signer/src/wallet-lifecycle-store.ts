@@ -69,19 +69,4 @@ export class D1WalletLifecycleStore implements WalletLifecycleStore {
       .run();
     return result.meta.changes === 1;
   }
-
-  async closeEmptyWallet(input: {
-    userId: string;
-    walletId: string;
-    now: number;
-  }) {
-    const result = await this.database
-      .prepare(
-        `UPDATE managed_wallets SET state = 'closed', updated_at = ?3
-         WHERE id = ?1 AND user_id = ?2 AND state = 'paused'`,
-      )
-      .bind(input.walletId, input.userId, input.now)
-      .run();
-    return result.meta.changes === 1;
-  }
 }

@@ -1,9 +1,8 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { BaseError, ContractFunctionRevertedError, createPublicClient, decodeEventLog, encodeFunctionData, getAddress, http, isAddress, parseAbi, verifyTypedData, zeroAddress, type Address, type Hex } from "viem";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, decodeEventLog, encodeFunctionData, getAddress, http, isAddress, parseAbi, toEventSelector, verifyTypedData, zeroAddress, type Address, type Hex } from "viem";
 import {
   ARC_CHAIN_ID,
-  ARC_TESTNET_PROOF_KIND,
   ALPHA_POOL,
   ARC_TOKENS,
   UNISWAP_V3_ARC,
@@ -19,7 +18,7 @@ import {
   v4PositionManagerReadAbi,
   alphaPositionImportPayloadHash,
   arc,
-  arcTestnetProofPayloadHash,
+  arcRpcTransport,
   buildAlphaApproval,
   buildApproval,
   buildAlphaMint,
@@ -74,15 +73,16 @@ import { D1AuthStore } from "./d1-auth-store";
 import { D1IndexerHealthStore, getIndexerHealth } from "./indexer-health";
 
 const SESSION_COOKIE = "stillwater_session";
+const TRANSFER_TOPIC = toEventSelector("Transfer(address,address,uint256)");
 
 export type Bindings = {
   DB: D1Database;
   SIGNER: Fetcher;
-  AUTH_DOMAIN: string;
+  // The web app's URL; SIWE messages are bound to its host.
   AUTH_URI: string;
   AUTH_COOKIE_SECURE?: string;
-  ARC_RPC_URL: string;
-  MAINNET_EXECUTION_ENABLED?: string;
+  // Optional override; without it, Arc's default public RPC is used.
+  ARC_RPC_URL?: string;
 };
 
 type Variables = {
@@ -278,16 +278,19 @@ export function createApp(dependencies: AppDependencies = {}) {
   const now = dependencies.now ?? Date.now;
 
   async function mintedV4Positions(env: Bindings, wallet: { id: string; address: Address }, offset = 0) {
+    // One query joins each mint to its directory row, so D1 is not queried per NFT.
     const rows = await env.DB.prepare(
-      `SELECT mta.transaction_hash, vmi.pool_id
+      `SELECT mta.transaction_hash, vmi.pool_id AS minted_pool_id, vpd.*
        FROM v4_mint_intents vmi
        JOIN wallet_intents wi ON wi.id = vmi.intent_id
        JOIN mainnet_transaction_attempts mta ON mta.intent_id = wi.id
+       LEFT JOIN v4_pool_directory vpd ON vpd.pool_id = vmi.pool_id
        WHERE wi.wallet_id = ?1 AND wi.status = 'confirmed' AND mta.status = 'confirmed'
        ORDER BY mta.submitted_at DESC LIMIT 50 OFFSET ?2`,
-    ).bind(wallet.id, offset).all<{ transaction_hash: Hex; pool_id: Hex }>();
+    ).bind(wallet.id, offset).all<{ transaction_hash: Hex; minted_pool_id: Hex } &
+      (V4PoolDirectoryRow | { [K in keyof V4PoolDirectoryRow]: null })>();
     const client = (dependencies.createChainClient?.(env) ??
-      createPublicClient({ chain: arc, transport: http(env.ARC_RPC_URL), batch: { multicall: true } })) as unknown as
+      createPublicClient({ chain: arc, transport: arcRpcTransport(env.ARC_RPC_URL), batch: { multicall: true } })) as unknown as
       ChainReadClient & { getTransactionReceipt(input: { hash: Hex }): Promise<{
         logs: { address: Address; topics: readonly Hex[]; data: Hex }[];
       }>;
@@ -300,7 +303,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       const ids: bigint[] = [];
       for (const log of receipt.logs) {
         if (log.address.toLowerCase() !== UNISWAP_V4_ARC.positionManager.toLowerCase()) continue;
-        if (log.topics.length === 0) continue;
+        if (log.topics[0] !== TRANSFER_TOPIC) continue;
         try {
           const event = decodeEventLog({ abi: v4PositionManagerReadAbi,
             data: log.data, topics: [...log.topics] as [Hex, ...Hex[]] });
@@ -312,10 +315,9 @@ export function createApp(dependencies: AppDependencies = {}) {
         try {
           const position = await readArcV4Position({ client, tokenId, owner: wallet.address,
             blockNumber });
-          if (position.poolId.toLowerCase() !== row.pool_id.toLowerCase()) return null;
-          const pool = await env.DB.prepare("SELECT * FROM v4_pool_directory WHERE pool_id = ?1")
-            .bind(row.pool_id).first<V4PoolDirectoryRow>();
-          if (!pool) return null;
+          if (position.poolId.toLowerCase() !== row.minted_pool_id.toLowerCase()) return null;
+          if (row.pool_id === null) return null;
+          const { transaction_hash: _hash, minted_pool_id: _minted, ...pool } = row;
           const live = await readArcV4Pool({ client, key: position.poolKey,
             blockNumber });
           if (!live) return null;
@@ -467,7 +469,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       { address: body.address },
       {
         chainId: ARC_CHAIN_ID,
-        domain: context.env.AUTH_DOMAIN,
+        domain: new URL(context.env.AUTH_URI).host,
         uri: context.env.AUTH_URI,
       },
       { now },
@@ -576,7 +578,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       dependencies.createChainClient?.(context.env) ??
       (createPublicClient({
         chain: arc,
-        transport: http(context.env.ARC_RPC_URL),
+        transport: arcRpcTransport(context.env.ARC_RPC_URL),
         batch: { multicall: true },
       }) as unknown as ChainReadClient);
     try {
@@ -712,8 +714,6 @@ export function createApp(dependencies: AppDependencies = {}) {
       throw new AuthError("TOKEN_READ_FAILED", 502);
     }
     if (balance < amountIn) throw new AuthError("INSUFFICIENT_TOKEN_BALANCE", 422);
-    const usdcNotional = body.direction === "buy" ? amountIn : quoted.amountOut;
-    if (usdcNotional > 10_000_000n) throw new AuthError("ALPHA_CAP_EXCEEDED", 422);
     return { wallet, client, blockNumber: block.number, discovery, pool,
       tokenIn, tokenOut, amountIn, quoted, allowance, nativeBalance };
   }
@@ -987,10 +987,6 @@ export function createApp(dependencies: AppDependencies = {}) {
       throw new AuthError("V4_POOL_NOT_EXECUTABLE", 422);
     }
     const tokenOut = tokenIn === pool.currency0 ? pool.currency1 : pool.currency0;
-    const usdcNotional = tokenIn === zeroAddress ? (amountIn + 999_999_999_999n) / 1_000_000_000_000n :
-      tokenIn === ARC_TOKENS.USDC.address ? amountIn :
-        tokenOut === zeroAddress ? (quoted.amountOut + 999_999_999_999n) / 1_000_000_000_000n : quoted.amountOut;
-    if (usdcNotional > 10_000_000n) throw new AuthError("ALPHA_CAP_EXCEEDED", 422);
     const [nativeBalance, tokenBalance, allowance] = await Promise.all([
       client.getBalance({ address: wallet.address, blockNumber: safe.number }),
       tokenIn === zeroAddress ? Promise.resolve(0n) : client.readContract({ address: tokenIn,
@@ -1133,18 +1129,6 @@ export function createApp(dependencies: AppDependencies = {}) {
     const amount = BigInt(body.amount as string);
     const spender = body.purpose === "swap"
       ? UNISWAP_SHARED_ARC.universalRouter.address : UNISWAP_V4_ARC.positionManager;
-    const native = pool.currency0 === zeroAddress;
-    let usdcAmount: bigint;
-    try {
-      usdcAmount = token === ARC_TOKENS.USDC.address ? amount :
-        (await quoteArcV4Swap({ client, pool, account: wallet.address,
-          tokenIn: token, amountIn: amount, blockNumber: safe.number })).amountOut;
-    } catch {
-      throw new AuthError("V4_POOL_NOT_EXECUTABLE", 422);
-    }
-    const usdcAmount6 = native && token !== ARC_TOKENS.USDC.address
-      ? (usdcAmount + 999_999_999_999n) / 1_000_000_000_000n : usdcAmount;
-    if (usdcAmount6 > 10_000_000n) throw new AuthError("ALPHA_CAP_EXCEEDED", 422);
     const expiration = body.stage === "permit2" ? BigInt(Math.floor(now() / 1_000) + 30 * 60) : 0n;
     let approval;
     try {
@@ -1481,13 +1465,6 @@ export function createApp(dependencies: AppDependencies = {}) {
     } catch {
       throw new AuthError("INVALID_V4_MINT_REQUEST", 400);
     }
-    const tokenMax = row.token_address.toLowerCase() === pool.currency0.toLowerCase()
-      ? mint.amount0Max : mint.amount1Max;
-    const usdcMax = row.token_address.toLowerCase() === pool.currency0.toLowerCase()
-      ? mint.amount1Max : mint.amount0Max;
-    const maxUsdc6 = pool.currency0 === zeroAddress
-      ? (usdcMax + 999_999_999_999n) / 1_000_000_000_000n : usdcMax;
-    if (maxUsdc6 > 10_000_000n) throw new AuthError("ALPHA_CAP_EXCEEDED", 422);
     const required = [
       { token: pool.currency0, amount: mint.amount0Max },
       { token: pool.currency1, amount: mint.amount1Max },
@@ -1501,18 +1478,14 @@ export function createApp(dependencies: AppDependencies = {}) {
       }
     }
     try {
-      const tokenQuote = await quoteArcV4Swap({ client, pool, account: wallet.address,
-        tokenIn: getAddress(row.token_address), amountIn: tokenMax, blockNumber: safe.number });
-      const quotedUsdc6 = pool.currency0 === zeroAddress || pool.currency1 === zeroAddress
-        ? (tokenQuote.amountOut + 999_999_999_999n) / 1_000_000_000_000n
-        : tokenQuote.amountOut;
-      if (quotedUsdc6 > 10_000_000n) throw new AuthError("ALPHA_CAP_EXCEEDED", 422);
       await client.call({ account: wallet.address, to: mint.to, data: mint.data,
         value: mint.value, blockNumber: safe.number });
     } catch (error) {
       if (error instanceof AuthError) throw error;
       throw new AuthError("V4_MINT_SIMULATION_FAILED", 422);
     }
+    const usdcMax = row.token_address.toLowerCase() === pool.currency0.toLowerCase()
+      ? mint.amount1Max : mint.amount0Max;
     const [gas, fees, nativeBalance] = await Promise.all([
       client.estimateGas({ account: wallet.address, to: mint.to, data: mint.data, value: mint.value,
         blockNumber: safe.number }),
@@ -1796,16 +1769,6 @@ export function createApp(dependencies: AppDependencies = {}) {
       const simulatedAmount1 = genericMint
         ? BigInt((simulation as Awaited<ReturnType<typeof simulateMint>>).amount1)
         : BigInt((simulation as Awaited<ReturnType<typeof simulateAlphaMint>>).amountUsdc);
-      if (genericMint && requestedTokenAddress !== ARC_TOKENS.cirBTC.address) {
-        const tokenAmount = selectedPool!.token0.address === requestedTokenAddress
-          ? simulatedAmount0 : simulatedAmount1;
-        const quoted = await quoteSwap({
-          client: client as unknown as Parameters<typeof quoteSwap>[0]["client"],
-          pool: selectedPool!, account: wallet.address, tokenIn: requestedTokenAddress!,
-          tokenOut: ARC_TOKENS.USDC.address, amountIn: tokenAmount, blockNumber: block.number,
-        });
-        if (quoted.amountOut > 10_000_000n) throw new AuthError("ALPHA_CAP_EXCEEDED", 422);
-      }
       const effectiveSlippageBps = BigInt(slippageBps);
       const slippageFactor = 10_000n - effectiveSlippageBps;
       const amount0Min = (simulatedAmount0 * slippageFactor) / 10_000n;
@@ -2264,9 +2227,6 @@ export function createApp(dependencies: AppDependencies = {}) {
   });
 
   app.post("/v1/wallets/intents/:intentId/execute", async (context) => {
-    if (context.env.MAINNET_EXECUTION_ENABLED !== "true") {
-      return context.json({ error: "MAINNET_EXECUTION_DISABLED" }, 503);
-    }
     const intentId = context.req.param("intentId");
     if (!isIdentifier(intentId)) {
       return context.json({ error: "INVALID_REQUEST" }, 400);
@@ -2370,87 +2330,6 @@ export function createApp(dependencies: AppDependencies = {}) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId: user.id, walletId: wallet.id }),
-      }),
-    );
-    return new Response(response.body, {
-      status: response.status,
-      headers: { "content-type": "application/json" },
-    });
-  });
-
-  app.post("/v1/wallets/close-empty-testnet-proof", async (context) => {
-    const user = context.get("user");
-    const wallet = await context.env.DB.prepare(
-      "SELECT id FROM managed_wallets WHERE user_id = ?1",
-    )
-      .bind(user.id)
-      .first<{ id: string }>();
-    if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
-
-    const response = await context.env.SIGNER.fetch(
-      new Request(
-        "http://stillwater-signer/internal/v1/wallets/close-empty-testnet-proof",
-        {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId: user.id, walletId: wallet.id }),
-        },
-      ),
-    );
-    return new Response(response.body, {
-      status: response.status,
-      headers: { "content-type": "application/json" },
-    });
-  });
-
-  app.post("/v1/wallets/proof", async (context) => {
-    const user = context.get("user");
-    const wallet = await context.env.DB.prepare(
-      "SELECT id, address, state FROM managed_wallets WHERE user_id = ?1",
-    )
-      .bind(user.id)
-      .first<{ id: string; address: `0x${string}`; state: string }>();
-    if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
-    if (wallet.state !== "active") {
-      return context.json({ error: "WALLET_NOT_ACTIVE" }, 409);
-    }
-
-    const intentId = `proof_${wallet.id}`;
-    const timestamp = now();
-    const expiresAt = timestamp + 5 * 60 * 1_000;
-    const payloadHash = arcTestnetProofPayloadHash({
-      walletId: wallet.id,
-      address: wallet.address,
-    });
-    await context.env.DB.prepare(
-      `INSERT OR IGNORE INTO wallet_intents (
-        id, wallet_id, kind, payload_hash, status, expires_at, created_at, updated_at
-      ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6)`,
-    )
-      .bind(
-        intentId,
-        wallet.id,
-        ARC_TESTNET_PROOF_KIND,
-        payloadHash,
-        expiresAt,
-        timestamp,
-      )
-      .run();
-    await context.env.DB.prepare(
-      `UPDATE wallet_intents
-       SET status = 'pending', expires_at = ?2, transaction_hash = NULL,
-           block_number = NULL, failure_reason = NULL, updated_at = ?3
-       WHERE id = ?1 AND status IN ('rejected', 'failed')
-         AND failure_reason = 'TESTNET_WALLET_NEEDS_GAS'`,
-    )
-      .bind(intentId, expiresAt, timestamp)
-      .run();
-
-    const response = await context.env.SIGNER.fetch(
-      new Request("http://stillwater-signer/internal/v1/intents/execute-testnet-proof", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ intentId, walletId: wallet.id }),
       }),
     );
     return new Response(response.body, {

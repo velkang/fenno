@@ -1,7 +1,7 @@
 import React from "react";
 import { useAccount, useChainId } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
-import { ARC_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@stillwater/chain";
+import { ARC_CHAIN_ID } from "@stillwater/chain";
 import type { AuthUser } from "../lib/api-client";
 import {
   IconPositions,
@@ -37,9 +37,7 @@ export const Header: React.FC<Props> = ({
   const { isConnected } = useAccount();
   const chainId = useChainId();
 
-  const isArcTestnet = isConnected && chainId === ARC_TESTNET_CHAIN_ID;
   const isArcMainnet = !isConnected || chainId === ARC_CHAIN_ID;
-  const isSupportedNetwork = isArcTestnet || isArcMainnet;
 
   const navItems: { key: PageRoute; label: string; shortLabel: string; icon: React.FC<{ size?: number; className?: string }> }[] = [
     { key: "explore", label: "Explore", shortLabel: "Explore", icon: IconSearch },
@@ -106,15 +104,11 @@ export const Header: React.FC<Props> = ({
           >
             <span
               className={`h-2 w-2 rounded-full ${
-                isSupportedNetwork ? "bg-emerald-500 shadow-xs" : "bg-rose-500"
+                isArcMainnet ? "bg-emerald-500 shadow-xs" : "bg-rose-500"
               }`}
             />
             <span>
-              {isArcTestnet
-                ? "Arc Testnet"
-                : isArcMainnet
-                  ? "Arc Mainnet"
-                  : "Unsupported"}
+              {isArcMainnet ? "Arc Mainnet" : "Unsupported"}
             </span>
           </button>
 
