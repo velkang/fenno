@@ -12,6 +12,8 @@ import { ToastContainer, type ToastMessage } from "./components/Toast";
 import { api, type AuthUser, type ManagedWalletRecord } from "./lib/api-client";
 import type { AlphaWalletSummary } from "@stillwater/chain";
 
+const WALLET_POLL_INTERVAL_MS = 60_000;
+
 function getPageFromLocation(): PageRoute {
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
   if (path === "/positions") return "positions";
@@ -125,12 +127,21 @@ export const App: React.FC = () => {
     }
   }, [user]);
 
+  // Poll only while the tab is visible, and refresh as soon as it becomes visible
+  // again. Each poll is two API requests, which count toward the Workers free
+  // plan's 100k requests per day.
   useEffect(() => {
-    if (user) {
-      refreshData();
-      const interval = setInterval(refreshData, 15000); // 15s poll
-      return () => clearInterval(interval);
-    }
+    if (!user) return;
+    refreshData();
+    const refreshIfVisible = () => {
+      if (!document.hidden) refreshData();
+    };
+    const interval = setInterval(refreshIfVisible, WALLET_POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
   }, [user, refreshData]);
 
   const handleLogout = async () => {

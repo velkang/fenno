@@ -11,7 +11,7 @@ const RPC_WINDOW_MS = 1_100;
  * under the endpoints' rate limit. Waiting costs wall time, not CPU time.
  * One retry: each retry is another subrequest.
  */
-// Without a URL, viem uses the chain's default RPC (Arc's public endpoint).
+// Without a URL, viem uses the chain's default RPC (Blockdaemon's keyless Arc endpoint).
 export function arcRpcTransport(url?: string) {
   let queue: Promise<void> = Promise.resolve();
   let windowStart = 0;
@@ -51,7 +51,7 @@ export const arc = defineChain({
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: {
     default: {
-      http: ["https://rpc.mainnet.arc.io"],
+      http: ["https://rpc.blockdaemon.mainnet.arc.io"],
       webSocket: ["wss://rpc.mainnet.arc.io"],
     },
   },

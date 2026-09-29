@@ -102,7 +102,7 @@ All variables and secrets live outside the repository: in the Cloudflare dashboa
 | `AUTH_URI` | api | **Required**: the web app's URL; sign-in messages are bound to its host |
 | `AUTH_COOKIE_SECURE` | api | Local only: `false` allows the session cookie over plain `http`. Never set it in production |
 | `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
-| `ARC_RPC_URL` | api, signer, indexer | Optional; without it, Arc's public RPC (`https://rpc.mainnet.arc.io`) is used |
+| `ARC_RPC_URL` | api, signer, indexer | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
 | `WALLET_KEK_V2` | signer | Optional secret, only needed to rotate to a new wrapping key |
 
 Mainnet transactions are allowed by default; there are no per-action value or fee limits.

@@ -406,7 +406,8 @@ export function createApp(dependencies: AppDependencies = {}) {
             }
           }
         }
-      } catch {
+      } catch (error) {
+        console.warn("Contract address search failed", query, error);
         // A contract address with no eligible pools is an empty result, not a server failure.
       }
     }
@@ -432,7 +433,8 @@ export function createApp(dependencies: AppDependencies = {}) {
         return context.json({ pool: { ...publicV4Pool(row), sqrtPriceX96: live.sqrtPriceX96,
           tick: live.tick, liquidity: live.liquidity, lpFee: live.lpFee,
           blockNumber: null, updatedAt: Date.now() } });
-      } catch {
+      } catch (error) {
+        console.error("Pool read failed", requested, error);
         return context.json({ error: "POOL_NOT_AVAILABLE" }, 502);
       }
     }
@@ -457,7 +459,8 @@ export function createApp(dependencies: AppDependencies = {}) {
       const pools = await livePublicPools(client, tokenAddress);
       const pool = pools.find((candidate) => candidate.address.toLowerCase() === address.toLowerCase());
       return pool ? context.json({ pool }) : context.json({ error: "POOL_NOT_ELIGIBLE" }, 404);
-    } catch {
+    } catch (error) {
+      console.error("Pool read failed", address, error);
       return context.json({ error: "POOL_NOT_AVAILABLE" }, 502);
     }
   });

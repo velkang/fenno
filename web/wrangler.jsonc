@@ -14,5 +14,5 @@
       "service": "stillwater-api",
     },
   ],
-  "observability": { "enabled": true },
+  "observability": { "enabled": false },
 }
