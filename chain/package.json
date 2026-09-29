@@ -1,0 +1,22 @@
+{
+  "name": "@actora/chain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@uniswap/sdk-core": "7.19.4",
+    "@uniswap/v4-sdk": "2.4.1",
+    "viem": "^2.37.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

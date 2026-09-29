@@ -1,0 +1,31 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+.pnpm-store/
+coverage/
+dist
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+api/scripts
+
+.agents
+.config
+docs
+AGENTS.md 
+IMPLEMENTATION_PLAN.md 
+skills-lock.json
+DESIGN.md 
+design-qa.md
+PRODUCT.md 
+.impeccable
+.claude

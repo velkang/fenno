@@ -1,0 +1,22 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "actora-indexer",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-18",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "vars": {
+    "ARC_RPC_URL": "https://rpc.quicknode.mainnet.arc.io"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "actora-alpha",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../api/migrations"
+    }
+  ]
+}

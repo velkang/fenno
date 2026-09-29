@@ -1,0 +1,30 @@
+{
+  "name": "actora",
+  "private": true,
+  "packageManager": "pnpm@11.1.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "check": "pnpm -r --if-present check",
+    "test": "pnpm -r --if-present test",
+    "dev": "wrangler dev -c api/wrangler.jsonc -c signer/wrangler.jsonc --local",
+    "dev:smoke": "wrangler dev -c api/wrangler.jsonc -c signer/wrangler.jsonc --local --persist-to .wrangler/smoke-state --port 8790",
+    "web:dev": "pnpm --dir web dev",
+    "web:build": "pnpm --dir web build",
+    "db:migrate:local": "wrangler d1 migrations apply actora-alpha --local -c api/wrangler.jsonc",
+    "db:migrate:smoke": "wrangler d1 migrations apply actora-alpha --local --persist-to .wrangler/smoke-state -c api/wrangler.jsonc",
+    "invite:create:local": "node api/scripts/create-local-invite.mjs",
+    "invite:create:smoke": "node api/scripts/create-local-invite.mjs --smoke",
+    "smoke:local": "node api/scripts/smoke-local.mjs",
+    "indexer:dev": "wrangler dev -c indexer/wrangler.jsonc --local --test-scheduled --persist-to api/.wrangler/state --port 8788",
+    "contracts:build": "pnpm --dir contracts build",
+    "contracts:test": "pnpm --dir contracts test",
+    "contracts:test:upstream": "pnpm --dir contracts test:upstream",
+    "contracts:deploy:arc-compatibility": "pnpm --dir contracts deploy:arc-compatibility",
+    "contracts:deploy:arc-testnet": "pnpm --dir contracts deploy:arc-testnet"
+  },
+  "devDependencies": {
+    "wrangler": "^4.135.0"
+  }
+}

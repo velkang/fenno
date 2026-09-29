@@ -1,0 +1,7 @@
+WALLET_KEK_V1=replace-with-a-base64-encoded-32-byte-local-key
+WALLET_KEK_V2=replace-with-a-different-base64-encoded-32-byte-local-key
+
+# Raw token-unit caps. Keep both at zero until explicitly choosing alpha limits.
+ALPHA_MAX_USDC_RAW=0
+ALPHA_MAX_CIRBTC_RAW=0
+MAINNET_EMERGENCY_STOP=true

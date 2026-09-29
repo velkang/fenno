@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Actora UI Mockup & Template Chooser</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
+    
+    body {
+      font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Smooth transitions */
+    * {
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+    }
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body id="app-root" class="min-h-screen bg-[#07090e] text-slate-100 antialiased p-4 sm:p-6 pb-24">
+
+  <!-- TOP STICKY TEMPLATE & PAGE CONTROLLER -->
+  <header class="sticky top-2 z-50 mb-8 rounded-2xl border border-white/15 bg-black/80 backdrop-blur-xl p-3 shadow-2xl">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Logo & Mode Info -->
+      <div class="flex items-center gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-black font-black shadow-lg shadow-emerald-500/20">
+          A
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-sm tracking-tight text-white">Actora Design Studio</span>
+            <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 uppercase tracking-wider">Live Mockup</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Click below to test templates and navigate pages</p>
+        </div>
+      </div>
+
+      <!-- TEMPLATE PICKER (Theme/Style options) -->
+      <div class="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-1">
+        <span class="px-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Style:</span>
+        <button onclick="setTheme('meteora')" id="btn-theme-meteora" class="theme-btn rounded-lg px-3 py-1.5 text-xs font-semibold bg-emerald-500 text-slate-950 shadow-md">
+          1. Meteora DLMM
+        </button>
+        <button onclick="setTheme('impeccable')" id="btn-theme-impeccable" class="theme-btn rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white">
+          2. Impeccable Swiss
+        </button>
+        <button onclick="setTheme('cyber')" id="btn-theme-cyber" class="theme-btn rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white">
+          3. Cyber Bento
+        </button>
+      </div>
+
+      <!-- PAGE NAVIGATION (True Page Switching) -->
+      <nav class="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+        <button onclick="setPage('deposit')" id="nav-deposit" class="page-nav-btn flex items-center gap-2 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white">
+          <span>💧</span> Explore & Deposit
+        </button>
+        <button onclick="setPage('positions')" id="nav-positions" class="page-nav-btn flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white">
+          <span>📊</span> My Positions <span class="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[10px] text-emerald-400 font-mono font-bold">1</span>
+        </button>
+        <button onclick="setPage('wallet')" id="nav-wallet" class="page-nav-btn flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white">
+          <span>🛡️</span> Safe Wallet
+        </button>
+      </nav>
+
+    </div>
+  </header>
+
+  <!-- MAIN VIEW CONTAINER -->
+  <main class="mx-auto max-w-5xl">
+
+    <!-- ========================================================= -->
+    <!-- PAGE 1: EXPLORE & DEPOSIT PAGE                            -->
+    <!-- ========================================================= -->
+    <section id="page-deposit" class="page-view space-y-6">
+
+      <!-- Hero / Token Discovery Bar -->
+      <div class="card-bg rounded-3xl border p-6 sm:p-8 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+          <div>
+            <span class="text-[11px] font-bold tracking-[0.16em] uppercase text-cyan-400">Dynamic Liquidity Market Maker</span>
+            <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-1">Provide Liquidity on Arc</h1>
+            <p class="text-xs sm:text-sm text-slate-400 mt-1 max-w-xl">
+              Earn swap fees by providing capital. Choose a pair or paste any Arc token contract address.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400">
+              <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Arc Mainnet (5042)
+            </span>
+          </div>
+        </div>
+
+        <!-- Token Contract Address Input -->
+        <div class="space-y-3">
+          <label class="block text-xs font-semibold text-slate-300">
+            Select Verified Pool or Paste Token Contract Address (CA)
+          </label>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <div class="relative flex-1">
+              <input 
+                type="text" 
+                value="0x82916bee18fCEF517B26C72d7Cb5F13694E1dB41" 
+                placeholder="0x... paste any Arc ERC-20 token address"
+                class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none"
+              >
+              <button class="absolute right-2.5 top-2.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 hover:bg-white/10">
+                Clear
+              </button>
+            </div>
+            <button class="rounded-xl bg-cyan-400 px-6 py-3 text-xs sm:text-sm font-bold text-slate-950 hover:bg-cyan-300 active:scale-95 shadow-lg shadow-cyan-400/20">
+              Load Pool
+            </button>
+          </div>
+
+          <!-- Quick Pool Presets -->
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <span class="text-xs text-slate-500">Popular on Arc:</span>
+            <button class="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-xs font-semibold text-cyan-300 flex items-center gap-1.5">
+              <span>₿</span> cirBTC / USDC <span class="text-[10px] text-cyan-400/70 font-mono">0.01%</span>
+            </button>
+            <button class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-400 hover:border-white/20 hover:text-slate-200">
+              Ξ WETH / USDC
+            </button>
+            <button class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-400 hover:border-white/20 hover:text-slate-200">
+              🪙 USDS / USDC
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Pool Spotlight & Price Bar -->
+      <div class="card-bg rounded-3xl border p-6 sm:p-8 space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
+          <div class="flex items-center gap-3.5">
+            <div class="flex -space-x-2">
+              <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-base shadow-md">
+                ₿
+              </div>
+              <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold text-base shadow-md">
+                $
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg sm:text-xl font-bold text-white">cirBTC / USDC Pool</h2>
+                <span class="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[11px] font-bold text-cyan-300">0.01% Fee Tier</span>
+              </div>
+              <p class="text-xs text-slate-400 font-mono mt-0.5">Pool: 0x82916...1dB41 · Tick Spacing: 1</p>
+            </div>
+          </div>
+
+          <div class="text-left sm:text-right">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Current Market Price</span>
+            <div class="font-mono text-2xl sm:text-3xl font-extrabold text-white">
+              $86,658.64 <span class="text-sm font-normal text-slate-400">USDC per cirBTC</span>
+            </div>
+            <span class="text-[11px] text-emerald-400 font-medium">● Live Arc Chain Oracle</span>
+          </div>
+        </div>
+
+        <!-- 1. METEORA STRATEGY PRESETS (Abstracting Ticks for Normal Users) -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="text-sm font-bold text-white flex items-center gap-2">
+              <span>🎯 Step 1: Choose Your Strategy</span>
+              <span class="text-xs font-normal text-slate-400">(No crypto math required)</span>
+            </label>
+            <button onclick="toggleProMode()" class="text-xs font-semibold text-cyan-400 hover:underline flex items-center gap-1">
+              <span id="pro-toggle-text">Show Pro Ticks & Spacing</span> ⚙️
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            
+            <!-- Strategy Card 1: Conservative -->
+            <button onclick="selectStrategy('conservative')" id="strat-conservative" class="strategy-card text-left rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-white/20 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-400">🛡️ Conservative</span>
+                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-mono text-slate-300">±25%</span>
+              </div>
+              <div class="text-base font-bold text-white mb-1">Set & Forget</div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                Broad safety buffer. Rarely goes out of range even during market swings.
+              </p>
+              <div class="font-mono text-xs text-cyan-300 pt-2 border-t border-white/5">
+                $65,000 – $108,300
+              </div>
+            </button>
+
+            <!-- Strategy Card 2: Balanced (Active) -->
+            <button onclick="selectStrategy('balanced')" id="strat-balanced" class="strategy-card text-left rounded-2xl border-2 border-emerald-400 bg-emerald-500/10 p-4 shadow-lg shadow-emerald-500/10 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">⚖️ Balanced (Recommended)</span>
+                <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-300">±10%</span>
+              </div>
+              <div class="text-base font-bold text-white mb-1">Optimal Yield</div>
+              <p class="text-xs text-slate-300 leading-relaxed mb-3">
+                Higher fee earnings with steady price coverage for typical volatility.
+              </p>
+              <div class="font-mono text-xs text-emerald-300 font-bold pt-2 border-t border-white/10">
+                $78,000 – $95,300
+              </div>
+            </button>
+
+            <!-- Strategy Card 3: Focused -->
+            <button onclick="selectStrategy('focused')" id="strat-focused" class="strategy-card text-left rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-white/20 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-400">⚡ Focused</span>
+                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-mono text-slate-300">±3%</span>
+              </div>
+              <div class="text-base font-bold text-white mb-1">Max Multiplier</div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                Maximum fee capture while price is calm. Requires active monitoring.
+              </p>
+              <div class="font-mono text-xs text-cyan-300 pt-2 border-t border-white/5">
+                $84,000 – $89,200
+              </div>
+            </button>
+
+          </div>
+
+          <!-- VISUAL PRICE RANGE SLIDER / METER (Meteora Style) -->
+          <div class="rounded-2xl border border-white/10 bg-black/40 p-4 sm:p-5 space-y-3">
+            <div class="flex items-center justify-between text-xs">
+              <div>
+                <span class="text-slate-400 block">Min Earning Price:</span>
+                <span id="range-min-text" class="font-mono text-sm font-bold text-white">$78,000.00</span>
+              </div>
+              <div class="text-center">
+                <span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
+                  ✓ Current Price In Range
+                </span>
+                <div class="font-mono text-xs text-slate-300 mt-1">Spot: $86,658.64</div>
+              </div>
+              <div class="text-right">
+                <span class="text-slate-400 block">Max Earning Price:</span>
+                <span id="range-max-text" class="font-mono text-sm font-bold text-white">$95,300.00</span>
+              </div>
+            </div>
+
+            <!-- Visual Bar -->
+            <div class="relative h-4 rounded-full bg-slate-800 overflow-hidden">
+              <div class="absolute inset-y-0 left-1/4 right-1/4 rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 opacity-90"></div>
+              <!-- Current Spot Indicator Needle -->
+              <div class="absolute inset-y-0 left-1/2 w-1.5 -ml-0.75 bg-white shadow-[0_0_10px_#fff]"></div>
+            </div>
+            <p class="text-[11px] text-slate-400 text-center">
+              Your capital will earn swap fees whenever trades happen between <strong>$78,000</strong> and <strong>$95,300</strong>.
+            </p>
+          </div>
+
+          <!-- OPTIONAL PRO MODE ACCORDION (Hidden by default) -->
+          <div id="pro-mode-drawer" class="hidden rounded-2xl border border-cyan-400/20 bg-cyan-950/20 p-4 text-xs space-y-3">
+            <div class="flex items-center justify-between text-cyan-300 font-bold">
+              <span>⚙️ Advanced Uniswap v3 Parameters (For Power Users)</span>
+              <span class="text-[10px] font-mono">CHAIN ID 5042</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-[11px]">
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <span class="text-slate-400 block">Lower Tick:</span>
+                <span class="text-white font-bold">66500</span>
+              </div>
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <span class="text-slate-400 block">Upper Tick:</span>
+                <span class="text-white font-bold">67500</span>
+              </div>
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <span class="text-slate-400 block">Tick Spacing:</span>
+                <span class="text-white font-bold">1</span>
+              </div>
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <span class="text-slate-400 block">Slippage BPS:</span>
+                <span class="text-white font-bold">100 (1.0%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. DEPOSIT AMOUNTS & AUTO-PAIRING -->
+        <div class="space-y-4 pt-2">
+          <label class="text-sm font-bold text-white block">
+            💵 Step 2: Enter Deposit Amount
+          </label>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
+            <!-- Asset 1: cirBTC -->
+            <div class="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-semibold text-slate-300">cirBTC Amount</span>
+                <span class="font-mono text-slate-400">Available: 0.00002465</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  value="0.00001000" 
+                  class="flex-1 bg-transparent font-mono text-xl font-bold text-white outline-none"
+                  placeholder="0.0"
+                >
+                <div class="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1">
+                  <span class="text-amber-400">₿</span>
+                  <span class="text-xs font-bold">cirBTC</span>
+                </div>
+              </div>
+              <div class="flex items-center justify-between pt-1 border-t border-white/5">
+                <span class="font-mono text-[11px] text-slate-500">≈ $0.87 USD</span>
+                <div class="flex gap-1">
+                  <button class="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-slate-400 hover:text-white">25%</button>
+                  <button class="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-slate-400 hover:text-white">50%</button>
+                  <button class="px-1.5 py-0.5 rounded bg-cyan-400/20 text-[10px] text-cyan-300 font-bold">Max</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Asset 2: USDC (Auto-paired) -->
+            <div class="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-semibold text-slate-300">USDC Amount (Paired)</span>
+                <span class="font-mono text-slate-400">Available: 5.50 USDC</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  value="0.866586" 
+                  class="flex-1 bg-transparent font-mono text-xl font-bold text-white outline-none"
+                  placeholder="0.0"
+                >
+                <div class="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1">
+                  <span class="text-blue-400">$</span>
+                  <span class="text-xs font-bold">USDC</span>
+                </div>
+              </div>
+              <div class="flex items-center justify-between pt-1 border-t border-white/5">
+                <span class="font-mono text-[11px] text-slate-500">≈ $0.87 USD</span>
+                <span class="text-[10px] text-slate-400 italic">Automatically calculated</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- UNIFIED ACTION BUTTON (1-2 Stepper) -->
+          <div class="pt-2">
+            <button class="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 py-4 text-sm sm:text-base font-extrabold text-slate-950 shadow-xl shadow-emerald-500/20 hover:brightness-110 active:scale-[0.99] transition-all">
+              Simulate & Deposit Liquidity
+            </button>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">
+              <span>⚡ Actora automated signer safeguards active</span>
+              <span>Gas estimate: ~0.00004 USDC</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ========================================================= -->
+    <!-- PAGE 2: MY POSITIONS (PORTFOLIO)                          -->
+    <!-- ========================================================= -->
+    <section id="page-positions" class="page-view hidden space-y-6">
+
+      <!-- Portfolio Summary Cards (Meteora Style) -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="card-bg rounded-2xl border p-5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Position Value</span>
+          <div class="font-mono text-2xl font-bold text-white mt-1">$1.89 USD</div>
+          <span class="text-xs text-slate-400">Across 1 open position</span>
+        </div>
+        <div class="card-bg rounded-2xl border p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Unclaimed Fees</span>
+            <button class="rounded-lg bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+              Claim All
+            </button>
+          </div>
+          <div class="font-mono text-2xl font-bold text-emerald-400 mt-1">+$1.15 USD</div>
+          <span class="text-xs text-slate-400">Ready to collect to wallet</span>
+        </div>
+        <div class="card-bg rounded-2xl border p-5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Active Range Health</span>
+          <div class="font-mono text-2xl font-bold text-amber-400 mt-1">1 Paused</div>
+          <span class="text-xs text-slate-400">Market price exceeded upper ceiling</span>
+        </div>
+      </div>
+
+      <!-- Positions List Header -->
+      <div class="flex items-center justify-between pt-2">
+        <div>
+          <h2 class="text-xl font-bold text-white">Your Managed Liquidity Positions</h2>
+          <p class="text-xs text-slate-400">Uniswap v3 NFTs owned and managed by your Actora EOA</p>
+        </div>
+        <button onclick="setPage('deposit')" class="rounded-xl bg-cyan-400 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-300 shadow-md">
+          + Open New Position
+        </button>
+      </div>
+
+      <!-- POSITION CARD 1 (Realistic Out of Range Position) -->
+      <div class="card-bg rounded-3xl border p-6 space-y-5 shadow-xl">
+        
+        <!-- Header row -->
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div class="flex items-center gap-3">
+            <div class="flex -space-x-1.5">
+              <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-sm">₿</span>
+              <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold text-sm">$</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-base text-white">cirBTC / USDC</span>
+                <span class="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">NFT #43542</span>
+                <span class="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-300">0.01% Fee</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5">Pool: 0x82916...1dB41</p>
+            </div>
+          </div>
+
+          <!-- Status badge -->
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-400">
+              <span class="h-2 w-2 rounded-full bg-amber-400"></span>
+              Out of Range (Paused)
+            </span>
+          </div>
+        </div>
+
+        <!-- PLAIN ENGLISH EXPLAINER BANNER (Meteora / Layman Focus) -->
+        <div class="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+          <div class="flex items-start gap-2.5">
+            <span class="text-base">💡</span>
+            <div>
+              <strong class="font-bold block text-amber-100 mb-0.5">Why is this position paused?</strong>
+              cirBTC market price is currently <strong>$86,658.64</strong>, which is above your max ceiling of <strong>$85,206.48</strong>. Your position was safely converted into <strong>100% USDC ($1.89)</strong>. No funds are lost! Fee earnings will automatically resume whenever price retraces back into your range.
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual Price Range Progress Bar -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between font-mono text-xs">
+            <div>
+              <span class="text-slate-500 text-[10px] uppercase block">Min Price</span>
+              <span class="text-slate-300 font-bold">$77,090.69</span>
+            </div>
+            <div class="text-center">
+              <span class="text-amber-400 text-[10px] uppercase font-bold block">Current Market Price</span>
+              <span class="text-white font-extrabold text-sm">$86,658.64</span>
+            </div>
+            <div class="text-right">
+              <span class="text-slate-500 text-[10px] uppercase block">Max Price</span>
+              <span class="text-slate-300 font-bold">$85,206.48</span>
+            </div>
+          </div>
+          <!-- Bar showing out of range to the right -->
+          <div class="relative h-3 rounded-full bg-slate-800 overflow-hidden">
+            <div class="absolute inset-y-0 left-0 w-3/4 rounded-full bg-slate-700 opacity-60"></div>
+            <!-- Current price needle past the right border -->
+            <div class="absolute inset-y-0 right-2 w-2 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]"></div>
+          </div>
+        </div>
+
+        <!-- Earnings & Metrics Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-white/10 pt-4">
+          <div class="rounded-xl border border-white/5 bg-black/20 p-3">
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Your Liquidity</span>
+            <div class="font-mono text-sm font-bold text-white mt-1">1.89 USDC</div>
+            <span class="text-[11px] text-slate-400 font-mono">0.00000000 cirBTC</span>
+          </div>
+          <div class="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+            <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Accrued Trading Fees</span>
+            <div class="font-mono text-sm font-bold text-emerald-300 mt-1">+$1.15 USDC</div>
+            <span class="text-[11px] text-emerald-400/80 font-mono">+0.00000001 cirBTC</span>
+          </div>
+          <div class="rounded-xl border border-white/5 bg-black/20 p-3">
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Tick Indices (Pro)</span>
+            <div class="font-mono text-xs font-bold text-slate-300 mt-1">[66479, 67480]</div>
+            <span class="text-[11px] text-slate-500 font-mono">Current: 67649</span>
+          </div>
+        </div>
+
+        <!-- Position Actions -->
+        <div class="flex flex-wrap items-center gap-2.5 pt-1">
+          <button class="flex-1 rounded-xl bg-emerald-500 py-2.5 text-xs sm:text-sm font-bold text-slate-950 hover:bg-emerald-400 shadow-md">
+            Collect Accrued Fees ($1.15)
+          </button>
+          <button onclick="setPage('deposit')" class="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-xs sm:text-sm font-semibold text-cyan-300 hover:bg-cyan-400/20">
+            Rebalance to New Price
+          </button>
+          <button class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-300 hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-300">
+            Withdraw All & Close
+          </button>
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ========================================================= -->
+    <!-- PAGE 3: MANAGED SAFE WALLET                               -->
+    <!-- ========================================================= -->
+    <section id="page-wallet" class="page-view hidden space-y-6">
+
+      <!-- Custody Architecture Banner -->
+      <div class="card-bg rounded-3xl border p-6 sm:p-8 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-cyan-400">Actora Custody Architecture</span>
+            <h2 class="text-2xl font-bold text-white mt-1">Your Managed Safe EOA</h2>
+            <p class="text-xs sm:text-sm text-slate-400 mt-1 max-w-xl">
+              Actora isolates automated operations in a dedicated on-chain address. Only your personal Owner Wallet can authorize withdrawals.
+            </p>
+          </div>
+          <button class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-300 hover:bg-amber-500/20">
+            Pause Automated Signer
+          </button>
+        </div>
+
+        <!-- Diagram: Owner vs Managed Safe -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          
+          <div class="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-300">🔑 Connected Owner Wallet</span>
+              <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400 font-mono">You</span>
+            </div>
+            <div class="font-mono text-sm font-bold text-white truncate">
+              0xb9E0aD86387fA6866Be4451A9Bec596143211dfC
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Holds private root keys. The only destination permitted to receive asset withdrawals.
+            </p>
+          </div>
+
+          <div class="rounded-2xl border border-cyan-400/30 bg-cyan-950/20 p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-cyan-300">🛡️ Actora Managed Safe EOA</span>
+              <span class="rounded-full bg-cyan-400/20 px-2 py-0.5 text-[10px] text-cyan-300 font-mono">Active</span>
+            </div>
+            <div class="font-mono text-sm font-bold text-white truncate">
+              0xccC7a00b12995a782c210CC164C4a73A62f4d53C
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Envelope-encrypted keys in Cloudflare Worker. Strictly bound to max $10 caps and whitelisted contracts.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Balances & Fund Management -->
+      <div class="card-bg rounded-3xl border p-6 sm:p-8 space-y-6">
+        <h3 class="text-lg font-bold text-white">Safe Balance & Reserves</h3>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="rounded-2xl border border-white/10 bg-black/30 p-4">
+            <span class="text-[11px] text-slate-400 uppercase font-bold">Native Gas USDC</span>
+            <div class="font-mono text-2xl font-bold text-white mt-1">5.5000</div>
+            <span class="text-[11px] text-emerald-400">Gas reserved for operations</span>
+          </div>
+
+          <div class="rounded-2xl border border-white/10 bg-black/30 p-4">
+            <span class="text-[11px] text-slate-400 uppercase font-bold">ERC-20 Spendable USDC</span>
+            <div class="font-mono text-2xl font-bold text-white mt-1">5.5000</div>
+            <span class="text-[11px] text-cyan-400">Available to deposit in pools</span>
+          </div>
+
+          <div class="rounded-2xl border border-white/10 bg-black/30 p-4">
+            <span class="text-[11px] text-slate-400 uppercase font-bold">cirBTC Holdings</span>
+            <div class="font-mono text-2xl font-bold text-white mt-1">0.00002465</div>
+            <span class="text-[11px] text-amber-400">≈ $2.14 USD</span>
+          </div>
+        </div>
+
+        <!-- Deposit Funds Section -->
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-3">
+          <span class="text-sm font-bold text-white block">📥 How to Fund Your Safe</span>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Send Native USDC, ERC-20 USDC, or any Arc token to your Managed Safe address. Actora will immediately detect and display them.
+          </p>
+          <div class="flex items-center gap-2 font-mono text-xs bg-black/50 p-3 rounded-xl border border-white/10 text-slate-200">
+            <span class="flex-1 truncate">0xccC7a00b12995a782c210CC164C4a73A62f4d53C</span>
+            <button class="px-3 py-1 rounded-lg bg-cyan-400/20 text-cyan-300 font-bold hover:bg-cyan-400/30">
+              Copy Address
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- INTERACTIVE CLIENT SCRIPT -->
+  <script>
+    // Page switcher
+    function setPage(pageId) {
+      document.querySelectorAll('.page-view').forEach(el => el.classList.add('hidden'));
+      document.getElementById('page-' + pageId).classList.remove('hidden');
+
+      document.querySelectorAll('.page-nav-btn').forEach(btn => {
+        btn.classList.remove('bg-white/15', 'text-white', 'font-semibold');
+        btn.classList.add('text-slate-400', 'font-medium');
+      });
+      const activeBtn = document.getElementById('nav-' + pageId);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-white/15', 'text-white', 'font-semibold');
+        activeBtn.classList.remove('text-slate-400', 'font-medium');
+      }
+    }
+
+    // Strategy selector
+    function selectStrategy(strat) {
+      document.querySelectorAll('.strategy-card').forEach(c => {
+        c.classList.remove('border-2', 'border-emerald-400', 'bg-emerald-500/10', 'shadow-lg');
+        c.classList.add('border-white/10', 'bg-white/5');
+      });
+      const target = document.getElementById('strat-' + strat);
+      if (target) {
+        target.classList.add('border-2', 'border-emerald-400', 'bg-emerald-500/10', 'shadow-lg');
+        target.classList.remove('border-white/10', 'bg-white/5');
+      }
+
+      const minEl = document.getElementById('range-min-text');
+      const maxEl = document.getElementById('range-max-text');
+      if (strat === 'conservative') {
+        minEl.innerText = '$65,000.00';
+        maxEl.innerText = '$108,300.00';
+      } else if (strat === 'balanced') {
+        minEl.innerText = '$78,000.00';
+        maxEl.innerText = '$95,300.00';
+      } else if (strat === 'focused') {
+        minEl.innerText = '$84,000.00';
+        maxEl.innerText = '$89,200.00';
+      }
+    }
+
+    // Pro mode toggle
+    function toggleProMode() {
+      const drawer = document.getElementById('pro-mode-drawer');
+      const text = document.getElementById('pro-toggle-text');
+      if (drawer.classList.contains('hidden')) {
+        drawer.classList.remove('hidden');
+        text.innerText = 'Hide Pro Ticks';
+      } else {
+        drawer.classList.add('hidden');
+        text.innerText = 'Show Pro Ticks & Spacing';
+      }
+    }
+
+    // Theme / Template Switcher
+    function setTheme(theme) {
+      const root = document.getElementById('app-root');
+      document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.classList.remove('bg-emerald-500', 'text-slate-950', 'font-semibold', 'shadow-md');
+        btn.classList.add('text-slate-300', 'font-medium');
+      });
+      const activeBtn = document.getElementById('btn-theme-' + theme);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-emerald-500', 'text-slate-950', 'font-semibold', 'shadow-md');
+        activeBtn.classList.remove('text-slate-300', 'font-medium');
+      }
+
+      if (theme === 'meteora') {
+        root.className = 'min-h-screen bg-[#07090e] text-slate-100 antialiased p-4 sm:p-6 pb-24';
+        document.querySelectorAll('.card-bg').forEach(c => {
+          c.className = c.className.replace(/bg-\[[^\]]+\]/g, '').replace(/border-\[[^\]]+\]/g, '');
+          c.classList.add('bg-[#10141d]', 'border-white/10');
+        });
+      } else if (theme === 'impeccable') {
+        root.className = 'min-h-screen bg-[#0d1117] text-slate-100 antialiased p-4 sm:p-6 pb-24';
+        document.querySelectorAll('.card-bg').forEach(c => {
+          c.className = c.className.replace(/bg-\[[^\]]+\]/g, '').replace(/border-\[[^\]]+\]/g, '');
+          c.classList.add('bg-[#161b22]', 'border-white/15');
+        });
+      } else if (theme === 'cyber') {
+        root.className = 'min-h-screen bg-[#04060a] text-slate-100 antialiased p-4 sm:p-6 pb-24';
+        document.querySelectorAll('.card-bg').forEach(c => {
+          c.className = c.className.replace(/bg-\[[^\]]+\]/g, '').replace(/border-\[[^\]]+\]/g, '');
+          c.classList.add('bg-[#0b101b]', 'border-cyan-500/20');
+        });
+      }
+    }
+  </script>
+</body>
+</html>

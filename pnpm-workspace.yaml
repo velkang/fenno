@@ -1,0 +1,16 @@
+packages:
+  - api
+  - automation
+  - indexer
+  - chain
+  - signer
+  - web
+
+allowBuilds:
+  '@reown/appkit': true
+  bufferutil: true
+  esbuild: true
+  keccak: true
+  utf-8-validate: true
+  workerd: true
+confirmModulesPurge: false
