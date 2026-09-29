@@ -26,7 +26,7 @@ import {
   mintPayloadHash,
   swapPayloadHash,
   withdrawalPayloadHash,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import {
   validateMainnetIntent,
   type MainnetPolicyRequest,

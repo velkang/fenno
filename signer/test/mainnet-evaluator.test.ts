@@ -10,7 +10,7 @@ import {
   arcV4PositionActionPayloadHash,
   arcV4SwapPayloadHash,
   v4PoolId,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import {
   evaluateMainnetIntent,
   type LoadedMainnetIntent,

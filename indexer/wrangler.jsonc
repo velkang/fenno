@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "actora-indexer",
+  "name": "stillwater-indexer",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-18",
   "workers_dev": false,
@@ -14,7 +14,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "actora-alpha",
+      "database_name": "stillwater-alpha",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "../api/migrations"
     }

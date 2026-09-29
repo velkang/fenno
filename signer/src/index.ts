@@ -1,4 +1,4 @@
-import { arc, arcTestnet } from "@actora/chain";
+import { arc, arcTestnet } from "@stillwater/chain";
 import {
   createPublicClient,
   http,

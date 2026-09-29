@@ -1,5 +1,5 @@
 import React from "react";
-import type { AlphaWalletSummary } from "@actora/chain";
+import type { AlphaWalletSummary } from "@stillwater/chain";
 import type { ModalType } from "./IntentActionModal";
 
 type Props = {
@@ -23,7 +23,7 @@ export const PositionsManager: React.FC<Props> = ({ summary, onOpenModal }) => {
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            Uniswap v3 ERC-721 positions owned and managed by your Actora EOA.
+            Uniswap v3 ERC-721 positions owned and managed by your Stillwater EOA.
           </p>
         </div>
 

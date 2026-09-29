@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
-import type { DiscoveredPool } from "@actora/chain";
+import type { DiscoveredPool } from "@stillwater/chain";
 import { api, ApiError, type ManagedWalletRecord, type TokenPoolDiscovery } from "../lib/api-client";
 
 type Props = {
@@ -163,7 +163,7 @@ export const TokenLiquidityFlow: React.FC<Props> = ({ wallet, onRefresh, onNotif
         if (attempt === 5) throw caught;
       }
     }
-    onNotify("info", "Still finalizing", "The transaction remains tracked by Actora and will reconcile in the background.");
+    onNotify("info", "Still finalizing", "The transaction remains tracked by Stillwater and will reconcile in the background.");
     return false;
   };
 
@@ -258,7 +258,7 @@ export const TokenLiquidityFlow: React.FC<Props> = ({ wallet, onRefresh, onNotif
     setExecuting(true);
     try {
       if (await executeAndWait(preparedMint.intentId)) {
-        onNotify("success", "Liquidity position opened", `Position NFT #${preparedMint.tokenId} is now managed by Actora.`);
+        onNotify("success", "Liquidity position opened", `Position NFT #${preparedMint.tokenId} is now managed by Stillwater.`);
         setPreparedMint(null);
         await Promise.all([onRefresh(), refreshDiscovery()]);
       }
@@ -286,7 +286,7 @@ export const TokenLiquidityFlow: React.FC<Props> = ({ wallet, onRefresh, onNotif
             <p className="mb-3 text-[11px] font-semibold tracking-[0.18em] text-cyan-300/80">LIQUIDITY STUDIO</p>
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-slate-50 sm:text-3xl">Bring an Arc token into a live pool.</h2>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-              Paste a contract address. Actora checks compatibility, shows the initialized Uniswap pools it can use, and keeps the final approval and mint under the same signer safeguards as the alpha pool.
+              Paste a contract address. Stillwater checks compatibility, shows the initialized Uniswap pools it can use, and keeps the final approval and mint under the same signer safeguards as the alpha pool.
             </p>
           </div>
           <div className="min-w-[210px] rounded-2xl border border-cyan-300/15 bg-black/15 p-4">
@@ -436,13 +436,13 @@ export const TokenLiquidityFlow: React.FC<Props> = ({ wallet, onRefresh, onNotif
         </div>
 
         <aside className="self-start rounded-2xl border border-white/10 bg-surface/35 p-5">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">i</span>What Actora checks</div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">i</span>What Stillwater checks</div>
           <ul className="mt-4 space-y-3 text-xs leading-5 text-slate-400">
             <li className="flex gap-2"><span className="text-cyan-300">•</span><span>Contract bytecode and usable ERC-20 reads.</span></li>
             <li className="flex gap-2"><span className="text-cyan-300">•</span><span>Canonical Arc Uniswap v3 token / USDC pools only.</span></li>
             <li className="flex gap-2"><span className="text-cyan-300">•</span><span>Initialized price, fee tier, tick spacing, and exact simulation.</span></li>
           </ul>
-          <div className="mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-amber-200/80">Actora does not detect honeypots, audit contracts, or endorse a token. You are responsible for the CA and the liquidity decision.</div>
+          <div className="mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-amber-200/80">Stillwater does not detect honeypots, audit contracts, or endorse a token. You are responsible for the CA and the liquidity decision.</div>
         </aside>
       </div>
     </section>

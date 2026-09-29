@@ -186,7 +186,7 @@ describe("private-alpha authentication", () => {
     );
     expect(verifyResponse.status).toBe(200);
     const setCookie = verifyResponse.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain("actora_session=");
+    expect(setCookie).toContain("stillwater_session=");
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("SameSite=Strict");
     expect(setCookie).not.toContain("Secure");

@@ -1,5 +1,5 @@
 import { ARC_CHAIN_ID, ARC_TOKENS, UNISWAP_V4_ARC, readArcV4Pool, v4PoolId,
-  type ArcV4PoolKey, type ChainReadClient } from "@actora/chain";
+  type ArcV4PoolKey, type ChainReadClient } from "@stillwater/chain";
 import { getAddress, parseAbi, zeroAddress, type Address, type Hex } from "viem";
 
 const initializeEvent = parseAbi([

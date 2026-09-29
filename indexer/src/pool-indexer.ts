@@ -4,7 +4,7 @@ import {
   readAlphaPoolState,
   type AlphaPoolState,
   type ChainReadClient,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import type { Hex } from "viem";
 
 export type IndexerChainClient = ChainReadClient & {

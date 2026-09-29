@@ -1,4 +1,4 @@
-# Actora signer Worker
+# Stillwater signer Worker
 
 This Worker is a private signing boundary. It must be called only through a Cloudflare service binding and must never receive a public route, `workers.dev` URL, or preview URL.
 

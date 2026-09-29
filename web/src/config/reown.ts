@@ -1,7 +1,7 @@
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { QueryClient } from "@tanstack/react-query";
-import { arc, arcTestnet } from "@actora/chain";
+import { arc, arcTestnet } from "@stillwater/chain";
 
 // Reown Cloud Project ID: customizable via env with fallback for local dev
 export const projectId =
@@ -22,7 +22,7 @@ export const modal = createAppKit({
   defaultNetwork: arcTestnet,
   projectId,
   metadata: {
-    name: "Actora",
+    name: "Stillwater",
     description: "Automated Uniswap Liquidity Management on Arc",
     url: typeof window !== "undefined" ? window.location.origin : "http://localhost:5173",
     icons: ["https://avatars.githubusercontent.com/u/179229932"],

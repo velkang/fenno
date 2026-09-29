@@ -1,4 +1,4 @@
-import type { AlphaWalletSummary, DiscoveredPool, DiscoveredToken } from "@actora/chain";
+import type { AlphaWalletSummary, DiscoveredPool, DiscoveredToken } from "@stillwater/chain";
 
 export type AuthUser = {
   id: string;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import { useChainId } from "wagmi";
-import { ARC_CHAIN_ID, ARC_TOKENS, type AlphaWalletSummary } from "@actora/chain";
+import { ARC_CHAIN_ID, ARC_TOKENS, type AlphaWalletSummary } from "@stillwater/chain";
 import { api, ApiError, type ManagedWalletRecord, type PublicPool } from "../lib/api-client";
 import { formatPoolPrice, poolSpotPrice } from "./ExplorePage";
 
@@ -37,9 +37,9 @@ export function SwapPage({ initialPoolAddress, wallet, summary, onRefresh, onOpe
   const [poolQuoteUnavailable, setPoolQuoteUnavailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
-  const pendingKey = wallet ? `actora_swap_attempt_${wallet.id}` : null;
+  const pendingKey = wallet ? `stillwater_swap_attempt_${wallet.id}` : null;
   const [pendingAttempt, setPendingAttempt] = useState<string | null>(() =>
-    wallet ? sessionStorage.getItem(`actora_swap_attempt_${wallet.id}`) : null);
+    wallet ? sessionStorage.getItem(`stillwater_swap_attempt_${wallet.id}`) : null);
 
   useEffect(() => {
     setPendingAttempt(pendingKey ? sessionStorage.getItem(pendingKey) : null);
@@ -146,7 +146,7 @@ export function SwapPage({ initialPoolAddress, wallet, summary, onRefresh, onOpe
           amount: quote.amountIn,
           idempotencyKey: crypto.randomUUID(),
         });
-        onNotify("info", "Approving swap input", "Actora will approve the exact input amount, then continue.");
+        onNotify("info", "Approving swap input", "Stillwater will approve the exact input amount, then continue.");
         await executeAndWait(approval.intentId);
       }
       const prepared = await api.prepareSwap({
@@ -175,7 +175,7 @@ export function SwapPage({ initialPoolAddress, wallet, summary, onRefresh, onOpe
 
   const outputDecimals = direction === "buy" ? pool?.token.decimals ?? 18 : 6;
   return <section className="m-auto max-w-[1180px] text-[#f3f4f6]" aria-labelledby="swap-title">
-    <div className="mt-2 mb-7"><h1 id="swap-title" className="text-[2rem] font-bold tracking-[-.03em]">Swap</h1><p className="mt-2 text-[#b6c1d1]">Trade in one selected Arc Uniswap v3 pool. Actora does not search for a better route.</p></div>
+    <div className="mt-2 mb-7"><h1 id="swap-title" className="text-[2rem] font-bold tracking-[-.03em]">Swap</h1><p className="mt-2 text-[#b6c1d1]">Trade in one selected Arc Uniswap v3 pool. Stillwater does not search for a better route.</p></div>
     <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(350px,.8fr)] items-start gap-[22px] max-[800px]:grid-cols-1"><div className={CARD}><h2 className="mb-5 text-[1.15rem] font-[650]">Choose a pool</h2>
       {pool ? <div className="grid gap-[9px]"><strong className="text-[1.35rem]">{pool.token.symbol} / USDC</strong>
         <span className={NOTE_TEXT}>Fee {(pool.fee / 10_000).toFixed(2)}% · Pool spot ${formatPoolPrice(poolSpotPrice(pool))}</span>
@@ -207,7 +207,7 @@ export function SwapPage({ initialPoolAddress, wallet, summary, onRefresh, onOpe
         : <button className={PRIMARY_BUTTON} type="button" disabled={!pool || !quote || busy || pendingAttempt !== null || chainId !== ARC_CHAIN_ID}
           onClick={() => { if (review) void submit(); else setReview(true); }}>
           {busy ? "Processing…" : review ? "Confirm swap" : "Review swap"}</button>}
-      {review && quote ? <p className="mt-3.5 text-[.78rem] leading-normal text-[#b6c1d1]">Actora will use up to {amount} {direction === "buy" ? "USDC" : pool?.token.symbol}, approve that exact amount if required, and stop if output falls below the minimum shown.</p> : null}
+      {review && quote ? <p className="mt-3.5 text-[.78rem] leading-normal text-[#b6c1d1]">Stillwater will use up to {amount} {direction === "buy" ? "USDC" : pool?.token.symbol}, approve that exact amount if required, and stop if output falls below the minimum shown.</p> : null}
     </div></div>
   </section>;
 }

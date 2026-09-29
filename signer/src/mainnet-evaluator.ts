@@ -20,7 +20,7 @@ import {
   type ChainReadClient,
   type ArcV4Pool,
   type PoolDiscoveryClient,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import { decodeFunctionData, verifyTypedData, type Address, type Hex } from "viem";
 import type { EncryptedWallet } from "./crypto";
 import {

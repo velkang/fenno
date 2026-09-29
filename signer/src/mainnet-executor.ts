@@ -1,6 +1,6 @@
 import {
   ARC_CHAIN_ID,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import {
   keccak256,
   type Address,

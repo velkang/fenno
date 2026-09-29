@@ -36,9 +36,9 @@ export function PositionReview({ tokenSymbol, amountToken, amountUsdc, valueUsd,
         <div><dt className={FACT_TERM}>If the price leaves your range</dt>
           <dd className={FACT_TEXT}>You stop earning until it comes back. Below ${formatPoolPrice(minPrice)} your position is
             all {tokenSymbol}; above ${formatPoolPrice(maxPrice)} it is all USDC.</dd></div>
-        <div><dt className={FACT_TERM}>Withdraw</dt><dd className={FACT_TEXT}>Any time from My Positions. Both tokens return to your Actora wallet.</dd></div>
+        <div><dt className={FACT_TERM}>Withdraw</dt><dd className={FACT_TEXT}>Any time from My Positions. Both tokens return to your Stillwater wallet.</dd></div>
       </dl>
-      <p className="mt-3.5 mb-1.5 text-[.8rem] text-[#b6c1d1]">Confirming sends {maxTransactions === 1 ? "1 transaction" : `up to ${maxTransactions} transactions`} from your Actora wallet:</p>
+      <p className="mt-3.5 mb-1.5 text-[.8rem] text-[#b6c1d1]">Confirming sends {maxTransactions === 1 ? "1 transaction" : `up to ${maxTransactions} transactions`} from your Stillwater wallet:</p>
       <ol className="m-0 pl-5 text-[.8rem] leading-[1.6] text-[#b6c1d1]">
         {steps.map((step) => <li key={step}>{step}</li>)}
       </ol>

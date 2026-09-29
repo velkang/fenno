@@ -14,7 +14,7 @@ importers:
 
   api:
     dependencies:
-      '@actora/chain':
+      '@stillwater/chain':
         specifier: workspace:*
         version: link:../chain
       hono:
@@ -55,7 +55,7 @@ importers:
 
   indexer:
     dependencies:
-      '@actora/chain':
+      '@stillwater/chain':
         specifier: workspace:*
         version: link:../chain
       viem:
@@ -74,7 +74,7 @@ importers:
 
   signer:
     dependencies:
-      '@actora/chain':
+      '@stillwater/chain':
         specifier: workspace:*
         version: link:../chain
       viem:
@@ -93,15 +93,15 @@ importers:
 
   web:
     dependencies:
-      '@actora/chain':
-        specifier: workspace:*
-        version: link:../chain
       '@reown/appkit':
         specifier: ^1.6.8
         version: 1.8.24(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@19.3.0))(utf-8-validate@5.0.10)(zod@4.6.5)
       '@reown/appkit-adapter-wagmi':
         specifier: ^1.6.8
         version: 1.8.24(81e1d1e3ece7fb61dcbedfb7a87cb464)
+      '@stillwater/chain':
+        specifier: workspace:*
+        version: link:../chain
       '@tanstack/react-query':
         specifier: ^5.66.0
         version: 5.103.1(react@19.3.0)

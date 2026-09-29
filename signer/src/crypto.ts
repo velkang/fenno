@@ -44,6 +44,7 @@ function additionalData(
   address: Address,
   keyVersion: number,
 ): Uint8Array {
+  // Keeps the pre-rename "actora" prefix: existing wallet keys were encrypted with it.
   return utf8.encode(
     `actora-wallet-v1:${walletId}:${keyVersion}:${address.toLowerCase()}`,
   );

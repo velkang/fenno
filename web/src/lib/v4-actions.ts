@@ -1,4 +1,4 @@
-import { buildArcV4Mint } from "@actora/chain";
+import { buildArcV4Mint } from "@stillwater/chain";
 import { getAddress, zeroAddress, type Hex } from "viem";
 import { api } from "./api-client";
 

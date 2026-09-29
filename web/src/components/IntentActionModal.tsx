@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { parseUnits, formatUnits } from "viem";
 import { api } from "../lib/api-client";
-import type { AlphaPosition, AlphaWalletSummary } from "@actora/chain";
+import type { AlphaPosition, AlphaWalletSummary } from "@stillwater/chain";
 import { IconClose, IconArrowLeftRight, IconCheck, IconAlert } from "./Icons";
 
 export type ModalType =
@@ -403,7 +403,7 @@ export const IntentActionModal: React.FC<Props> = ({
           intentId: res.intentId,
           simulationData: res.position,
         });
-        onNotify("success", "Position found", `Position #${res.position.tokenId} belongs to your Actora wallet.`);
+        onNotify("success", "Position found", `Position #${res.position.tokenId} belongs to your Stillwater wallet.`);
       } else if (modal.type === "action") {
         const deadline = String(Math.floor(Date.now() / 1000) + 1800);
         const rawCirBtc = modal.kind === "increase" ? parseHumanUnits(actionAmountCirBtc, 8, "cirBTC", true) : undefined;
@@ -967,7 +967,7 @@ export const IntentActionModal: React.FC<Props> = ({
                   required
                 />
                 <span className="mt-1 block text-[11px] text-[#aab6c8]">
-                  The number Uniswap shows for the position. It must already belong to your Actora wallet and be in the cirBTC/USDC pool. Nothing is sent; we only check it.
+                  The number Uniswap shows for the position. It must already belong to your Stillwater wallet and be in the cirBTC/USDC pool. Nothing is sent; we only check it.
                 </span>
               </div>
             ) : null}
@@ -978,7 +978,7 @@ export const IntentActionModal: React.FC<Props> = ({
                 <strong className="text-[#e7edf5]">
                   {modal.position.claimable0.formatted} cirBTC and {modal.position.claimable1.formatted} USDC
                 </strong>
-                , into your Actora wallet. Anything you took out with Remove some comes along too. Your position stays open and keeps earning.
+                , into your Stillwater wallet. Anything you took out with Remove some comes along too. Your position stays open and keeps earning.
               </div>
             ) : null}
 
@@ -1037,7 +1037,7 @@ export const IntentActionModal: React.FC<Props> = ({
                   {removalPercent(actionLiquidity, modal.position.liquidity) !== null
                     ? `You'll take out about ${removalPercent(actionLiquidity, modal.position.liquidity)}% of this position. `
                     : "Pick how much to take out. "}
-                  The cirBTC and USDC you take out are held in the position until you press Collect fees, which moves them to your Actora wallet. To empty and close the position in one step, use Close position instead.
+                  The cirBTC and USDC you take out are held in the position until you press Collect fees, which moves them to your Stillwater wallet. To empty and close the position in one step, use Close position instead.
                 </p>
                 <button
                   type="button"
@@ -1064,7 +1064,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
             {modal.type === "action" && modal.kind === "withdraw" ? (
               <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 text-xs text-[#e7edf5] leading-relaxed">
-                Takes everything out of this position, including your cirBTC, your USDC and any fees not yet collected, and moves it all into your Actora wallet. The position is then closed for good and stops earning.
+                Takes everything out of this position, including your cirBTC, your USDC and any fees not yet collected, and moves it all into your Stillwater wallet. The position is then closed for good and stops earning.
                 <p className="mt-2 text-[11px] text-[#aab6c8]">
                   Technical details: one transaction that removes all liquidity, collects everything, and burns position #{modal.position.tokenId}.
                 </p>
@@ -1087,7 +1087,7 @@ export const IntentActionModal: React.FC<Props> = ({
           <div className="flex flex-col gap-4">
             {modal.type === "import" ? (
               <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 text-xs leading-relaxed text-[#e7edf5]">
-                Position <strong className="text-[#e7edf5]">#{preparedIntent.simulationData?.tokenId}</strong> belongs to your Actora wallet. It will now show in your positions.
+                Position <strong className="text-[#e7edf5]">#{preparedIntent.simulationData?.tokenId}</strong> belongs to your Stillwater wallet. It will now show in your positions.
               </div>
             ) : (
               <>
@@ -1101,7 +1101,7 @@ export const IntentActionModal: React.FC<Props> = ({
                     kind === "mint" ? "You'll deposit about"
                       : kind === "increase" ? "You'll add about"
                         : kind === "decrease" ? "You'll take out about"
-                          : "Your Actora wallet will receive about";
+                          : "Your Stillwater wallet will receive about";
                   return (
                     <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 flex flex-col gap-2">
                       <div className="text-xs font-semibold text-[#e7edf5]">{heading}</div>
@@ -1123,7 +1123,7 @@ export const IntentActionModal: React.FC<Props> = ({
                 })()}
 
                 <div className="rounded-xl border border-[#145c47] bg-[#092820] p-3.5 text-xs leading-relaxed text-[#e7edf5]">
-                  Confirming sends <strong className="text-[#e7edf5]">1 transaction</strong> from your Actora wallet on Arc Mainnet. Each action is limited to 10 USDC or 0.0005 cirBTC, and Actora checks the exact transaction again before sending it.
+                  Confirming sends <strong className="text-[#e7edf5]">1 transaction</strong> from your Stillwater wallet on Arc Mainnet. Each action is limited to 10 USDC or 0.0005 cirBTC, and Stillwater checks the exact transaction again before sending it.
                 </div>
 
                 <div className="text-[11px] text-[#aab6c8] break-all">

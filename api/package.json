@@ -1,5 +1,5 @@
 {
-  "name": "@actora/api",
+  "name": "@stillwater/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@actora/chain": "workspace:*",
+    "@stillwater/chain": "workspace:*",
     "hono": "^4.9.9",
     "viem": "^2.37.3"
   },

@@ -1,5 +1,5 @@
 {
-  "name": "@actora/web",
+  "name": "@stillwater/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "check": "tsc -b"
   },
   "dependencies": {
-    "@actora/chain": "workspace:*",
+    "@stillwater/chain": "workspace:*",
     "@reown/appkit": "^1.6.8",
     "@reown/appkit-adapter-wagmi": "^1.6.8",
     "@tanstack/react-query": "^5.66.0",

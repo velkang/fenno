@@ -84,7 +84,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
             <IconShield size={24} />
           </div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 mb-2">
-            Sign In to Actora
+            Sign In to Stillwater
           </h2>
           <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">
             Connect your owner wallet to establish a Sign-In With Ethereum (SIWE) session for automated liquidity operations.

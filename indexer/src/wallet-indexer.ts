@@ -2,7 +2,7 @@ import {
   ARC_CHAIN_ID,
   readAlphaWalletSummary,
   type AlphaWalletSummary,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import type { Address, Hex } from "viem";
 import type { IndexerChainClient } from "./pool-indexer";
 

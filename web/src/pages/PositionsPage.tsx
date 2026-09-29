@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import type { AlphaWalletSummary } from "@actora/chain";
+import type { AlphaWalletSummary } from "@stillwater/chain";
 import { zeroAddress } from "viem";
 import { api, type ManagedWalletRecord, type V4Position } from "../lib/api-client";
 import { tickToPrice as tickToPairPrice } from "../lib/range-math";
@@ -61,7 +61,7 @@ export const PositionsPage: React.FC<Props> = ({
   const [v4Error, setV4Error] = useState<string | null>(null);
   const [v4Loading, setV4Loading] = useState(false);
   const [v4Action, setV4Action] = useState<string | null>(null);
-  const pendingKey = wallet ? `actora-v4-position-attempt:${wallet.id}` : null;
+  const pendingKey = wallet ? `stillwater-v4-position-attempt:${wallet.id}` : null;
   const [pendingAttempt, setPendingAttempt] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export const PositionsPage: React.FC<Props> = ({
       return;
     }
     if (action === "withdraw" && !window.confirm(
-      `Close your ${position.pool.token.symbol} / USDC position #${position.tokenId}? Both tokens and any fees you've earned go back to your Actora wallet.`,
+      `Close your ${position.pool.token.symbol} / USDC position #${position.tokenId}? Both tokens and any fees you've earned go back to your Stillwater wallet.`,
     )) return;
     setV4Action(`${position.tokenId}:${action}`);
     try {
@@ -122,7 +122,7 @@ export const PositionsPage: React.FC<Props> = ({
           setPendingAttempt(null);
           await Promise.all([refreshV4(), onRefresh()]);
           onNotify("success", action === "collect" ? "Fees collected" : "Position closed",
-            "The tokens are in your Actora wallet.");
+            "The tokens are in your Stillwater wallet.");
           return;
         }
         if (receipt.status !== "pending" && receipt.status !== "submitted") {
@@ -131,7 +131,7 @@ export const PositionsPage: React.FC<Props> = ({
           throw new Error(receipt.reasonCode || "Transaction did not confirm");
         }
       }
-      onNotify("info", "Transaction pending", "Actora is still tracking this transaction on Arc.");
+      onNotify("info", "Transaction pending", "Stillwater is still tracking this transaction on Arc.");
     } catch (error) {
       onNotify("error", "That didn't go through", error instanceof Error ? error.message : "Please retry.");
     } finally { setV4Action(null); }
@@ -142,7 +142,7 @@ export const PositionsPage: React.FC<Props> = ({
     try {
       const receipt = await api.reconcileAttempt(pendingAttempt);
       if (receipt.status === "pending" || receipt.status === "submitted") {
-        onNotify("info", "Transaction pending", "Actora is still tracking it on Arc.");
+        onNotify("info", "Transaction pending", "Stillwater is still tracking it on Arc.");
         return;
       }
       if (pendingKey) sessionStorage.removeItem(pendingKey);

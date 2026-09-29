@@ -1,4 +1,4 @@
-import { arc, type ChainReadClient } from "@actora/chain";
+import { arc, type ChainReadClient } from "@stillwater/chain";
 import { createPublicClient, http } from "viem";
 import { D1PoolIndexerStore } from "./pool-store";
 import { indexAlphaPool, type IndexerChainClient } from "./pool-indexer";

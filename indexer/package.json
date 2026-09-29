@@ -1,5 +1,5 @@
 {
-  "name": "@actora/indexer",
+  "name": "@stillwater/indexer",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@actora/chain": "workspace:*",
+    "@stillwater/chain": "workspace:*",
     "viem": "^2.37.3"
   },
   "devDependencies": {

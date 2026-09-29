@@ -7,7 +7,7 @@ import {
   v4PositionManagerReadAbi,
   v4PoolId,
   type ChainReadClient,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import { hashOpaqueValue, type AuthStore } from "../src/auth";
 import { createApp, type Bindings } from "../src";
 
@@ -16,7 +16,7 @@ const token = getAddress("0x2222222222222222222222222222222222222222");
 const pool = getAddress("0x3333333333333333333333333333333333333333");
 
 describe("token pool discovery route", () => {
-  it("lists only confirmed Actora-minted v4 NFTs still owned by the wallet", async () => {
+  it("lists only confirmed Stillwater-minted v4 NFTs still owned by the wallet", async () => {
     const sessionToken = "v4-position-session";
     const sessionHash = await hashOpaqueValue(sessionToken);
     const authStore = { findSessionUser: async (value: string) =>
@@ -52,7 +52,7 @@ describe("token pool discovery route", () => {
       AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
     const response = await createApp({ createAuthStore: () => authStore,
       createChainClient: () => chainClient }).request("/v1/wallets/v4/positions", {
-      headers: { cookie: `actora_session=${sessionToken}` },
+      headers: { cookie: `stillwater_session=${sessionToken}` },
     }, env);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ positions: [{ tokenId: "7",
@@ -99,7 +99,7 @@ describe("token pool discovery route", () => {
     const app = createApp({ createAuthStore: () => authStore,
       createChainClient: () => chainClient, now: () => 2_000_000_000_000 });
     const response = await app.request("/v1/wallets/v4/positions/actions/prepare", {
-      method: "POST", headers: { cookie: `actora_session=${sessionToken}`,
+      method: "POST", headers: { cookie: `stillwater_session=${sessionToken}`,
         "content-type": "application/json" }, body: JSON.stringify({ action: "withdraw",
         tokenId: "7", slippageBps: 100, deadline: "2000000600",
         idempotencyKey: "v4-action-idempotency-1" }),
@@ -168,7 +168,7 @@ describe("token pool discovery route", () => {
     const app = createApp({ createAuthStore: () => authStore, createChainClient: () => chainClient });
     const response = await app.request("/v1/wallets/swaps/quote", {
       method: "POST",
-      headers: { cookie: `actora_session=${sessionToken}`, "content-type": "application/json" },
+      headers: { cookie: `stillwater_session=${sessionToken}`, "content-type": "application/json" },
       body: JSON.stringify({ tokenAddress: token, poolAddress: pool,
         direction: "buy", amountIn: "2000000", slippageBps: 100 }),
     }, env);
@@ -288,7 +288,7 @@ describe("token pool discovery route", () => {
     const env = { DB: db, SIGNER: {} as Fetcher, AUTH_DOMAIN: "localhost:8787",
       AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
     const app = createApp({ createAuthStore: () => authStore, createChainClient: () => chainClient });
-    const headers = { cookie: `actora_session=${sessionToken}`, "content-type": "application/json" };
+    const headers = { cookie: `stillwater_session=${sessionToken}`, "content-type": "application/json" };
     const request = { poolId, tokenIn: zeroAddress, amountIn: "100000000000000000", slippageBps: 100 };
     const quote = await app.request("/v1/wallets/v4/swaps/quote", {
       method: "POST", headers, body: JSON.stringify(request),
@@ -366,7 +366,7 @@ describe("token pool discovery route", () => {
 
     const response = await app.request(
       `/v1/wallets/tokens/${token}/pools`,
-      { headers: { cookie: `actora_session=${sessionToken}` } },
+      { headers: { cookie: `stillwater_session=${sessionToken}` } },
       env,
     );
 

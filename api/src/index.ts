@@ -61,7 +61,7 @@ import {
   type Mint,
   type PoolDiscoveryClient,
   type PositionActionClient,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import {
   AuthError,
   hashOpaqueValue,
@@ -73,7 +73,7 @@ import {
 import { D1AuthStore } from "./d1-auth-store";
 import { D1IndexerHealthStore, getIndexerHealth } from "./indexer-health";
 
-const SESSION_COOKIE = "actora_session";
+const SESSION_COOKIE = "stillwater_session";
 
 export type Bindings = {
   DB: D1Database;
@@ -516,7 +516,7 @@ export function createApp(dependencies: AppDependencies = {}) {
   app.post("/v1/wallets/provision", async (context) => {
     const user = context.get("user");
     const response = await context.env.SIGNER.fetch(
-      new Request("http://actora-signer/internal/v1/wallets/provision", {
+      new Request("http://stillwater-signer/internal/v1/wallets/provision", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -550,7 +550,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (pendingAttempt) {
       try {
         await context.env.SIGNER.fetch(
-          new Request("http://actora-signer/internal/v1/attempts/reconcile-mainnet", {
+          new Request("http://stillwater-signer/internal/v1/attempts/reconcile-mainnet", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ attemptId: pendingAttempt.id }),
@@ -650,7 +650,7 @@ export function createApp(dependencies: AppDependencies = {}) {
         token: result.token,
         usdc: result.usdc,
         pools: result.pools,
-        liability: "Actora does not validate or endorse this token. You are responsible for the contract address and liquidity decision.",
+        liability: "Stillwater does not validate or endorse this token. You are responsible for the contract address and liquidity decision.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
@@ -2289,7 +2289,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (pendingAttempt) {
       try {
         await context.env.SIGNER.fetch(
-          new Request("http://actora-signer/internal/v1/attempts/reconcile-mainnet", {
+          new Request("http://stillwater-signer/internal/v1/attempts/reconcile-mainnet", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ attemptId: pendingAttempt.id }),
@@ -2301,7 +2301,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     }
 
     const response = await context.env.SIGNER.fetch(
-      new Request("http://actora-signer/internal/v1/intents/execute-mainnet", {
+      new Request("http://stillwater-signer/internal/v1/intents/execute-mainnet", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ intentId }),
@@ -2327,7 +2327,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (!owned) return context.json({ error: "ATTEMPT_NOT_FOUND" }, 404);
 
     const response = await context.env.SIGNER.fetch(
-      new Request("http://actora-signer/internal/v1/attempts/reconcile-mainnet", {
+      new Request("http://stillwater-signer/internal/v1/attempts/reconcile-mainnet", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ attemptId }),
@@ -2366,7 +2366,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
 
     const response = await context.env.SIGNER.fetch(
-      new Request("http://actora-signer/internal/v1/wallets/rotate-key", {
+      new Request("http://stillwater-signer/internal/v1/wallets/rotate-key", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId: user.id, walletId: wallet.id }),
@@ -2389,7 +2389,7 @@ export function createApp(dependencies: AppDependencies = {}) {
 
     const response = await context.env.SIGNER.fetch(
       new Request(
-        "http://actora-signer/internal/v1/wallets/close-empty-testnet-proof",
+        "http://stillwater-signer/internal/v1/wallets/close-empty-testnet-proof",
         {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2447,7 +2447,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       .run();
 
     const response = await context.env.SIGNER.fetch(
-      new Request("http://actora-signer/internal/v1/intents/execute-testnet-proof", {
+      new Request("http://stillwater-signer/internal/v1/intents/execute-testnet-proof", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ intentId, walletId: wallet.id }),

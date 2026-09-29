@@ -10,7 +10,7 @@ import { WalletPanel } from "./components/WalletPanel";
 import { IntentActionModal, type ModalType } from "./components/IntentActionModal";
 import { ToastContainer, type ToastMessage } from "./components/Toast";
 import { api, type AuthUser, type ManagedWalletRecord } from "./lib/api-client";
-import type { AlphaWalletSummary } from "@actora/chain";
+import type { AlphaWalletSummary } from "@stillwater/chain";
 
 function getPageFromLocation(): PageRoute {
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
@@ -142,7 +142,7 @@ export const App: React.FC = () => {
     setUser(null);
     setWallet(null);
     setSummary(null);
-    addToast("info", "Logged Out", "Actora session ended.");
+    addToast("info", "Logged Out", "Stillwater session ended.");
   };
 
   const handleProvision = async () => {
@@ -171,10 +171,10 @@ export const App: React.FC = () => {
       {/* Guest Mode Indicator Banner */}
       {!user && (
         <div className="border-b border-[#263243] bg-[#111827] px-4 py-2.5 text-center text-xs text-[#b6c1d1] max-[680px]:px-3.5 max-[680px]:py-2 max-[680px]:text-[.7rem] max-[680px]:leading-[1.45]">
-          <span className="font-semibold text-[#e7edf5]">Viewing Actora in Preview Mode.</span>{" "}
+          <span className="font-semibold text-[#e7edf5]">Viewing Stillwater in Preview Mode.</span>{" "}
           {activePage === "explore"
             ? "Find an Arc token pool to review."
-            : "Review pools and positions, or swap with your Actora wallet."}{" "}
+            : "Review pools and positions, or swap with your Stillwater wallet."}{" "}
           <button
             onClick={() => setShowAuthModal(true)}
             className="ml-1 font-semibold text-[#6ee7b7] underline hover:text-[#a7f3d0]"
@@ -217,7 +217,7 @@ export const App: React.FC = () => {
               onAuthSuccess={(newUser) => {
                 setUser(newUser);
                 setShowAuthModal(false);
-                addToast("success", "Welcome to Actora", "SIWE session established.");
+                addToast("success", "Welcome to Stillwater", "SIWE session established.");
               }}
               onError={(msg) => addToast("error", "Authentication Error", msg)}
               onClose={() => setShowAuthModal(false)}

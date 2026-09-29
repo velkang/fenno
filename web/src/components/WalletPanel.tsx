@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatUnits, getAddress, isAddress, parseUnits, toHex } from "viem";
 import { useAccount, useChainId, useSignTypedData } from "wagmi";
-import { ARC_CHAIN_ID, withdrawalDomain, withdrawalTypes, type AlphaWalletSummary } from "@actora/chain";
+import { ARC_CHAIN_ID, withdrawalDomain, withdrawalTypes, type AlphaWalletSummary } from "@stillwater/chain";
 import { api, type ManagedWalletRecord } from "../lib/api-client";
 
 const MUTED_TEXT = "text-[.83rem] leading-[1.55] text-[#b6c1d1]";
@@ -35,7 +35,7 @@ export function WalletPanel({ open, wallet, canProvision, ownerAddress, summary,
   const [maximum, setMaximum] = useState<bigint | null>(null);
   const [feeReserve, setFeeReserve] = useState<bigint | null>(null);
   const [assets, setAssets] = useState<Array<{ address: string; symbol: string; decimals: number; raw: string }>>([]);
-  const pendingKey = wallet ? `actora_withdrawal_attempt_${wallet.id}` : null;
+  const pendingKey = wallet ? `stillwater_withdrawal_attempt_${wallet.id}` : null;
   const [pendingAttempt, setPendingAttempt] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const { address: connectedAddress } = useAccount();
@@ -143,27 +143,27 @@ export function WalletPanel({ open, wallet, canProvision, ownerAddress, summary,
 
   return <div className="fixed inset-0 z-70 flex justify-end bg-[#05080ec7] text-[#f3f4f6]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="h-full w-[min(440px,100%)] overflow-auto border-l border-[#344256] bg-[#111827] p-7 shadow-[-20px_0_50px_#0006] max-[520px]:p-5" role="dialog" aria-modal="true" aria-labelledby="wallet-panel-title">
-      <div className="flex items-start justify-between border-b border-[#29364a] pb-[22px]"><div><h2 id="wallet-panel-title" className="text-[1.35rem] font-bold">Wallet</h2><p className={MUTED_TEXT}>Your Actora wallet on Arc</p></div>
+      <div className="flex items-start justify-between border-b border-[#29364a] pb-[22px]"><div><h2 id="wallet-panel-title" className="text-[1.35rem] font-bold">Wallet</h2><p className={MUTED_TEXT}>Your Stillwater wallet on Arc</p></div>
         <button ref={closeRef} type="button" onClick={onClose} aria-label="Close wallet" className={OUTLINE_BUTTON}>Close</button></div>
-      {!wallet ? <div className="grid gap-4 py-[30px]"><p>{canProvision ? "Create your Actora wallet to receive Arc USDC." : "Sign in to create your Actora wallet."}</p>
+      {!wallet ? <div className="grid gap-4 py-[30px]"><p>{canProvision ? "Create your Stillwater wallet to receive Arc USDC." : "Sign in to create your Stillwater wallet."}</p>
         {!canProvision ? <button type="button" onClick={onOpenAuth} className={PRIMARY_BUTTON}>Sign in</button> : null}
         {canProvision ? <button type="button" onClick={onProvision} className={PRIMARY_BUTTON}>Create wallet</button> : null}</div>
         : <>
           <div className="grid gap-2 border-b border-[#29364a] py-[26px]"><span className={LABEL_TEXT}>USDC balance</span><strong className="text-[1.7rem] font-bold tabular-nums">{displayBalance} USDC</strong><small className={MUTED_TEXT}>One balance for transactions and Arc network fees</small></div>
-          <div className="grid gap-2.5 border-b border-[#29364a] py-[23px]"><span className={LABEL_TEXT}>Actora address</span><code className="text-[.76rem] leading-normal wrap-anywhere text-[#e6edf5]">{wallet.address}</code>
+          <div className="grid gap-2.5 border-b border-[#29364a] py-[23px]"><span className={LABEL_TEXT}>Stillwater address</span><code className="text-[.76rem] leading-normal wrap-anywhere text-[#e6edf5]">{wallet.address}</code>
             <button type="button" className={`${OUTLINE_BUTTON} justify-self-start`} onClick={async () => { await navigator.clipboard.writeText(wallet.address); onNotify("info", "Address copied"); }}>Copy address</button></div>
           <div className="mt-2 flex gap-5 border-b border-[#29364a]" role="tablist" aria-label="Wallet actions">
             <button role="tab" className={TAB_BUTTON} aria-selected={tab === "deposit"} onClick={() => { setTab("deposit"); setReview(false); }}>Deposit</button>
             <button role="tab" className={TAB_BUTTON} aria-selected={tab === "withdraw"} onClick={() => setTab("withdraw")}>Withdraw</button>
           </div>
-          {tab === "deposit" ? <div className="grid gap-4 py-[22px]"><p className={MUTED_TEXT}>Send Arc USDC to the Actora address above from your wallet or exchange. This same USDC pays network fees and funds positions.</p>
+          {tab === "deposit" ? <div className="grid gap-4 py-[22px]"><p className={MUTED_TEXT}>Send Arc USDC to the Stillwater address above from your wallet or exchange. This same USDC pays network fees and funds positions.</p>
             <a className="text-[.85rem] text-[#59dbad] underline underline-offset-3" href={`https://explorer.arc.io/address/${wallet.address}`} target="_blank" rel="noreferrer">View address on Arc Explorer</a></div>
             : <form className="grid gap-4 py-[22px]" onSubmit={(event) => { event.preventDefault(); if (review) void withdraw(); else setReview(true); }}>
               <label className={FIELD_LABEL}>Recipient address<input className={FIELD_INPUT} value={recipient} onChange={(event) => { setRecipient(event.target.value); setMaximum(null); setFeeReserve(null); setReview(false); }} placeholder="0x…" autoComplete="off" /></label>
               <label className={FIELD_LABEL}>Amount in USDC<input className={FIELD_INPUT} value={amount} onChange={(event) => { setAmount(event.target.value); setReview(false); }} inputMode="decimal" placeholder="0.00" /></label>
               <button type="button" className="justify-self-start text-[.77rem] text-[#65dfb4]" disabled={maximum === null}
                 onClick={() => { setAmount(formatUnits(maximum ?? 0n, 6)); setReview(false); }}>Use available after fee reserve</button>
-              {review && validRecipient && validAmount ? <p className={`${MUTED_TEXT} rounded-lg border border-[#43536a] p-3 wrap-anywhere`}>Send {amount} USDC to <code className="text-[#e5edf5]">{getAddress(recipient)}</code>. Your connected wallet will sign this exact withdrawal before Actora broadcasts it.</p> : null}
+              {review && validRecipient && validAmount ? <p className={`${MUTED_TEXT} rounded-lg border border-[#43536a] p-3 wrap-anywhere`}>Send {amount} USDC to <code className="text-[#e5edf5]">{getAddress(recipient)}</code>. Your connected wallet will sign this exact withdrawal before Stillwater broadcasts it.</p> : null}
               {pendingAttempt ? <button type="button" onClick={() => void checkPending()}>Check pending withdrawal</button> : null}
               <button className={`${PRIMARY_BUTTON} disabled:cursor-not-allowed disabled:opacity-45`} disabled={!validRecipient || !validAmount || busy || pendingAttempt !== null || !connectedOwner || chainId !== ARC_CHAIN_ID} type="submit">
                 {busy ? "Processing withdrawal…" : review ? "Authorize withdrawal" : "Review withdrawal"}

@@ -5,7 +5,7 @@ import {
   ALPHA_POOL,
   type AlphaWalletSummary,
   type DiscoveredPool,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import { useAppKit } from "@reown/appkit/react";
 import { api, type ManagedWalletRecord, type PublicPool, type TokenPoolDiscovery } from "../lib/api-client";
 import { alignTick, pairedAmount, priceToTick, tickToPrice } from "../lib/range-math";
@@ -419,7 +419,7 @@ export const DepositPage: React.FC<Props> = ({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not open the position";
       onNotify("error", "Position not opened", msg === "V4_MINT_SIMULATION_FAILED" || msg === "V4_POOL_NOT_EXECUTABLE"
-        ? "This pool can't accept new positions through Actora right now. Nothing was sent." : msg);
+        ? "This pool can't accept new positions through Stillwater right now. Nothing was sent." : msg);
     } finally {
       setExecuting(false);
       setProgress(null);
@@ -669,10 +669,10 @@ export const DepositPage: React.FC<Props> = ({
                 <p className="mt-1 mb-0 min-h-[21px] text-[.82rem] text-[#b6c1d1] tabular-nums">≈ {formatCurrency(field.usd)}</p>
                 {field.short ? (
                   <p className="mt-2 mb-0 text-[.78rem] leading-[1.45] text-[#fcd34d]" role="alert">
-                    Not enough {field.symbol} in your Actora wallet.
+                    Not enough {field.symbol} in your Stillwater wallet.
                     {field.isToken && onNeedTokens
                       ? <> <button type="button" className="cursor-pointer border-0 bg-transparent p-0 font-semibold text-[#10b981] underline underline-offset-2" onClick={onNeedTokens}>Buy {token0.symbol} with USDC</button></>
-                      : " Add USDC to your Actora wallet first."}
+                      : " Add USDC to your Stillwater wallet first."}
                   </p>
                 ) : null}
               </div>

@@ -2,7 +2,7 @@ import {
   ARC_CHAIN_ID,
   alphaApprovalPayloadHash,
   buildAlphaApproval,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import {
   keccak256,
   parseTransaction,

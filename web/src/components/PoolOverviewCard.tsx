@@ -1,5 +1,5 @@
 import React from "react";
-import { ALPHA_POOL, type AlphaWalletSummary } from "@actora/chain";
+import { ALPHA_POOL, type AlphaWalletSummary } from "@stillwater/chain";
 
 type Props = {
   summary: AlphaWalletSummary | null;

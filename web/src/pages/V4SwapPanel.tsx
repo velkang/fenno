@@ -26,7 +26,7 @@ export function V4SwapPanel({ pool, wallet, onRefresh, onOpenAuth, onNotify, onS
   const [swapAmount, setSwapAmount] = useState("");
   const [swapQuote, setSwapQuote] = useState<Awaited<ReturnType<typeof api.quoteV4Swap>> | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
-  const pendingKey = wallet ? `actora-v4-pending:${wallet.id}:${pool.address}` : null;
+  const pendingKey = wallet ? `stillwater-v4-pending:${wallet.id}:${pool.address}` : null;
   const [pendingAttempt, setPendingAttempt] = useState<string | null>(() => pendingKey ? sessionStorage.getItem(pendingKey) : null);
 
   useEffect(() => { setPendingAttempt(pendingKey ? sessionStorage.getItem(pendingKey) : null); }, [pendingKey]);
@@ -49,7 +49,7 @@ export function V4SwapPanel({ pool, wallet, onRefresh, onOpenAuth, onNotify, onS
         throw new Error(receipt.reasonCode || "Transaction did not confirm");
       }
     }
-    onNotify("info", "Transaction pending", "Actora is still tracking the transaction on Arc.");
+    onNotify("info", "Transaction pending", "Stillwater is still tracking the transaction on Arc.");
     return false;
   };
 
@@ -150,7 +150,7 @@ export function V4SwapPanel({ pool, wallet, onRefresh, onOpenAuth, onNotify, onS
             "This pool's swap could not be simulated. No swap was sent. Try another pool." : swapError}</p> : null}
       {swapQuote ? <div className={REVIEW}><p className={BODY_TEXT}>Expected: {formatUnits(BigInt(swapQuote.expectedAmountOut), swapDirection === "buy" ? pool.token.decimals : nativeUsdc ? 18 : 6)} {swapDirection === "buy" ? pool.token.symbol : "USDC"}</p>
         <p className={BODY_TEXT}>Minimum after 1% slippage: {formatUnits(BigInt(swapQuote.minimumAmountOut), swapDirection === "buy" ? pool.token.decimals : nativeUsdc ? 18 : 6)}</p>
-        <p className={BODY_TEXT}>Confirm once. Actora will complete any needed approvals before the swap.</p>
+        <p className={BODY_TEXT}>Confirm once. Stillwater will complete any needed approvals before the swap.</p>
         <button type="button" className={PRIMARY_BUTTON} disabled={loading || !!pendingAttempt} onClick={handleSwap}>{loading ? "Processing…" : `Confirm swap`}</button>
       </div> : <button type="button" className={PRIMARY_BUTTON} disabled={loading || !!pendingAttempt || !swapAmount} onClick={handleSwapQuote}>Get swap quote</button>}
     </div>

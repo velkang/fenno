@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "actora-api",
+  "name": "stillwater-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-18",
   "vars": {
@@ -10,7 +10,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "actora-alpha",
+      "database_name": "stillwater-alpha",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
@@ -18,7 +18,7 @@
   "services": [
     {
       "binding": "SIGNER",
-      "service": "actora-signer"
+      "service": "stillwater-signer"
     }
   ]
 }

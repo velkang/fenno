@@ -32,7 +32,7 @@ import {
   type ArcV4Swap,
   type ArcV4PositionAction,
   type PositionAction,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import type { WalletState } from "./policy";
 
 const managerAbi = parseAbi([

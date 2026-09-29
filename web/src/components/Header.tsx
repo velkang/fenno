@@ -1,7 +1,7 @@
 import React from "react";
 import { useAccount, useChainId } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
-import { ARC_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@actora/chain";
+import { ARC_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@stillwater/chain";
 import type { AuthUser } from "../lib/api-client";
 import {
   IconPositions,
@@ -54,12 +54,12 @@ export const Header: React.FC<Props> = ({
           {/* Brand */}
           <button
             type="button"
-            aria-label="Actora home"
+            aria-label="Stillwater home"
           onClick={() => onNavigate("explore")}
             className="flex min-h-11 shrink-0 items-center gap-0 rounded-lg focus-visible:ring-2 focus-visible:ring-blue-600 max-[680px]:col-start-1 max-[680px]:row-start-1"
           >
             <span className="text-[1.5rem] leading-[1.5] font-[750] tracking-[.105em] text-[#f3f4f6] uppercase max-[680px]:text-[1.2rem]">
-              Actora
+              Stillwater
             </span>
           </button>
 
@@ -118,7 +118,7 @@ export const Header: React.FC<Props> = ({
             </span>
           </button>
 
-          <button onClick={onOpenWallet} aria-label="Open Actora wallet" aria-haspopup="dialog" aria-expanded={walletOpen}
+          <button onClick={onOpenWallet} aria-label="Open Stillwater wallet" aria-haspopup="dialog" aria-expanded={walletOpen}
             className="inline-flex min-h-[42px] min-w-11 items-center justify-center gap-2 rounded-[10px] border border-[#344256] bg-[#151e2b] text-[#e7edf5] hover:border-[#53647a] hover:bg-[#1a2635] hover:text-white px-2.5 py-1.5 text-xs font-medium transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.96] lg:px-3 max-[680px]:min-h-[38px] max-[680px]:px-[9px]">
             <IconWallet size={16} /><span>Wallet</span>
           </button>
@@ -136,9 +136,9 @@ export const Header: React.FC<Props> = ({
           ) : user ? (
             <button
               onClick={onLogout}
-              aria-label="Log out of Actora session"
+              aria-label="Log out of Stillwater session"
               className="inline-flex min-h-[42px] items-center rounded-[10px] border border-[#344256] bg-[#151e2b] text-[#e7edf5] hover:border-[#53647a] hover:bg-[#1a2635] hover:text-white px-2.5 py-1.5 text-xs font-medium active:scale-[0.96]"
-              title="Log out of Actora session"
+              title="Log out of Stillwater session"
             >
               <span className="hidden sm:inline">Log Out</span>
               <span className="sm:hidden">Exit</span>

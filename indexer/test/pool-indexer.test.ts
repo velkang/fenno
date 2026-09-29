@@ -1,6 +1,6 @@
 import { createPublicClient, getAddress, http, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { ALPHA_POOL, arc, v4PoolId } from "@actora/chain";
+import { ALPHA_POOL, arc, v4PoolId } from "@stillwater/chain";
 import { indexV4PoolDirectory } from "../src/v4-pool-directory";
 import {
   indexAlphaPool,

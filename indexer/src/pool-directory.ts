@@ -4,7 +4,7 @@ import {
   UNISWAP_V3_ARC,
   discoverArcTokenPools,
   type PoolDiscoveryClient,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import { getAddress, parseAbi, type Address, type Hex } from "viem";
 
 const factoryEvent = parseAbi([

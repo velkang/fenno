@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AlphaWalletSummary } from "@actora/chain";
+import type { AlphaWalletSummary } from "@stillwater/chain";
 import { api, type ManagedWalletRecord, type PublicPool } from "../lib/api-client";
 import { DepositPage } from "./DepositPage";
 import { SwapPage } from "./SwapPage";
@@ -54,7 +54,7 @@ export function PoolPage({ address, wallet, summary, onRefresh, onOpenAuth, onNo
         aria-pressed={step === "position"} onClick={() => setStep("position")}>2 · Add liquidity</button>
     </div>
     {step === "fund" ? <>
-      <p className="my-4 max-w-[70ch] leading-normal text-[#b6c1d1]">A position holds both {pool.token.symbol} and USDC. If your Actora wallet only has USDC, buy some {pool.token.symbol} here first, then continue.</p>
+      <p className="my-4 max-w-[70ch] leading-normal text-[#b6c1d1]">A position holds both {pool.token.symbol} and USDC. If your Stillwater wallet only has USDC, buy some {pool.token.symbol} here first, then continue.</p>
       {isV4
         ? <V4SwapPanel pool={pool} wallet={wallet} onRefresh={onRefresh} onOpenAuth={onOpenAuth}
           onNotify={onNotify} onSwapComplete={() => setStep("position")} />

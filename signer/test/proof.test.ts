@@ -1,7 +1,7 @@
 import {
   ARC_TESTNET_PROOF_KIND,
   arcTestnetProofPayloadHash,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import {
   keccak256,
   parseTransaction,

@@ -2,7 +2,7 @@ import {
   ARC_TESTNET_CHAIN_ID,
   ARC_TESTNET_PROOF_KIND,
   arcTestnetProofPayloadHash,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import type {
   Address,
   Hex,

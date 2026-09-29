@@ -1,5 +1,5 @@
 import { getAddress } from "viem";
-import { ALPHA_POOL } from "@actora/chain";
+import { ALPHA_POOL } from "@stillwater/chain";
 import type {
   ManagedWallet,
   PositionSnapshot,

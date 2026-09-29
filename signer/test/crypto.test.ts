@@ -12,7 +12,7 @@ describe("managed wallet encryption", () => {
   it("provisions an encrypted wallet that can sign without exporting its key", async () => {
     const wrappingKey = await importWrappingKey(generateWrappingKey());
     const wallet = await provisionEncryptedWallet(wrappingKey, 1, "wallet-1");
-    const message = "actora-signer-proof";
+    const message = "stillwater-signer-proof";
     const signature = await withManagedAccount(wallet, wrappingKey, (account) =>
       account.signMessage({ message }),
     );

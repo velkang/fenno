@@ -3,7 +3,7 @@ import {
   ALPHA_POOL,
   ARC_TOKENS,
   UNISWAP_V3_ARC,
-} from "@actora/chain";
+} from "@stillwater/chain";
 import type { Address } from "viem";
 import type { IndexerChainClient } from "../src/pool-indexer";
 import {

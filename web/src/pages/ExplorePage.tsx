@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatUnits, zeroAddress } from "viem";
 import { api, type PublicPool } from "../lib/api-client";
-import { ARC_TOKENS } from "@actora/chain";
+import { ARC_TOKENS } from "@stillwater/chain";
 
 export const PAGE_TITLE = "text-[2rem] leading-[1.2] font-bold tracking-[-.03em]";
 export const PAGE_INTRO = "mt-2 text-[.94rem] text-[#b6c1d1]";
@@ -104,6 +104,6 @@ export function ExplorePage({ onSelectPool }: Props) {
       <span>Page {Math.floor(offset / 25) + 1}</span>
       <button className={`${OUTLINE_BUTTON} disabled:cursor-not-allowed disabled:opacity-40`} disabled={nextOffset === null} onClick={() => { setLoading(true); setOffset(nextOffset ?? offset); }}>Next</button>
     </div> : null}
-    <p className="mt-[18px] text-[.75rem] leading-normal text-[#96a5b8]">Actora lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
+    <p className="mt-[18px] text-[.75rem] leading-normal text-[#96a5b8]">Stillwater lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
   </section>;
 }

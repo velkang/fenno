@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import type { ChainReadClient } from "@actora/chain";
+import type { ChainReadClient } from "@stillwater/chain";
 import { hashOpaqueValue, type AuthStore } from "../src/auth";
 import { createApp, type Bindings } from "../src";
 
@@ -48,7 +48,7 @@ describe("wallet summary", () => {
 
     const response = await app.request(
       "/v1/wallets/summary",
-      { headers: { cookie: `actora_session=${sessionToken}` } },
+      { headers: { cookie: `stillwater_session=${sessionToken}` } },
       env,
     );
 
