@@ -16,6 +16,30 @@ const token = getAddress("0x2222222222222222222222222222222222222222");
 const pool = getAddress("0x3333333333333333333333333333333333333333");
 
 describe("token pool discovery route", () => {
+  it("returns the signed-in wallet's live balance of any token", async () => {
+    const sessionToken = "token-balance-session";
+    const sessionHash = await hashOpaqueValue(sessionToken);
+    const wallet = getAddress("0x4444444444444444444444444444444444444444");
+    const authStore = { findSessionUser: async (value: string) =>
+      value === sessionHash ? { id: "user-1", ownerAddress: owner } : null } as unknown as AuthStore;
+    const db = { prepare() { return { bind() { return this; },
+      async first() { return { id: "wallet-1", address: wallet }; } }; } } as unknown as D1Database;
+    const readContract = vi.fn(async () => 493_648n * 10n ** 18n);
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787" } satisfies Bindings;
+    const app = createApp({ createAuthStore: () => authStore,
+      createChainClient: () => ({ readContract }) as unknown as ChainReadClient });
+    const headers = { cookie: `stillwater_session=${sessionToken}` };
+
+    const response = await app.request(`/v1/wallets/tokens/${token}/balance`, { headers }, env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ balance: (493_648n * 10n ** 18n).toString() });
+    expect(readContract).toHaveBeenCalledWith(expect.objectContaining({ address: token,
+      functionName: "balanceOf", args: [wallet] }));
+
+    const invalid = await app.request("/v1/wallets/tokens/not-a-token/balance", { headers }, env);
+    expect(invalid.status).toBe(400);
+  });
+
   it("lists only confirmed Stillwater-minted v4 NFTs still owned by the wallet", async () => {
     const sessionToken = "v4-position-session";
     const sessionHash = await hashOpaqueValue(sessionToken);

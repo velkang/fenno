@@ -609,7 +609,17 @@ export function createApp(dependencies: AppDependencies = {}) {
            WHERE pd.token_address = si.token_address LIMIT 1), 'Token') AS symbol,
          si.token_decimals AS decimals
        FROM swap_intents si JOIN wallet_intents wi ON wi.id = si.intent_id
-       WHERE wi.wallet_id = ?1 LIMIT 30`,
+       WHERE wi.wallet_id = ?1
+       UNION
+       SELECT vpd.token_address AS address, vpd.token_symbol AS symbol, vpd.token_decimals AS decimals
+       FROM v4_pool_directory vpd
+       WHERE vpd.pool_id IN (
+         SELECT vsi.pool_id FROM v4_swap_intents vsi JOIN wallet_intents wi ON wi.id = vsi.intent_id
+         WHERE wi.wallet_id = ?1
+         UNION
+         SELECT vmi.pool_id FROM v4_mint_intents vmi JOIN wallet_intents wi ON wi.id = vmi.intent_id
+         WHERE wi.wallet_id = ?1)
+       LIMIT 30`,
     ).bind(wallet.id).all<{ address: Address; symbol: string; decimals: number }>();
     const client = (dependencies.createChainClient?.(context.env) ??
       createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })) as PoolDiscoveryClient;
@@ -625,6 +635,29 @@ export function createApp(dependencies: AppDependencies = {}) {
       } catch { return null; }
     }));
     return context.json({ assets: assets.filter((asset) => asset !== null) });
+  });
+
+  app.get("/v1/wallets/tokens/:tokenAddress/balance", async (context) => {
+    let tokenAddress: Address;
+    try {
+      tokenAddress = getAddress(context.req.param("tokenAddress"));
+    } catch {
+      throw new AuthError("INVALID_TOKEN_ADDRESS", 400);
+    }
+    const wallet = await context.env.DB.prepare(
+      "SELECT id, address FROM managed_wallets WHERE user_id = ?1 AND state != 'closed'",
+    ).bind(context.get("user").id).first<{ id: string; address: Address }>();
+    if (!wallet) throw new AuthError("WALLET_NOT_FOUND", 404);
+    const client = (dependencies.createChainClient?.(context.env) ??
+      createPublicClient({ chain: arc, transport: arcRpcTransport(context.env.ARC_RPC_URL) })) as PoolDiscoveryClient;
+    try {
+      const raw = await client.readContract({ address: tokenAddress, abi: swapTokenAbi,
+        functionName: "balanceOf", args: [wallet.address] });
+      return context.json({ balance: String(raw) });
+    } catch (error) {
+      console.error("Token balance read failed", tokenAddress, error);
+      return context.json({ error: "BALANCE_UNAVAILABLE" }, 502);
+    }
   });
 
   app.get("/v1/wallets/tokens/:tokenAddress/pools", async (context) => {

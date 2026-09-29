@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { formatUnits, zeroAddress } from "viem";
 import { api, type PublicPool } from "../lib/api-client";
 import { ARC_TOKENS } from "@stillwater/chain";
+import { usdcDecimals as poolUsdcDecimals } from "../lib/swap-actions";
 
 export const PAGE_TITLE = "text-[2rem] leading-[1.2] font-bold tracking-[-.03em]";
 export const PAGE_INTRO = "mt-2 text-[.94rem] text-[#b6c1d1]";
@@ -13,8 +14,7 @@ const CELL_LABEL = "hidden max-[800px]:mb-1 max-[800px]:block max-[800px]:text-[
 export function poolSpotPrice(pool: PublicPool): number {
   const ratio = (Number(pool.sqrtPriceX96) / 2 ** 96) ** 2;
   const tokenIsZero = pool.token0.toLowerCase() === pool.token.address.toLowerCase();
-  const usdcDecimals = pool.protocol === "uniswap-v4" &&
-    (pool.token0.toLowerCase() === zeroAddress || pool.token1.toLowerCase() === zeroAddress) ? 18 : 6;
+  const usdcDecimals = poolUsdcDecimals(pool);
   const token1PerToken0 = ratio * 10 ** ((tokenIsZero ? pool.token.decimals : usdcDecimals) -
     (tokenIsZero ? usdcDecimals : pool.token.decimals));
   return tokenIsZero ? token1PerToken0 : 1 / token1PerToken0;
@@ -24,6 +24,13 @@ export function formatPoolPrice(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "—";
   return value >= 1 ? value.toLocaleString("en-US", { maximumFractionDigits: 4 })
     : value.toLocaleString("en-US", { maximumSignificantDigits: 5 });
+}
+
+// 0x800000 marks a v4 pool whose fee changes trade by trade.
+export function formatFeeTier(fee: number | undefined): string {
+  if (fee === undefined) return "—";
+  if (fee === 0x800000) return "Varying";
+  return `${(fee / 10_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
 }
 
 type Props = { onSelectPool: (address: string) => void };
@@ -87,15 +94,14 @@ export function ExplorePage({ onSelectPool }: Props) {
             : "No pools listed yet. Paste a token address to look it up directly."}</p>
             : pools.map((pool) => <button type="button" key={pool.address}
               className={`${TABLE_GRID} min-h-[88px] w-full border-b border-[#29364a] bg-transparent text-left text-[.92rem] text-[#e9eef5] transition-[background] duration-160 ease-[ease] last:border-b-0 hover:bg-[#182333] focus-visible:bg-[#182333]`}
-              onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC ${pool.protocol === "uniswap-v4" ? "v4" : "v3"} pool`}>
+              onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC pool`}>
               <span className="flex min-w-0 items-center gap-[13px] max-[800px]:col-span-full"><span className="grid size-[38px] flex-none place-items-center rounded-full border border-[#3c5e59] bg-[#123b35] text-[.75rem] font-bold text-[#62ddae]" aria-hidden="true">{pool.token.symbol.slice(0, 2).toUpperCase()}</span>
-                <span><strong className="block overflow-hidden text-base text-ellipsis whitespace-nowrap">{pool.token.symbol} / USDC <span className="ml-1.5 inline-block rounded-md border border-[#3c5e59] px-[5px] py-0.5 align-[2px] text-[.67rem] font-semibold text-[#a8dac9]" title={`Uniswap ${pool.protocol === "uniswap-v4" ? "v4" : "v3"} pool`}>{pool.protocol === "uniswap-v4" ? "v4" : "v3"}</span></strong><small className="mt-1 block font-mono text-[.72rem] text-[#a4b0c0]">Token {pool.token.address.slice(0, 6)}…{pool.token.address.slice(-4)}
-                  {pool.protocol === "uniswap-v4" && pool.hooks && pool.hooks.toLowerCase() !== zeroAddress ? " · Has extra pool rules" : ""}</small></span></span>
+                <span><strong className="block overflow-hidden text-base text-ellipsis whitespace-nowrap">{pool.token.symbol} / USDC</strong><small className="mt-1 block font-mono text-[.72rem] text-[#a4b0c0]">Token {pool.token.address.slice(0, 6)}…{pool.token.address.slice(-4)}
+                  {pool.hooks && pool.hooks.toLowerCase() !== zeroAddress ? " · Has extra pool rules" : ""}</small></span></span>
               <span className="tabular-nums"><small className={CELL_LABEL}>Token price</small>${formatPoolPrice(poolSpotPrice(pool))}</span>
               <span className="tabular-nums"><small className={CELL_LABEL}>USDC in pool</small>{pool.usdcReserve === null ? "—" :
                 Number(formatUnits(BigInt(pool.usdcReserve), ARC_TOKENS.USDC.decimals)).toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
-              <span className="tabular-nums"><small className={CELL_LABEL}>You earn per trade</small>{pool.fee === 0x800000 ? "Varies"
-                : `${(pool.fee / 10_000).toFixed(2)}%`}</span>
+              <span className="tabular-nums"><small className={CELL_LABEL}>You earn per trade</small>{formatFeeTier(pool.fee)}</span>
               <span className="text-[.8rem] whitespace-nowrap text-[#39d7a1] max-[800px]:justify-self-end">Add liquidity <span aria-hidden="true">→</span></span>
             </button>)}
     </div>

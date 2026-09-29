@@ -194,6 +194,12 @@ export const api = {
     );
   },
 
+  async getTokenBalance(tokenAddress: string) {
+    return request<{ balance: string }>(
+      `/v1/wallets/tokens/${encodeURIComponent(tokenAddress)}/balance`,
+    );
+  },
+
   async discoverTokenPools(tokenAddress: string) {
     return request<TokenPoolDiscovery>(
       `/v1/wallets/tokens/${encodeURIComponent(tokenAddress)}/pools`,

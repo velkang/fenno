@@ -163,53 +163,8 @@ export const PositionsPage: React.FC<Props> = ({
 
   return (
     <div className="mx-auto w-[min(100%,1586px)] space-y-6 text-[0.9375rem] leading-normal text-[#f3f4f6] [-webkit-tap-highlight-color:transparent] max-[680px]:text-[.875rem] [&_:is(button,a):focus-visible]:outline-2 [&_:is(button,a):focus-visible]:outline-offset-3 [&_:is(button,a):focus-visible]:outline-[#6ee7b7]">
-      {wallet && <section className={`space-y-3 ${FIRST_SECTION}`} aria-label="Positions in Uniswap v4 pools">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Positions in v4 pools</h2>
-          <div className="flex gap-3">
-            {pendingAttempt && <button type="button" onClick={() => void checkPendingV4()}
-              className="text-sm text-amber-300">Check last transaction</button>}
-            <button type="button" onClick={() => void refreshV4()} disabled={v4Loading}
-              className="text-sm text-emerald-300 disabled:opacity-50">Refresh</button>
-          </div>
-        </div>
-        {v4Loading && <p className="text-sm text-slate-400" role="status">Loading positions…</p>}
-        {v4Error && <p className="text-sm text-rose-300" role="alert">{v4Error}</p>}
-        {!v4Loading && !v4Error && v4Positions.length === 0 &&
-          <p className="text-sm text-slate-400">You don't have any positions in v4 pools yet.</p>}
-        {v4Positions.map((position) => {
-          const inRange = position.pool.tick >= position.tickLower &&
-            position.pool.tick < position.tickUpper;
-          const range = v4RangePrices(position);
-          const price = poolSpotPrice(position.pool);
-          const symbol = position.pool.token.symbol;
-          return <article key={position.tokenId} className="rounded-xl border border-slate-700 bg-slate-900 p-5 text-slate-100">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h3 className="font-semibold">{symbol} / USDC <span className="text-slate-400">· Position #{position.tokenId}</span></h3>
-                <p className={`mt-1 text-sm ${inRange ? "text-emerald-300" : "text-amber-300"}`}>
-                  {inRange ? "Earning fees" : "Paused: the price is outside your range"}</p>
-                <p className="mt-1 text-sm text-slate-400">Earns while {symbol} is between ${formatPoolPrice(range.min)} and ${formatPoolPrice(range.max)} · now ${formatPoolPrice(price)}</p>
-                {!inRange ? <p className="mt-1 text-xs text-slate-400">{price < range.min
-                  ? `It currently holds only ${symbol}. It starts earning again if the price rises above $${formatPoolPrice(range.min)}.`
-                  : `It currently holds only USDC. It starts earning again if the price falls below $${formatPoolPrice(range.max)}.`}</p> : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={v4Action !== null || pendingAttempt !== null}
-                  onClick={() => void runV4Action(position, "collect")}
-                  className="rounded-lg border border-slate-600 px-3 py-2 text-sm hover:bg-slate-800 disabled:opacity-50">Collect fees</button>
-                <button type="button" disabled={v4Action !== null || pendingAttempt !== null}
-                  onClick={() => void runV4Action(position, "withdraw")}
-                  className="rounded-lg bg-rose-700 px-3 py-2 text-sm hover:bg-rose-600 disabled:opacity-50">Close position</button>
-              </div>
-            </div>
-          </article>;
-        })}
-        {v4NextPage !== null && <button type="button" onClick={() => void loadMoreV4()}
-          disabled={v4Loading} className="text-sm text-emerald-300 disabled:opacity-50">Load more positions</button>}
-      </section>}
       {/* Positions Header */}
-      <div className={wallet ? "rounded-xl border border-[#29364a] bg-[#111827] p-6 shadow-sm" : FIRST_SECTION}>
+      <div className={FIRST_SECTION}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
@@ -225,7 +180,11 @@ export const PositionsPage: React.FC<Props> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingAttempt && <button type="button" onClick={() => void checkPendingV4()}
+              className="px-2 text-xs font-semibold text-[#fcd34d]">Check last transaction</button>}
+            {wallet && <button type="button" onClick={() => void refreshV4()} disabled={v4Loading}
+              className="px-2 text-xs font-semibold text-[#6ee7b7] disabled:opacity-50">Refresh</button>}
             <button
               type="button"
               onClick={() => onOpenModal({ type: "import" })}
@@ -244,8 +203,11 @@ export const PositionsPage: React.FC<Props> = ({
         </div>
       </div>
 
+      {v4Loading && <p className="text-sm text-[#aab6c8]" role="status">Loading positions…</p>}
+      {v4Error && <p className="text-sm text-[#fda4af]" role="alert">{v4Error}</p>}
+
       {/* Empty State */}
-      {positions.length === 0 && v4Positions.length === 0 ? (
+      {positions.length === 0 && v4Positions.length === 0 ? v4Loading || v4Error ? null : (
         <div className="rounded-xl border border-dashed border-[#29364a] bg-[#111827] p-12 text-center shadow-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#145c47] bg-[#092820] text-[#6ee7b7] mb-4">
             <IconDeposit size={26} />
@@ -264,9 +226,37 @@ export const PositionsPage: React.FC<Props> = ({
             <IconPlus size={14} /> Create Your First Position
           </button>
         </div>
-      ) : positions.length > 0 ? (
+      ) : (
         /* Position List */
         <div className="space-y-4">
+          {v4Positions.map((position) => {
+            const inRange = position.pool.tick >= position.tickLower &&
+              position.pool.tick < position.tickUpper;
+            const range = v4RangePrices(position);
+            const price = poolSpotPrice(position.pool);
+            const symbol = position.pool.token.symbol;
+            return <article key={position.tokenId} className="rounded-xl border border-[#29364a] bg-[#111827] p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-[#e7edf5]">{symbol} / USDC <span className="font-normal text-[#aab6c8]">· Position #{position.tokenId}</span></h3>
+                  <p className={`mt-1 text-sm ${inRange ? "text-[#6ee7b7]" : "text-[#fcd34d]"}`}>
+                    {inRange ? "Earning fees" : "Paused: the price is outside your range"}</p>
+                  <p className="mt-1 text-sm text-[#aab6c8]">Earns while {symbol} is between ${formatPoolPrice(range.min)} and ${formatPoolPrice(range.max)} · now ${formatPoolPrice(price)}</p>
+                  {!inRange ? <p className="mt-1 text-xs text-[#aab6c8]">{price < range.min
+                    ? `It currently holds only ${symbol}. It starts earning again if the price rises above $${formatPoolPrice(range.min)}.`
+                    : `It currently holds only USDC. It starts earning again if the price falls below $${formatPoolPrice(range.max)}.`}</p> : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={v4Action !== null || pendingAttempt !== null}
+                    onClick={() => void runV4Action(position, "collect")}
+                    className="rounded-lg bg-[#059669] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#047857] active:scale-95 disabled:opacity-50">Collect fees</button>
+                  <button type="button" disabled={v4Action !== null || pendingAttempt !== null}
+                    onClick={() => void runV4Action(position, "withdraw")}
+                    className="rounded-lg border border-[#71303d] bg-[#2d171d] px-3 py-1.5 text-xs font-semibold text-[#fda4af] hover:bg-[#4b1c28] active:scale-95 disabled:opacity-50">Close position</button>
+                </div>
+              </div>
+            </article>;
+          })}
           {positions.map((pos) => {
             const minP = tickToPrice(pos.tickLower);
             const maxP = tickToPrice(pos.tickUpper);
@@ -443,8 +433,10 @@ export const PositionsPage: React.FC<Props> = ({
               </div>
             );
           })}
+          {v4NextPage !== null && <button type="button" onClick={() => void loadMoreV4()}
+            disabled={v4Loading} className="text-sm text-[#6ee7b7] disabled:opacity-50">Load more positions</button>}
         </div>
-      ) : null}
+      )}
     </div>
   );
 };

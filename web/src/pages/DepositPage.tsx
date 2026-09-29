@@ -13,7 +13,7 @@ import { ensureV4Allowance, v4MintApprovals } from "../lib/v4-actions";
 import { MeteoraRangeBar } from "../components/MeteoraRangeBar";
 import { PositionReview, PRIMARY_ACTION } from "../components/PositionReview";
 import { STRATEGIES, StrategyCards, type StrategyKey } from "../components/StrategyCards";
-import { formatPoolPrice } from "./ExplorePage";
+import { formatFeeTier, formatPoolPrice } from "./ExplorePage";
 import {
   IconChevronDown,
   IconChevronUp,
@@ -54,12 +54,6 @@ function formatCurrency(value: number): string {
 }
 
 const AMOUNT_PERCENTS = [25, 50, 75, 100];
-
-function formatFeeTier(fee: number | undefined): string {
-  if (fee === undefined) return "—";
-  if (fee === 0x800000) return "Varying";
-  return `${(fee / 10_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
-}
 
 function tokenMarkText(symbol: string): string {
   return symbol === "cirBTC" ? "cB" : symbol.slice(0, 2).toUpperCase();
@@ -286,7 +280,7 @@ export const DepositPage: React.FC<Props> = ({
         setSelectedPoolAddress(res.pools[0].address);
         onNotify("success", "Token Discovered", `Resolved ${res.token.symbol} with ${res.pools.length} active pool(s)`);
       } else {
-        setDiscoveryError(`No active Uniswap v3 pool found for ${res.token.symbol} against USDC on Arc.`);
+        setDiscoveryError(`No active ${res.token.symbol}/USDC pool found on Arc.`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to query Arc blockchain";
@@ -566,7 +560,7 @@ export const DepositPage: React.FC<Props> = ({
             </div>
             <div className={DETAIL_ROW}>
               <dt>Network</dt>
-              <dd className={DETAIL_VALUE}>Arc Mainnet · Uniswap {v4Pool ? "v4" : "v3"}</dd>
+              <dd className={DETAIL_VALUE}>Arc Mainnet</dd>
             </div>
           </dl>
         </section>
