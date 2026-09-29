@@ -2,7 +2,7 @@
 
 Stillwater manages Uniswap liquidity positions on the Arc blockchain for people who don't want to deal with ticks, raw token units, or transaction plumbing. You pick a pool, choose a price range in dollars, and Stillwater opens, tracks, and closes the position for you.
 
-It is a **private, custodial alpha**. Each invited user gets their own Stillwater-managed wallet, and Stillwater's signer can send transactions from it. Every action is capped at a small value, checked by an isolated signer, and can be halted with an emergency stop. Nothing is deployed to Cloudflare yet; the stack runs locally.
+It is a **custodial alpha**. Anyone who signs in with a wallet gets their own Stillwater-managed wallet, and Stillwater's signer can send transactions from it. Every action is capped at a small value, checked by an isolated signer, and can be halted with an emergency stop. Nothing is deployed to Cloudflare yet; the stack runs locally.
 
 Stillwater does not run its own exchange. It uses the existing Uniswap v3 and v4 deployments on Arc.
 
@@ -66,15 +66,7 @@ Requires Node 22.13 or newer and pnpm 11.
    pnpm db:migrate:local
    ```
 
-4. Create an invitation code. It is printed once:
-
-   ```bash
-   pnpm invite:create:local
-   ```
-
-   This script lives in `api/scripts/`, which is not committed to this repository.
-
-5. Start the API and signer (port 8787), the indexer (port 8788), and the web app (port 5173), each in its own terminal:
+4. Start the API and signer (port 8787), the indexer (port 8788), and the web app (port 5173), each in its own terminal:
 
    ```bash
    pnpm dev
@@ -88,7 +80,7 @@ Requires Node 22.13 or newer and pnpm 11.
    pnpm web:dev
    ```
 
-   Open http://localhost:5173. The web app proxies `/v1` and `/health` to the API. To use your own Reown project, set `VITE_REOWN_PROJECT_ID`.
+   Open http://localhost:5173 and sign in with any wallet; the first sign-in creates your account. The web app proxies `/v1` and `/health` to the API. To use your own Reown project, set `VITE_REOWN_PROJECT_ID`.
 
 The indexer only runs on its schedule. To trigger one run by hand:
 

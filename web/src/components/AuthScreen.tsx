@@ -15,7 +15,6 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
 
-  const [invitationCode, setInvitationCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [, setChallengeData] = useState<{
     challengeId: string;
@@ -29,12 +28,10 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
       open();
       return;
     }
-    const trimmedCode = invitationCode.trim() || undefined;
-
     setLoading(true);
     try {
-      // 1. Issue SIWE Challenge from API (invitation code only required for new users)
-      const challenge = await api.issueChallenge(address, trimmedCode);
+      // 1. Issue SIWE Challenge from API (first sign-in also creates the account)
+      const challenge = await api.issueChallenge(address);
       setChallengeData(challenge);
 
       // 2. Request Signature via connected wallet
@@ -51,13 +48,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
     } catch (err: unknown) {
       console.error("Auth flow failed", err);
       if (err instanceof ApiError) {
-        if (err.code === "INVITATION_REQUIRED") {
-          onError("An invitation code is required for first-time registration.");
-        } else if (err.code === "INVALID_INVITATION_CODE" || err.code === "INVALID_INVITATION") {
-          onError("Invalid or expired invitation code. Please check and try again.");
-        } else if (err.code === "INVITATION_ALREADY_CLAIMED") {
-          onError("This invitation code was already claimed by another wallet.");
-        } else if (err.code === "CHALLENGE_EXPIRED") {
+        if (err.code === "CHALLENGE_EXPIRED") {
           onError("SIWE challenge expired. Please retry.");
         } else if (err.code === "BACKEND_UNREACHABLE" || err.code === "NETWORK_ERROR") {
           onError("Unable to connect to the backend server. Please verify the API worker is running.");
@@ -96,7 +87,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
           <strong className="block font-bold text-slate-900 mb-1">
             Dual-Key Custody Safety
           </strong>
-          Your connected wallet is your <strong>Owner Wallet</strong>. It signs session keys and is the <strong>only address</strong> authorized to receive asset withdrawals.
+          Your connected wallet is your <strong>Owner Wallet</strong>. It signs you in, and <strong>every withdrawal</strong> from your Stillwater wallet needs its signature. You choose where each withdrawal goes.
         </div>
 
         {/* Auth Form */}
@@ -104,7 +95,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
           {/* Step 1: Connect Wallet */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              1. Owner Wallet
+              Owner Wallet
             </label>
             {isConnected && address ? (
               <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
@@ -132,26 +123,6 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
                 <span>Connect Wallet</span>
               </button>
             )}
-          </div>
-
-          {/* Step 2: Invitation Code (New Users) */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-700">
-                2. Invitation Code
-              </label>
-              <span className="text-xs text-slate-400">
-                (New users only)
-              </span>
-            </div>
-            <input
-              type="text"
-              placeholder="Leave blank if already registered"
-              value={invitationCode}
-              onChange={(e) => setInvitationCode(e.target.value)}
-              disabled={loading}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
-            />
           </div>
 
           {/* Submit Action */}

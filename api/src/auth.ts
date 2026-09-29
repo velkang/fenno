@@ -8,12 +8,10 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export type AuthUser = { id: string; ownerAddress: Address };
-export type Invitation = { id: string };
 
 export type AuthChallenge = {
   id: string;
   userId: string | null;
-  invitationId: string | null;
   ownerAddress: Address;
   nonce: string;
   message: string;
@@ -24,17 +22,13 @@ export type AuthChallenge = {
 
 export interface AuthStore {
   findUserByOwnerAddress(address: Address): Promise<AuthUser | null>;
-  findAvailableInvitation(
-    codeHash: string,
-    now: number,
-  ): Promise<Invitation | null>;
   createChallenge(challenge: AuthChallenge): Promise<void>;
   getChallenge(id: string): Promise<AuthChallenge | null>;
   consumeChallenge(id: string, now: number): Promise<boolean>;
-  createInvitedUser(input: {
+  /** Creates the user, or returns the existing one if the address signed up concurrently. */
+  createUser(input: {
     id: string;
     ownerAddress: Address;
-    invitationId: string;
     now: number;
   }): Promise<AuthUser | null>;
   createSession(input: {
@@ -107,29 +101,13 @@ export function normalizeOwnerAddress(value: unknown): Address {
 
 export async function issueChallenge(
   store: AuthStore,
-  input: { address: unknown; invitationCode?: unknown },
+  input: { address: unknown },
   config: AuthConfig,
   dependencies: AuthDependencies = {},
 ): Promise<{ challengeId: string; message: string; expiresAt: number }> {
   const ownerAddress = normalizeOwnerAddress(input.address);
   const now = dependencies.now?.() ?? Date.now();
   const user = await store.findUserByOwnerAddress(ownerAddress);
-  let invitation: Invitation | null = null;
-
-  if (!user) {
-    if (
-      typeof input.invitationCode !== "string" ||
-      input.invitationCode.length < 8 ||
-      input.invitationCode.length > 128
-    ) {
-      throw new AuthError("INVITATION_REQUIRED", 403);
-    }
-    invitation = await store.findAvailableInvitation(
-      await hashOpaqueValue(input.invitationCode),
-      now,
-    );
-    if (!invitation) throw new AuthError("INVALID_INVITATION", 403);
-  }
 
   const nonce = randomHex(16);
   const expiresAt = now + CHALLENGE_TTL_MS;
@@ -150,7 +128,6 @@ export async function issueChallenge(
   await store.createChallenge({
     id: challengeId,
     userId: user?.id ?? null,
-    invitationId: invitation?.id ?? null,
     ownerAddress,
     nonce,
     message,
@@ -204,17 +181,14 @@ export async function verifyChallenge(
     throw new AuthError("CHALLENGE_USED", 409);
   }
 
-  let user = await store.findUserByOwnerAddress(challenge.ownerAddress);
-  if (!user) {
-    if (!challenge.invitationId) throw new AuthError("REGISTRATION_FAILED", 409);
-    user = await store.createInvitedUser({
+  const user =
+    (await store.findUserByOwnerAddress(challenge.ownerAddress)) ??
+    (await store.createUser({
       id: dependencies.randomId?.() ?? crypto.randomUUID(),
       ownerAddress: challenge.ownerAddress,
-      invitationId: challenge.invitationId,
       now,
-    });
-    if (!user) throw new AuthError("INVITATION_ALREADY_USED", 409);
-  }
+    }));
+  if (!user) throw new AuthError("REGISTRATION_FAILED", 409);
 
   const sessionToken = dependencies.randomToken?.() ?? randomToken();
   const sessionExpiresAt = now + SESSION_TTL_MS;

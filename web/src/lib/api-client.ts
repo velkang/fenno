@@ -4,7 +4,6 @@ export type AuthUser = {
   id: string;
   address?: string;
   ownerAddress?: string;
-  invitationCode?: string;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -146,12 +145,12 @@ export const api = {
     });
   },
   // Auth
-  async issueChallenge(address: string, invitationCode?: string) {
+  async issueChallenge(address: string) {
     return request<{ challengeId: string; message: string; expiresAt: number }>(
       "/v1/auth/challenge",
       {
         method: "POST",
-        body: JSON.stringify({ address, invitationCode }),
+        body: JSON.stringify({ address }),
       },
     );
   },

@@ -2,22 +2,13 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { Address } from "viem";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  hashOpaqueValue,
   type AuthChallenge,
   type AuthStore,
   type AuthUser,
 } from "../src/auth";
 import { createApp, type Bindings } from "../src";
 
-type StoredInvitation = {
-  id: string;
-  codeHash: string;
-  expiresAt: number;
-  usedBy: string | null;
-};
-
 class MemoryAuthStore implements AuthStore {
-  readonly invitations = new Map<string, StoredInvitation>();
   readonly users = new Map<string, AuthUser>();
   readonly challenges = new Map<string, AuthChallenge>();
   readonly sessions = new Map<
@@ -25,26 +16,8 @@ class MemoryAuthStore implements AuthStore {
     { userId: string; challengeId: string; expiresAt: number }
   >();
 
-  async seedInvitation(code: string, expiresAt: number) {
-    const codeHash = await hashOpaqueValue(code);
-    this.invitations.set(codeHash, {
-      id: `invite-${this.invitations.size + 1}`,
-      codeHash,
-      expiresAt,
-      usedBy: null,
-    });
-  }
-
   async findUserByOwnerAddress(address: Address) {
     return this.users.get(address.toLowerCase()) ?? null;
-  }
-
-  async findAvailableInvitation(codeHash: string, now: number) {
-    const invitation = this.invitations.get(codeHash);
-    if (!invitation || invitation.usedBy || invitation.expiresAt <= now) {
-      return null;
-    }
-    return { id: invitation.id };
   }
 
   async createChallenge(challenge: AuthChallenge) {
@@ -64,22 +37,12 @@ class MemoryAuthStore implements AuthStore {
     return true;
   }
 
-  async createInvitedUser(input: {
-    id: string;
-    ownerAddress: Address;
-    invitationId: string;
-    now: number;
-  }) {
-    const invitation = [...this.invitations.values()].find(
-      (candidate) => candidate.id === input.invitationId,
-    );
-    if (!invitation || invitation.usedBy || invitation.expiresAt <= input.now) {
-      return null;
+  async createUser(input: { id: string; ownerAddress: Address; now: number }) {
+    const key = input.ownerAddress.toLowerCase();
+    if (!this.users.has(key)) {
+      this.users.set(key, { id: input.id, ownerAddress: input.ownerAddress });
     }
-    const user = { id: input.id, ownerAddress: input.ownerAddress };
-    invitation.usedBy = user.id;
-    this.users.set(input.ownerAddress.toLowerCase(), user);
-    return user;
+    return this.users.get(key) ?? null;
   }
 
   async createSession(input: {
@@ -114,7 +77,6 @@ class MemoryAuthStore implements AuthStore {
 const account = privateKeyToAccount(
   "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 );
-const inviteCode = "alpha-invite-code";
 const startedAt = Date.UTC(2026, 8, 18, 12);
 
 describe("private-alpha authentication", () => {
@@ -126,7 +88,6 @@ describe("private-alpha authentication", () => {
   beforeEach(async () => {
     now = startedAt;
     store = new MemoryAuthStore();
-    await store.seedInvitation(inviteCode, now + 60_000);
     signerRequests = [];
     env = {
       DB: {} as D1Database,
@@ -157,14 +118,14 @@ describe("private-alpha authentication", () => {
     };
   });
 
-  it("exchanges an invitation and owner signature for a hashed session", async () => {
+  it("signs up a new owner wallet with only its signature and issues a hashed session", async () => {
     const app = createApp({ createAuthStore: () => store, now: () => now });
     const challengeResponse = await app.request(
       "/v1/auth/challenge",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address: account.address, invitationCode: inviteCode }),
+        body: JSON.stringify({ address: account.address }),
       },
       env,
     );
@@ -245,6 +206,39 @@ describe("private-alpha authentication", () => {
     expect(await replay.json()).toEqual({ error: "CHALLENGE_USED" });
   });
 
+  it("reuses the existing user when the same wallet signs in again", async () => {
+    const app = createApp({ createAuthStore: () => store, now: () => now });
+    const signIn = async () => {
+      const challengeResponse = await app.request(
+        "/v1/auth/challenge",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ address: account.address }),
+        },
+        env,
+      );
+      const challenge = await challengeResponse.json<{ challengeId: string; message: string }>();
+      const signature = await account.signMessage({ message: challenge.message });
+      const response = await app.request(
+        "/v1/auth/verify",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...challenge, signature }),
+        },
+        env,
+      );
+      expect(response.status).toBe(200);
+      return (await response.json<{ user: AuthUser }>()).user.id;
+    };
+
+    const firstUserId = await signIn();
+    expect(await signIn()).toBe(firstUserId);
+    expect(store.users.size).toBe(1);
+    expect(store.sessions.size).toBe(2);
+  });
+
   it("rejects expired challenges", async () => {
     const app = createApp({ createAuthStore: () => store, now: () => now });
     const challengeResponse = await app.request(
@@ -252,7 +246,7 @@ describe("private-alpha authentication", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address: account.address, invitationCode: inviteCode }),
+        body: JSON.stringify({ address: account.address }),
       },
       env,
     );

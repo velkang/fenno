@@ -464,7 +464,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     const body = record(await jsonBody(context));
     const challenge = await issueChallenge(
       context.get("authStore"),
-      { address: body.address, invitationCode: body.invitationCode },
+      { address: body.address },
       {
         chainId: ARC_CHAIN_ID,
         domain: context.env.AUTH_DOMAIN,
