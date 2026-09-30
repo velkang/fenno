@@ -8,6 +8,7 @@ import {
   type AlphaWalletSummary,
 } from '@stillwater/chain'
 import { api, ApiError, type ManagedWalletRecord } from '../lib/api-client'
+import { usePendingAttempt } from '../lib/attempts'
 
 const MUTED_TEXT = 'text-[1rem] leading-relaxed text-ink-muted'
 const LABEL_TEXT = 'text-[.95rem] text-ink-muted'
@@ -63,10 +64,15 @@ export function WalletPanel({
   const [assets, setAssets] = useState<
     Array<{ address: string; symbol: string; decimals: number; raw: string }>
   >([])
-  const pendingKey = wallet
-    ? `stillwater_withdrawal_attempt_${wallet.id}`
-    : null
-  const [pendingAttempt, setPendingAttempt] = useState<string | null>(null)
+  // A withdrawal still confirming when the page was left is picked up again here.
+  const { pending: pendingAttempt, track } = usePendingAttempt(
+    wallet ? `stillwater_withdrawal_attempt_${wallet.id}` : null,
+    (outcome) => {
+      if (outcome.ok) onNotify('success', 'Withdrawal complete')
+      else onNotify('error', 'Withdrawal failed', outcome.message)
+      void onRefresh()
+    },
+  )
   const closeRef = useRef<HTMLButtonElement>(null)
   const { address: connectedAddress } = useAccount()
   const chainId = useChainId()
@@ -151,10 +157,6 @@ export function WalletPanel({
     }
   }, [open, wallet, summary])
 
-  useEffect(() => {
-    setPendingAttempt(pendingKey ? sessionStorage.getItem(pendingKey) : null)
-  }, [pendingKey])
-
   if (!open) return null
 
   const withdraw = async () => {
@@ -190,77 +192,31 @@ export function WalletPanel({
         signature,
       })
       const executed = await api.executeIntent(prepared.intentId)
-      if (pendingKey) sessionStorage.setItem(pendingKey, executed.attemptId)
-      setPendingAttempt(executed.attemptId)
-      for (let attempt = 0; attempt < 15; attempt++) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1500))
-        const result = await api.reconcileAttempt(executed.attemptId)
-        if (result.status === 'confirmed') {
-          if (pendingKey) sessionStorage.removeItem(pendingKey)
-          setPendingAttempt(null)
-          onNotify(
-            'success',
-            'Withdrawal complete',
-            `${amount} USDC sent to ${recipient.slice(0, 10)}…`,
-          )
-          setAmount('')
-          setRecipient('')
-          setReview(false)
-          await onRefresh()
-          return
-        }
-        if (result.status !== 'pending' && result.status !== 'submitted') {
-          if (pendingKey) sessionStorage.removeItem(pendingKey)
-          setPendingAttempt(null)
-          throw new Error(result.reasonCode || 'Withdrawal did not confirm')
-        }
-      }
+      await track(executed.attemptId)
       onNotify(
-        'info',
-        'Withdrawal submitted',
-        'Check the wallet balance for confirmation.',
+        'success',
+        'Withdrawal complete',
+        `${amount} USDC sent.`,
       )
+      setAmount('')
+      setRecipient('')
+      setReview(false)
+      await onRefresh()
     } catch (error) {
       onNotify(
         'error',
-        'Withdrawal not completed',
+        'Withdrawal failed',
         error instanceof ApiError &&
           error.code === 'INSUFFICIENT_USDC_AFTER_FEES'
-          ? 'Not enough USDC left for the network fee. Try a slightly smaller amount.'
+          ? 'Not enough USDC for the fee. Try less.'
           : error instanceof Error
             ? error.message
             : 'Try again.',
       )
+      // A failed withdrawal can still have cost a network fee: show current balances now.
+      void onRefresh()
     } finally {
       setBusy(false)
-    }
-  }
-
-  const checkPending = async () => {
-    if (!pendingAttempt) return
-    try {
-      const result = await api.reconcileAttempt(pendingAttempt)
-      if (result.status === 'confirmed' || result.status === 'failed') {
-        if (pendingKey) sessionStorage.removeItem(pendingKey)
-        setPendingAttempt(null)
-        await onRefresh()
-        onNotify(
-          'info',
-          'Previous withdrawal settled',
-          'Review your balance before continuing.',
-        )
-      } else
-        onNotify(
-          'info',
-          'Withdrawal pending',
-          'Wait for confirmation before submitting another withdrawal.',
-        )
-    } catch (error) {
-      onNotify(
-        'error',
-        'Could not check withdrawal',
-        error instanceof Error ? error.message : 'Try again.',
-      )
     }
   }
 
@@ -465,7 +421,9 @@ export function WalletPanel({
                 >
                   {busy
                     ? 'Sending…'
-                    : review
+                    : pendingAttempt
+                      ? 'Confirming your last withdrawal…'
+                      : review
                       ? 'Confirm withdrawal'
                       : 'Review withdrawal'}
                 </button>

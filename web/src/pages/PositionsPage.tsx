@@ -98,7 +98,7 @@ export function PositionsPage({
       onNotify(
         'success',
         'Fees collected',
-        `${formatUsd(collected)} is in your Stillwater wallet.`,
+        `${formatUsd(collected)} added to your wallet.`,
       )
   }
 

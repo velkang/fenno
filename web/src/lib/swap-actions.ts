@@ -1,4 +1,4 @@
-import { zeroAddress } from "viem";
+import { maxUint256, zeroAddress } from "viem";
 import { ARC_TOKENS } from "@stillwater/chain";
 import { api, type PublicPool } from "./api-client";
 import { ensureV4Allowance } from "./v4-actions";
@@ -41,7 +41,8 @@ export async function quotePoolSwap(pool: PublicPool, direction: SwapDirection, 
     minimumAmountOut: quote.minimumAmountOut, allowance: quote.allowance };
 }
 
-// Approves the exact input if needed, then sends the swap. Returns false when a transaction
+// Approves the maximum once if the allowance is short (later swaps skip the approval),
+// then sends the swap. Returns false when a transaction
 // was sent but has not confirmed yet.
 export async function executePoolSwap(input: {
   pool: PublicPool;
@@ -70,7 +71,7 @@ export async function executePoolSwap(input: {
     const approval = await api.prepareTokenApproval({
       tokenAddress: direction === "buy" ? ARC_TOKENS.USDC.address : pool.token.address,
       poolAddress: pool.address, poolTokenAddress: pool.token.address,
-      spender: "swap", amount: quote.amountIn, idempotencyKey: crypto.randomUUID(),
+      spender: "swap", amount: maxUint256.toString(), idempotencyKey: crypto.randomUUID(),
     });
     if (!await execute(approval.intentId)) return false;
   }
@@ -80,12 +81,12 @@ export async function executePoolSwap(input: {
 }
 
 const SWAP_ERRORS: Record<string, string> = {
-  POOL_QUOTE_UNAVAILABLE: "This pool could not quote a swap for this amount. Try another fee tier or a smaller amount.",
-  V4_QUOTE_TOO_SMALL: "This pool could not quote a swap for this amount. Try another fee tier or a smaller amount.",
-  V4_SWAP_SIMULATION_FAILED: "This pool's swap could not be simulated. No swap was sent. Try another pool.",
-  V4_QUOTE_STALE: "The pool price changed. Review the new quote before swapping.",
-  V4_APPROVAL_REQUIRED: "Your approval changed or expired. Review the swap again to continue.",
-  INSUFFICIENT_USDC_AFTER_FEES: "Not enough USDC left to cover this swap and its network fee.",
+  POOL_QUOTE_UNAVAILABLE: "No quote for this amount. Try a smaller one.",
+  V4_QUOTE_TOO_SMALL: "No quote for this amount. Try a smaller one.",
+  V4_SWAP_SIMULATION_FAILED: "This pool can't swap right now. Nothing was sent.",
+  V4_QUOTE_STALE: "The price changed. Review the new quote.",
+  V4_APPROVAL_REQUIRED: "Approval expired. Review the swap again.",
+  INSUFFICIENT_USDC_AFTER_FEES: "Not enough USDC for this swap and its fee.",
 };
 
 // Codes where another pool for the same token might work.

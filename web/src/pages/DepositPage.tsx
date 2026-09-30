@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { formatUnits, getAddress, parseUnits, zeroAddress } from "viem";
+import { formatUnits, getAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import {
   ALPHA_POOL,
   type AlphaWalletSummary,
@@ -9,6 +9,7 @@ import { useAppKit } from "@reown/appkit/react";
 import { api, type ManagedWalletRecord, type PublicPool, type TokenPoolDiscovery } from "../lib/api-client";
 import { alignTick, pairedAmount, priceToTick, tickToPrice } from "../lib/range-math";
 import { ensureV4Allowance, v4MintApprovals } from "../lib/v4-actions";
+import { waitForAttempt } from "../lib/attempts";
 import { KoiBand } from "../components/pond/KoiBand";
 import { Loading, Skeleton } from "../components/Skeleton";
 import { PositionReview, PRIMARY_ACTION } from "../components/PositionReview";
@@ -29,7 +30,10 @@ type Props = {
   initialTokenAddress?: string;
   // Set for pools opened from the pool page; a v4 pool is driven entirely from this record.
   pool?: PublicPool;
-  onNeedTokens?: () => void;
+  /** Changes after a swap elsewhere on the page, so balances are read again. */
+  balancesKey?: number;
+  /** Opens a way to buy the pool's token; offered in place of the presets when none is held. */
+  onBuyToken?: () => void;
   wallet: ManagedWalletRecord | null;
   summary: AlphaWalletSummary | null;
   onRefresh: () => Promise<void>;
@@ -76,7 +80,8 @@ export const DepositPage: React.FC<Props> = ({
   initialPoolAddress,
   initialTokenAddress,
   pool,
-  onNeedTokens,
+  balancesKey,
+  onBuyToken,
   wallet,
   summary,
   onRefresh,
@@ -125,7 +130,7 @@ export const DepositPage: React.FC<Props> = ({
       if (current) setDiscoveryError(error instanceof Error ? error.message : "Could not load pool");
     }).finally(() => { if (current) setDiscovering(false); });
     return () => { current = false; };
-  }, [initialPoolAddress, initialTokenAddress, v4Pool, wallet, pool]);
+  }, [initialPoolAddress, initialTokenAddress, v4Pool, wallet, pool, balancesKey]);
 
   // Strategy & Pro mode
   const [strategy, setStrategy] = useState<StrategyKey>("balanced");
@@ -230,7 +235,7 @@ export const DepositPage: React.FC<Props> = ({
         usdc: v4NativeUsdc ? result.nativeBalance : find(ALPHA_POOL.token1.address) });
     }).catch(() => { if (current) setV4Balances(null); });
     return () => { current = false; };
-  }, [v4Pool, v4NativeUsdc, wallet?.id, executing]);
+  }, [v4Pool, v4NativeUsdc, wallet?.id, executing, balancesKey]);
 
   // Wallet balances in raw units, for display and shortfall checks.
   const rawBalance0 = v4Pool ? v4Balances?.token : isCanonical ? summary?.balances?.cirBtc?.raw : discovery?.token?.balance;
@@ -283,14 +288,14 @@ export const DepositPage: React.FC<Props> = ({
       setSelectedTokenAddress(addr);
       if (res.pools.length > 0) {
         setSelectedPoolAddress(res.pools[0].address);
-        onNotify("success", "Token Discovered", `Resolved ${res.token.symbol} with ${res.pools.length} active pool(s)`);
+        onNotify("success", "Token found", `${res.token.symbol}: ${res.pools.length} ${res.pools.length === 1 ? "pool" : "pools"}.`);
       } else {
         setDiscoveryError(`No active ${res.token.symbol}/USDC pool found on Arc.`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to query Arc blockchain";
       setDiscoveryError(msg);
-      onNotify("error", "Discovery Error", msg);
+      onNotify("error", "Token not found", msg);
     } finally {
       setDiscovering(false);
     }
@@ -299,16 +304,8 @@ export const DepositPage: React.FC<Props> = ({
   // Sends a prepared intent and waits for Arc to confirm it.
   const executeAndWait = async (intentId: string): Promise<boolean> => {
     const res = await api.executeIntent(intentId);
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 1500));
-      const rec = await api.reconcileAttempt(res.attemptId);
-      if (rec.status === "confirmed") return true;
-      if (rec.status !== "pending" && rec.status !== "submitted") {
-        throw new Error(rec.reasonCode || "Transaction did not confirm");
-      }
-    }
-    onNotify("info", "Still confirming", "Arc has not confirmed the transaction yet. Check My Positions shortly.");
-    return false;
+    await waitForAttempt(res.attemptId);
+    return true;
   };
 
   const requireWallet = (): boolean => {
@@ -336,22 +333,23 @@ export const DepositPage: React.FC<Props> = ({
     e.preventDefault();
     if (!requireWallet()) return;
     if (!hasAmounts) {
-      onNotify("error", "Enter an amount", "Type how much you want to add.");
+      onNotify("error", "Enter an amount");
       return;
     }
     setReviewing(true);
   };
 
-  const approveV3 = async (side: "token0" | "token1", amount: bigint) => {
+  // Approves the maximum so later positions in this pool skip the approval.
+  const approveV3 = async (side: "token0" | "token1") => {
     if (isCanonical) {
-      const res = await api.prepareApproval(side === "token0" ? "cirBTC" : "USDC", amount.toString(), crypto.randomUUID());
+      const res = await api.prepareApproval(side === "token0" ? "cirBTC" : "USDC", maxUint256.toString(), crypto.randomUUID());
       return executeAndWait(res.intentId);
     }
     if (!discovery || !activeCustomPool) throw new Error("Pool is not loaded yet.");
     const res = await api.prepareTokenApproval({
       tokenAddress: side === "token0" ? discovery.token.address : discovery.usdc.address,
       poolAddress: activeCustomPool.address,
-      amount: amount.toString(),
+      amount: maxUint256.toString(),
       idempotencyKey: crypto.randomUUID(),
     });
     return executeAndWait(res.intentId);
@@ -401,14 +399,14 @@ export const DepositPage: React.FC<Props> = ({
             execute: executeAndWait })) return;
         }
       } else {
-        for (const { side, symbol, amount } of approvalsNeeded()) {
+        for (const { side, symbol } of approvalsNeeded()) {
           setProgress(`Approving ${symbol}…`);
-          if (!await approveV3(side, amount)) return;
+          if (!await approveV3(side)) return;
         }
       }
       setProgress("Opening your position…");
       if (await mint()) {
-        onNotify("success", "Position opened", "You're now earning trading fees. Track it in My Positions.");
+        onNotify("success", "Position opened", "You're earning fees now.");
         setReviewing(false);
         setAmount0("");
         setAmount1("");
@@ -418,7 +416,9 @@ export const DepositPage: React.FC<Props> = ({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not open the position";
       onNotify("error", "Position not opened", msg === "V4_MINT_SIMULATION_FAILED" || msg === "V4_POOL_NOT_EXECUTABLE"
-        ? "This pool can't accept new positions through Stillwater right now. Nothing was sent." : msg);
+        ? "This pool can't take new positions. Nothing was sent." : msg);
+      // A failed step can still have cost a network fee: show current balances now.
+      void onRefresh();
     } finally {
       setExecuting(false);
       setProgress(null);
@@ -495,15 +495,11 @@ export const DepositPage: React.FC<Props> = ({
         ) : null}
       </div> : null}
 
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(320px,420px)] items-start gap-[clamp(24px,3vw,40px)] max-[1040px]:grid-cols-1">
+      {/* Band and amounts are trimmed to about the same height; stretching evens out the last few pixels. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-[clamp(24px,3vw,40px)] max-[1040px]:grid-cols-1">
         <div className="flex min-w-0 flex-col gap-7">
-          <section aria-labelledby="band-heading" className="flex flex-col gap-5 rounded-[32px] bg-sage px-[clamp(20px,3.2vw,40px)] py-8">
-            <div className="flex flex-col gap-2">
-              <h2 id="band-heading" className="text-[2rem] font-semibold">Choose your band</h2>
-              <p className="max-w-[62ch] text-[1.05rem] leading-relaxed text-ink-muted">
-                You only earn while the {token0.symbol} price stays inside your band. A wider band keeps earning through bigger moves; a narrower one earns more per trade but rests sooner.
-              </p>
-            </div>
+          <section aria-labelledby="band-heading" className="flex flex-1 flex-col gap-5 rounded-[32px] bg-sage px-[clamp(20px,3.2vw,40px)] py-8">
+            <h2 id="band-heading" className="text-[2rem] font-semibold">Choose your band</h2>
             <StrategyCards selected={strategy} spotPrice={spotPrice} onSelect={handleStrategy} />
             <KoiBand min={minPrice} max={maxPrice} price={spotPrice} size="small"
               labels={{ min: `rests below $${formatPoolPrice(minPrice)}`, max: `rests above $${formatPoolPrice(maxPrice)}` }} />
@@ -524,71 +520,102 @@ export const DepositPage: React.FC<Props> = ({
               ) : null}
             </div>
           </section>
+        </div>
 
-          <section aria-labelledby="amounts-heading" className="flex flex-col gap-5 rounded-[28px] border border-line bg-card px-[clamp(20px,3.2vw,40px)] py-8">
-            <div className="flex flex-col gap-2">
-              <h2 id="amounts-heading" className="text-[2rem] font-semibold">How much to add</h2>
-              <p className="text-[1.05rem] text-ink-muted">Type either amount. The other fills in so both match your band.</p>
-            </div>
-            <form id="deposit-form" onSubmit={handleReview} className="grid grid-cols-2 items-start gap-5 max-[680px]:grid-cols-1">
-              {[
-                { id: "token0-amount", side: "token0" as const, isToken: true, symbol: token0.symbol, value: amount0, onChange: handleAmount0Change,
-                  balance: balance0, short: short0, usd: (Number.parseFloat(amount0.trim().replace(",", ".")) || 0) * spotPrice },
-                { id: "token1-amount", side: "token1" as const, isToken: false, symbol: token1.symbol, value: amount1, onChange: handleAmount1Change,
-                  balance: balance1, short: short1, usd: Number.parseFloat(amount1.trim().replace(",", ".")) || 0 },
-              ].map((field) => (
-                <div className="flex min-w-0 flex-col gap-2.5" key={field.id}>
-                  <div className="flex min-w-0 items-center justify-between gap-2">
-                    <label htmlFor={field.id} className="flex min-w-0 items-center gap-2.5 text-[1.05rem] font-semibold">
-                      <TokenMark symbol={field.symbol} className={`${MARK_REGULAR} ${MARK_DEFAULT}`} />
-                      <span className="overflow-hidden text-ellipsis">{field.symbol}</span>
-                    </label>
-                    {wallet ? <span className="overflow-hidden text-[.95rem] text-ellipsis whitespace-nowrap text-ink-muted tabular-nums">You have {field.balance}</span> : null}
-                  </div>
+        <section aria-labelledby="amounts-heading" className="flex min-w-0 flex-col gap-5 rounded-[28px] border border-line bg-card px-[clamp(20px,3.2vw,40px)] py-8">
+          <div className="flex flex-col gap-2">
+            <h2 id="amounts-heading" className="text-[2rem] font-semibold">How much to add</h2>
+            <p className="text-[1.05rem] text-ink-muted">Type one amount; the other fills in.</p>
+          </div>
+          <form id="deposit-form" onSubmit={handleReview} className="flex flex-col gap-5">
+            {[
+              { id: "token0-amount", side: "token0" as const, isToken: true, symbol: token0.symbol, value: amount0, onChange: handleAmount0Change,
+                balance: balance0, short: short0, usd: (Number.parseFloat(amount0.trim().replace(",", ".")) || 0) * spotPrice },
+              { id: "token1-amount", side: "token1" as const, isToken: false, symbol: token1.symbol, value: amount1, onChange: handleAmount1Change,
+                balance: balance1, short: short1, usd: Number.parseFloat(amount1.trim().replace(",", ".")) || 0 },
+            ].map((field) => (
+              <div className="flex min-w-0 flex-col gap-2.5" key={field.id}>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <label htmlFor={field.id} className="flex min-w-0 items-center gap-2.5 text-[1.05rem] font-semibold">
+                    <TokenMark symbol={field.symbol} className={`${MARK_REGULAR} ${MARK_DEFAULT}`} />
+                    <span className="overflow-hidden text-ellipsis">{field.symbol}</span>
+                  </label>
+                  {wallet ? <span className="overflow-hidden text-[.95rem] text-ellipsis whitespace-nowrap text-ink-muted tabular-nums">You have {field.balance}</span> : null}
+                </div>
+                {/* The dollar value sits inside the field so the card stays compact. */}
+                <div className="relative">
                   <input
                     id={field.id}
                     name={field.id}
                     autoComplete="off"
-                    className="min-h-16 w-full min-w-0 rounded-[18px] border border-line bg-field px-5 text-[1.5rem] text-ink tabular-nums aria-invalid:border-rest-line aria-invalid:text-rest"
+                    className="min-h-16 w-full min-w-0 rounded-[18px] border border-line bg-field pr-28 pl-5 text-[1.5rem] text-ink tabular-nums aria-invalid:border-rest-line aria-invalid:text-rest"
                     type="text"
                     inputMode="decimal"
                     value={field.value}
                     onChange={(e) => { field.onChange(e.target.value); setReviewing(false); }}
                     placeholder="0.0"
                     aria-invalid={field.short || undefined}
+                    aria-describedby={`${field.id}-usd`}
                   />
-                  {wallet ? (
-                    <div className="grid grid-cols-4 gap-2" role="group" aria-label={`Use part of your ${field.symbol} balance`}>
-                      {AMOUNT_PERCENTS.map((percent) => {
-                        const value = percentOfBalance(field.side, percent);
-                        return (
-                          <button key={percent} type="button" disabled={!value}
-                            className="min-h-11 rounded-full border border-line text-[.95rem] font-medium text-ink enabled:hover:bg-tint disabled:cursor-not-allowed disabled:opacity-45"
-                            onClick={() => { field.onChange(value); setReviewing(false); }}>
-                            {percent === 100 ? "Max" : `${percent}%`}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  <p className="text-[.95rem] text-ink-muted tabular-nums">≈ {formatCurrency(field.usd)}</p>
-                  {field.short ? (
-                    <p className="text-[.95rem] leading-relaxed text-rest" role="alert">
-                      Not enough {field.symbol} in your Stillwater wallet.
-                      {field.isToken && onNeedTokens
-                        ? <> <button type="button" className="font-semibold text-link underline underline-offset-2" onClick={onNeedTokens}>Buy {token0.symbol} with USDC</button></>
-                        : " Add USDC to your Stillwater wallet first."}
-                    </p>
-                  ) : null}
+                  <span id={`${field.id}-usd`}
+                    className="pointer-events-none absolute top-1/2 right-5 -translate-y-1/2 text-[.95rem] text-ink-muted tabular-nums">
+                    ≈ {formatCurrency(field.usd)}
+                  </span>
                 </div>
-              ))}
-            </form>
-          </section>
-        </div>
+                {wallet && field.isToken && onBuyToken && rawBalance0 !== undefined && BigInt(rawBalance0) === 0n ? (
+                  <button type="button" onClick={onBuyToken}
+                    className="min-h-11 rounded-full bg-accent px-5 text-[.98rem] font-semibold text-on-accent hover:bg-accent-hover">
+                    Buy {field.symbol}
+                  </button>
+                ) : wallet ? (
+                  <div className="grid grid-cols-4 gap-2" role="group" aria-label={`Use part of your ${field.symbol} balance`}>
+                    {AMOUNT_PERCENTS.map((percent) => {
+                      const value = percentOfBalance(field.side, percent);
+                      return (
+                        <button key={percent} type="button" disabled={!value}
+                          className="min-h-11 rounded-full border border-line text-[.95rem] font-medium text-ink enabled:hover:bg-tint disabled:cursor-not-allowed disabled:opacity-45"
+                          onClick={() => { field.onChange(value); setReviewing(false); }}>
+                          {percent === 100 ? "Max" : `${percent}%`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {field.short ? (
+                  <p className="text-[.95rem] leading-relaxed text-rest" role="alert">
+                    Not enough {field.symbol} in your Stillwater wallet.
+                    {field.isToken ? "" : " Add USDC to your Stillwater wallet first."}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </form>
+          {/* The CTA for the amounts; the step-by-step review opens in the summary below. */}
+          {!wallet ? (
+            <button type="button" className={PRIMARY_ACTION} onClick={() => { if (onOpenAuth) onOpenAuth(); else open(); }}>
+              <IconWallet size={18} />
+              <span>Sign in to add liquidity</span>
+            </button>
+          ) : (
+            <button type="submit" form="deposit-form" className={PRIMARY_ACTION}
+              disabled={reviewing || !hasAmounts || !!short0 || !!short1 || (!v4Pool && !isCanonical && !activeCustomPool)}>
+              {reviewing ? "Review below" : "Review pond"}
+            </button>
+          )}
+        </section>
 
-        <aside aria-labelledby="new-pond-heading" className="flex flex-col gap-5 rounded-[28px] border border-line bg-card p-[clamp(20px,2.6vw,32px)] min-[1041px]:sticky min-[1041px]:top-28">
-          <h2 id="new-pond-heading" className="text-[1.85rem] font-semibold">Your new pond</h2>
-          <dl className="flex flex-col">
+        {/* The summary spans both columns under the band and the amounts. */}
+        <aside aria-labelledby="new-pond-heading" className="col-span-full flex flex-col gap-6 rounded-[28px] border border-line bg-card p-[clamp(20px,2.6vw,32px)]">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <h2 id="new-pond-heading" className="text-[1.85rem] font-semibold">Your new pond</h2>
+            {poolAddress ? (
+              <a className="inline-flex min-h-11 items-center gap-2 text-[.95rem] font-medium text-link"
+                href={`https://explorer.arc.io/address/${poolAddress}`} target="_blank" rel="noreferrer">
+                View on explorer <IconExternalLink size={14} />
+              </a>
+            ) : null}
+          </div>
+          <dl className="grid grid-cols-5 gap-x-6 gap-y-4 max-[1040px]:grid-cols-3 max-[640px]:grid-cols-2">
             {[
               { label: "You add", value: `≈ ${formatCurrency((Number.parseFloat(amount0) || 0) * spotPrice + (Number.parseFloat(amount1) || 0))}` },
               { label: `Earns while ${token0.symbol} is`, value: `$${formatPoolPrice(minPrice)} – $${formatPoolPrice(maxPrice)}` },
@@ -596,22 +623,14 @@ export const DepositPage: React.FC<Props> = ({
               { label: "Pool fee", value: poolFee === 0x800000 ? "Varies per trade" : feeTier },
               { label: `${token0.symbol} now`, value: `$${formatPoolPrice(spotPrice)}` },
             ].map((row) => (
-              <div key={row.label} className="flex justify-between gap-4 border-t border-line py-3.5 text-[1.05rem]">
-                <dt className="text-ink-muted">{row.label}</dt>
-                <dd className="text-right font-medium tabular-nums">{row.value}</dd>
+              <div key={row.label} className="flex min-w-0 flex-col gap-1 border-t border-line pt-3.5">
+                <dt className="text-[.95rem] text-ink-muted">{row.label}</dt>
+                <dd className="text-[1.1rem] font-medium tabular-nums">{row.value}</dd>
               </div>
             ))}
           </dl>
-          {!wallet ? (
-            <button type="button" className={PRIMARY_ACTION} onClick={() => { if (onOpenAuth) onOpenAuth(); else open(); }}>
-              <IconWallet size={18} />
-              <span>Sign in to add liquidity</span>
-            </button>
-          ) : !reviewing ? (
-            <button type="submit" form="deposit-form" className={PRIMARY_ACTION}
-              disabled={!hasAmounts || !!short0 || !!short1 || (!v4Pool && !isCanonical && !activeCustomPool)}>
-              Review pond
-            </button>
+          {!wallet || !reviewing ? (
+            <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater checks each step again before sending it. Nothing is sent until you confirm.</p>
           ) : null}
           {wallet && reviewing ? (
             <PositionReview
@@ -634,14 +653,6 @@ export const DepositPage: React.FC<Props> = ({
               onConfirm={handleConfirm}
               onEdit={() => setReviewing(false)}
             />
-          ) : (
-            <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater checks each step again before sending it. Nothing is sent until you confirm.</p>
-          )}
-          {poolAddress ? (
-            <a className="inline-flex min-h-11 items-center gap-2 self-start text-[.95rem] font-medium text-link"
-              href={`https://explorer.arc.io/address/${poolAddress}`} target="_blank" rel="noreferrer">
-              View the pool on Arc&apos;s explorer <IconExternalLink size={14} />
-            </a>
           ) : null}
         </aside>
       </div>

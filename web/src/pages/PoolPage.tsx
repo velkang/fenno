@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { tokenWaters, type AlphaWalletSummary, type Waters } from "@stillwater/chain";
 import { WaterMark } from "../components/Icons";
+import { useTokenBalance } from "../components/BalancePresets";
 import { Loading, Skeleton } from "../components/Skeleton";
 import { api, type ManagedWalletRecord, type PublicPool } from "../lib/api-client";
 import { DepositPage } from "./DepositPage";
 import { SwapPage } from "./SwapPage";
 import { formatPoolPrice, PAGE_INTRO, PAGE_TITLE, poolSpotPrice } from "./ExplorePage";
-
-const STEP_BUTTON = "min-h-12 border-b-2 border-transparent pb-3 text-[1.15rem] text-ink-muted aria-pressed:border-ink aria-pressed:font-semibold aria-pressed:text-ink";
 
 const TIER: Record<Waters, { label: string; tone: string }> = {
   still: { label: "Still water · a stablecoin pair, calm", tone: "border-feed-line text-feed" },
@@ -28,13 +27,18 @@ type Props = {
 export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAuth, onNotify }: Props) {
   const [pool, setPool] = useState<PublicPool | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<"fund" | "position">("position");
+  // Buying the pool's token happens in a drawer over the Add liquidity form.
+  const [buying, setBuying] = useState(false);
+  // Bumped after a swap so the form reloads its balances.
+  const [swaps, setSwaps] = useState(0);
+  // Shares its cache with the swap drawer, so a completed buy updates it too.
+  const { data: tokenBalance } = useTokenBalance(pool?.token.address, wallet?.address);
 
   useEffect(() => {
     let current = true;
     setPool(null);
     setError(null);
-    setStep("position");
+    setBuying(false);
     api.getPool(address).then((result) => {
       if (current) setPool(result.pool);
     }).catch((reason: unknown) => {
@@ -56,30 +60,59 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
   const fee = pool.fee === 0x800000 ? "a varying share" : `${(pool.fee / 10_000).toFixed(2)}%`;
 
   return <div className="mx-auto w-full max-w-[1280px] text-ink">
-    <div className="mb-7 flex flex-wrap items-end justify-between gap-6">
+    <div className="mb-7 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-6 max-[900px]:grid-cols-1">
       <div className="flex flex-col gap-3">
         {onBack ? <button type="button" onClick={onBack} className="min-h-10 self-start text-[1.05rem] text-link">← All pools</button> : null}
         <h1 className={PAGE_TITLE}>{pool.token.symbol} / USDC</h1>
         <p className={PAGE_INTRO}>Earn {fee} of every trade in this pool by adding {pool.token.symbol} and USDC. {pool.token.symbol} is ${formatPoolPrice(poolSpotPrice(pool))} now.</p>
       </div>
-      <span className={`inline-flex min-h-11 items-center gap-2.5 rounded-full border px-4 text-[1.02rem] font-semibold whitespace-nowrap ${tier.tone}`}>
-        <WaterMark tier={tierId} className="h-4 w-9" />{tier.label}</span>
+      <div className="flex flex-wrap items-center justify-end gap-3 max-[900px]:justify-start">
+        <span className={`inline-flex min-h-11 items-center gap-2.5 rounded-full border px-4 text-[1.02rem] font-semibold whitespace-nowrap ${tier.tone}`}>
+          <WaterMark tier={tierId} className="h-4 w-9" />{tier.label}</span>
+        {/* Holding none? The amounts form offers "Buy" in place of the presets instead. */}
+        {wallet && tokenBalance !== undefined && tokenBalance > 0n ? <button type="button" onClick={() => setBuying(true)}
+          className="min-h-11 rounded-full border border-line px-5 text-[1.02rem] font-semibold text-ink hover:bg-tint">
+          Buy more {pool.token.symbol}
+        </button> : null}
+      </div>
     </div>
-    <div className="mb-7 flex gap-9 border-b border-line" role="group" aria-label="Add liquidity steps">
-      <button type="button" className={STEP_BUTTON}
-        aria-pressed={step === "fund"} onClick={() => setStep("fund")}>1 · Get both tokens</button>
-      <button type="button" className={STEP_BUTTON}
-        aria-pressed={step === "position"} onClick={() => setStep("position")}>2 · Add liquidity</button>
-    </div>
-    {step === "fund" ? <>
-      <p className="mb-6 max-w-[70ch] text-[1.1rem] leading-relaxed text-ink-muted">A pond holds both {pool.token.symbol} and USDC. If your Stillwater wallet only has USDC, buy some {pool.token.symbol} here first, then continue.</p>
+    <DepositPage initialPoolAddress={address} initialTokenAddress={pool.token.address} pool={pool}
+      balancesKey={swaps} onBuyToken={() => setBuying(true)} wallet={wallet} summary={summary} onRefresh={onRefresh}
+      onNotify={onNotify} onOpenAuth={onOpenAuth} />
+    {buying ? <BuyDrawer symbol={pool.token.symbol} onClose={() => setBuying(false)}>
       <SwapPage initialPoolAddress={address} wallet={wallet} summary={summary}
         onRefresh={onRefresh} onOpenAuth={onOpenAuth} onNotify={onNotify}
-        onSwapComplete={() => setStep("position")} />
-      <button type="button" className="mt-6 min-h-11 text-[1.05rem] font-medium text-link underline underline-offset-4" onClick={() => setStep("position")}>I already have both tokens</button>
-    </> : <DepositPage initialPoolAddress={address} initialTokenAddress={pool.token.address} pool={pool}
-      onNeedTokens={() => setStep("fund")} wallet={wallet} summary={summary} onRefresh={onRefresh}
-      onNotify={onNotify} onOpenAuth={onOpenAuth} />}
+        onSwapComplete={() => { setSwaps((count) => count + 1); setBuying(false); }} />
+    </BuyDrawer> : null}
+  </div>;
+}
+
+/** A side sheet for buying the pool's token without leaving the Add liquidity form. */
+function BuyDrawer({ symbol, onClose, children }: { symbol: string; onClose: () => void; children: ReactNode }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Focus once on open; Escape closes. Not re-run per render, so typing in the swap keeps focus.
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  return <div className="fixed inset-0 z-70 flex justify-end bg-scrim text-ink"
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section role="dialog" aria-modal="true" aria-labelledby="buy-drawer-title"
+      className="flex h-full w-[min(560px,100%)] flex-col gap-6 overflow-auto overscroll-contain rounded-l-[28px] bg-paper p-8 shadow-2xl max-[520px]:rounded-none max-[520px]:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <h2 id="buy-drawer-title" className="text-[2rem] font-semibold">Buy {symbol}</h2>
+          <p className="text-[1rem] leading-relaxed text-ink-muted">A position holds both {symbol} and USDC. Swap some USDC for {symbol}, then add liquidity.</p>
+        </div>
+        <button ref={closeRef} type="button" onClick={onClose} aria-label="Close"
+          className="min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint">Close</button>
+      </div>
+      {children}
+    </section>
   </div>;
 }
 

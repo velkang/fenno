@@ -1,5 +1,5 @@
 import { buildArcV4Mint } from "@stillwater/chain";
-import { getAddress, zeroAddress, type Hex } from "viem";
+import { getAddress, maxUint160, maxUint256, zeroAddress, type Hex } from "viem";
 import { api } from "./api-client";
 
 // The API only prepares a mint once each token's Permit2 allowance covers the SDK's
@@ -30,8 +30,10 @@ export async function v4MintApprovals(input: {
     .map((entry) => ({ token: entry.token, amount: (entry.amount * 102n + 99n) / 100n }));
 }
 
-// Makes sure the managed wallet has approved `amount` of `token` for this v4 pool: first the
-// ERC-20 approval to Permit2, then the Permit2 approval to the router. Native USDC needs none.
+// Makes sure the managed wallet has approved at least `amount` of `token` for this v4 pool:
+// first the ERC-20 approval to Permit2, then the Permit2 approval to the router. Each is for
+// the maximum, so later actions skip it (the signer still caps a Permit2 approval at 30
+// minutes). Native USDC needs none.
 // Returns false when an approval was sent but has not confirmed yet.
 export async function ensureV4Allowance(input: {
   poolId: string;
@@ -51,7 +53,8 @@ export async function ensureV4Allowance(input: {
     if (!insufficient) continue;
     input.onApprove?.(stage);
     const prepared = await api.prepareV4Approval({ poolId: input.poolId, token: input.token, stage,
-      purpose: input.purpose, amount: input.amount.toString(), idempotencyKey: crypto.randomUUID() });
+      purpose: input.purpose, amount: (stage === "erc20" ? maxUint256 : maxUint160).toString(),
+      idempotencyKey: crypto.randomUUID() });
     if (!await input.execute(prepared.intentId)) return false;
   }
   return true;

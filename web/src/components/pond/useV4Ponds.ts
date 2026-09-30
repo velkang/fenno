@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type ManagedWalletRecord, type V4Position } from "../../lib/api-client";
+import { usePendingAttempt } from "../../lib/attempts";
 
 type Notify = (type: "success" | "error" | "info", title: string, message?: string) => void;
 
@@ -15,12 +16,6 @@ export function useV4Ponds(wallet: ManagedWalletRecord | null, onRefresh: () => 
   // Start as loading when there is a wallet, so the page never flashes "no positions" first.
   const [loading, setLoading] = useState(wallet !== null);
   const [busy, setBusy] = useState<string | null>(null);
-  const pendingKey = wallet ? `stillwater-v4-position-attempt:${wallet.id}` : null;
-  const [pendingAttempt, setPendingAttempt] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPendingAttempt(pendingKey ? sessionStorage.getItem(pendingKey) : null);
-  }, [pendingKey]);
 
   const refresh = useCallback(async () => {
     if (!wallet) { setPositions([]); setNextPage(null); return; }
@@ -37,6 +32,16 @@ export function useV4Ponds(wallet: ManagedWalletRecord | null, onRefresh: () => 
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // A step still confirming when the page was left is picked up again here.
+  const { pending: pendingAttempt, track } = usePendingAttempt(
+    wallet ? `stillwater-v4-position-attempt:${wallet.id}` : null,
+    (outcome) => {
+      if (outcome.ok) onNotify("success", "Confirmed");
+      else onNotify("error", "Failed", outcome.message);
+      void Promise.all([refresh(), onRefresh()]);
+    },
+  );
+
   const loadMore = async () => {
     if (nextPage === null) return;
     setLoading(true);
@@ -50,15 +55,10 @@ export function useV4Ponds(wallet: ManagedWalletRecord | null, onRefresh: () => 
     } finally { setLoading(false); }
   };
 
-  const clearPending = () => {
-    if (pendingKey) sessionStorage.removeItem(pendingKey);
-    setPendingAttempt(null);
-  };
-
   /** Collects fees or closes a position; true once the transaction is confirmed. */
   const run = async (position: V4Position, action: "collect" | "withdraw", options: { quiet?: boolean } = {}) => {
     if (pendingAttempt) {
-      onNotify("info", "Still confirming", "Wait for your last step to confirm before starting another.");
+      onNotify("info", "Still confirming", "Wait for your last step to finish.");
       return false;
     }
     setBusy(`${position.tokenId}:${action}`);
@@ -67,49 +67,20 @@ export function useV4Ponds(wallet: ManagedWalletRecord | null, onRefresh: () => 
         slippageBps: 100, deadline: String(Math.floor(Date.now() / 1000) + 600),
         idempotencyKey: crypto.randomUUID() });
       const execution = await api.executeIntent(prepared.intentId);
-      if (pendingKey) sessionStorage.setItem(pendingKey, execution.attemptId);
-      setPendingAttempt(execution.attemptId);
-      for (let attempt = 0; attempt < 15; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1500));
-        const receipt = await api.reconcileAttempt(execution.attemptId);
-        if (receipt.status === "confirmed") {
-          clearPending();
-          if (!options.quiet) {
-            await Promise.all([refresh(), onRefresh()]);
-            onNotify("success", action === "collect" ? "Fees collected" : "Pond closed",
-              "The tokens are in your Stillwater wallet.");
-          }
-          return true;
-        }
-        if (receipt.status !== "pending" && receipt.status !== "submitted") {
-          clearPending();
-          throw new Error(receipt.reasonCode || "Transaction did not confirm");
-        }
+      await track(execution.attemptId);
+      if (!options.quiet) {
+        await Promise.all([refresh(), onRefresh()]);
+        onNotify("success", action === "collect" ? "Fees collected" : "Pond closed",
+          "Tokens are in your wallet.");
       }
-      onNotify("info", "Still confirming", "Arc hasn't confirmed this step yet. Stillwater keeps watching it.");
-      return false;
+      return true;
     } catch (reason) {
-      onNotify("error", "That didn't go through", reason instanceof Error ? reason.message : "Please try again.");
+      onNotify("error", "Failed", reason instanceof Error ? reason.message : "Please try again.");
+      // A failed step can still have cost a network fee: show current balances now.
+      void Promise.all([refresh(), onRefresh()]);
       return false;
     } finally { setBusy(null); }
   };
 
-  const checkPending = async () => {
-    if (!pendingAttempt) return;
-    try {
-      const receipt = await api.reconcileAttempt(pendingAttempt);
-      if (receipt.status === "pending" || receipt.status === "submitted") {
-        onNotify("info", "Still confirming", "Stillwater is still watching it on Arc.");
-        return;
-      }
-      clearPending();
-      await Promise.all([refresh(), onRefresh()]);
-      onNotify(receipt.status === "confirmed" ? "success" : "error",
-        receipt.status === "confirmed" ? "Confirmed" : "That didn't go through", receipt.reasonCode);
-    } catch (reason) {
-      onNotify("error", "Could not check your last step", reason instanceof Error ? reason.message : "Please try again.");
-    }
-  };
-
-  return { positions, nextPage, error, loading, busy, pendingAttempt, refresh, loadMore, run, checkPending };
+  return { positions, nextPage, error, loading, busy, pendingAttempt, refresh, loadMore, run };
 }

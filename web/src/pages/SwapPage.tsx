@@ -16,6 +16,7 @@ import {
   poolSpotPrice,
 } from './ExplorePage'
 import { BalancePresets, useTokenBalance } from '../components/BalancePresets'
+import { usePendingAttempt } from '../lib/attempts'
 import {
   executePoolSwap,
   POOL_UNUSABLE_ERRORS,
@@ -89,16 +90,15 @@ export function SwapPage({
     refetch: refetchTokenBalance,
     isError: tokenBalanceError,
   } = useTokenBalance(pool?.token.address, wallet?.address)
-  const pendingKey = wallet ? `stillwater_swap_attempt_${wallet.id}` : null
-  const [pendingAttempt, setPendingAttempt] = useState<string | null>(() =>
-    wallet
-      ? sessionStorage.getItem(`stillwater_swap_attempt_${wallet.id}`)
-      : null,
+  // A swap still confirming when the page was left is picked up again here.
+  const { pending: pendingAttempt, track } = usePendingAttempt(
+    wallet ? `stillwater_swap_attempt_${wallet.id}` : null,
+    (outcome) => {
+      if (outcome.ok) onNotify('success', 'Swap complete')
+      else onNotify('error', 'Swap failed', outcome.message)
+      void Promise.all([onRefresh(), refetchTokenBalance()])
+    },
   )
-
-  useEffect(() => {
-    setPendingAttempt(pendingKey ? sessionStorage.getItem(pendingKey) : null)
-  }, [pendingKey])
 
   useEffect(() => {
     if (!initialPoolAddress) return
@@ -182,53 +182,8 @@ export function SwapPage({
 
   const executeAndWait = async (intentId: string) => {
     const executed = await api.executeIntent(intentId)
-    if (pendingKey) sessionStorage.setItem(pendingKey, executed.attemptId)
-    setPendingAttempt(executed.attemptId)
-    for (let attempt = 0; attempt < 15; attempt++) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1500))
-      const status = await api.reconcileAttempt(executed.attemptId)
-      if (status.status === 'confirmed') {
-        if (pendingKey) sessionStorage.removeItem(pendingKey)
-        setPendingAttempt(null)
-        return true
-      }
-      if (status.status !== 'pending' && status.status !== 'submitted') {
-        if (pendingKey) sessionStorage.removeItem(pendingKey)
-        setPendingAttempt(null)
-        throw new Error(status.reasonCode || 'Transaction did not confirm')
-      }
-    }
-    throw new Error(
-      'Transaction is still pending. Refresh your wallet before retrying.',
-    )
-  }
-
-  const checkPending = async () => {
-    if (!pendingAttempt) return
-    try {
-      const result = await api.reconcileAttempt(pendingAttempt)
-      if (result.status === 'confirmed' || result.status === 'failed') {
-        if (pendingKey) sessionStorage.removeItem(pendingKey)
-        setPendingAttempt(null)
-        await onRefresh()
-        onNotify(
-          'info',
-          'Previous transaction settled',
-          'Review your balances before continuing.',
-        )
-      } else
-        onNotify(
-          'info',
-          'Transaction pending',
-          'Please wait for confirmation before starting another swap.',
-        )
-    } catch (reason) {
-      onNotify(
-        'error',
-        'Could not check transaction',
-        reason instanceof Error ? reason.message : 'Try again.',
-      )
-    }
+    await track(executed.attemptId)
+    return true
   }
 
   const submit = async () => {
@@ -243,15 +198,14 @@ export function SwapPage({
         onApprove: () =>
           onNotify(
             'info',
-            'Approving swap input',
-            'Stillwater will approve the exact input amount, then continue.',
+            'Approving the amount first',
           ),
       })
       if (!completed) return
       onNotify(
         'success',
         'Swap complete',
-        `${direction === 'buy' ? 'Bought' : 'Sold'} ${pool.token.symbol} in the selected pool.`,
+        `${direction === 'buy' ? 'Bought' : 'Sold'} ${pool.token.symbol}.`,
       )
       setAmount('')
       setQuote(null)
@@ -266,7 +220,9 @@ export function SwapPage({
         setPoolQuoteUnavailable(POOL_UNUSABLE_ERRORS.has(code))
         setError(swapErrorMessage(code))
       }
-      onNotify('error', 'Swap not completed', swapErrorMessage(code))
+      onNotify('error', 'Swap failed', swapErrorMessage(code))
+      // A failed swap can still have cost a network fee: show current balances now.
+      void Promise.all([onRefresh(), refetchTokenBalance()])
     } finally {
       setBusy(false)
     }
@@ -297,7 +253,15 @@ export function SwapPage({
           </p>
         </div>
       )}
-      <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)] items-start gap-8 max-[900px]:grid-cols-1">
+      <div
+        className={
+          embedded
+            ? 'grid'
+            : 'grid grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)] items-start gap-8 max-[900px]:grid-cols-1'
+        }
+      >
+        {/* Opened from a pool, the pool is already chosen: only the trade shows. */}
+        {embedded ? null : (
         <div className={CARD}>
           <h2 className="text-[1.75rem] font-semibold">
             {pool ? 'Your pool' : 'Choose a pool'}
@@ -370,6 +334,7 @@ export function SwapPage({
             whether the token is safe.
           </p>
         </div>
+        )}
         <div className={CARD}>
           <div
             className="flex gap-8 border-b border-line"
@@ -505,16 +470,15 @@ export function SwapPage({
                 else setReview(true)
               }}
             >
-              {busy ? 'Working…' : review ? 'Confirm swap' : 'Review swap'}
+              {busy
+                ? 'Working…'
+                : pendingAttempt
+                  ? 'Confirming your last swap…'
+                  : review
+                    ? 'Confirm swap'
+                    : 'Review swap'}
             </button>
           )}
-          {review && quote ? (
-            <p className="text-[.98rem] leading-relaxed text-ink-muted">
-              Stillwater uses up to {amount} {paySymbol}, approves that exact
-              amount if needed, and stops if you would receive less than the
-              amount shown.
-            </p>
-          ) : null}
         </div>
       </div>
     </section>

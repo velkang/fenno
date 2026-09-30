@@ -192,7 +192,7 @@ export const App: React.FC = () => {
     setUser(null)
     setWallet(null)
     setSummary(null)
-    addToast('info', 'Logged Out', 'Stillwater session ended.')
+    addToast('info', 'Logged out')
   }
 
   const handleProvision = async () => {
@@ -201,7 +201,7 @@ export const App: React.FC = () => {
       await refreshData()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Provisioning failed'
-      addToast('error', 'Provisioning Failed', msg)
+      addToast('error', 'Wallet not created', msg)
     }
   }
 
@@ -310,7 +310,7 @@ export const App: React.FC = () => {
                 setUser(newUser)
                 setShowAuthModal(false)
               }}
-              onError={(msg) => addToast('error', 'Authentication Error', msg)}
+              onError={(msg) => addToast('error', 'Sign-in failed', msg)}
               onClose={() => setShowAuthModal(false)}
             />
           </div>

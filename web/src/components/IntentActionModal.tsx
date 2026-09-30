@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { parseUnits, formatUnits } from "viem";
 import { api } from "../lib/api-client";
+import { waitForAttempt } from "../lib/attempts";
 import type { AlphaPosition, AlphaWalletSummary } from "@stillwater/chain";
 import { IconClose, IconArrowLeftRight, IconCheck, IconAlert } from "./Icons";
 
@@ -270,7 +271,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
   const handleCirBtcPercent = (pct: number, target: "mint" | "increase" | "approve") => {
     if (cirBtcBalRaw <= 0n) {
-      onNotify("info", "No cirBTC Available", "Managed wallet currently has 0 cirBTC.");
+      onNotify("info", "No cirBTC in your wallet");
       return;
     }
     const raw = pct === 100 ? cirBtcBalRaw : (cirBtcBalRaw * BigInt(pct)) / 100n;
@@ -295,7 +296,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
   const handleUsdcPercent = (pct: number, target: "mint" | "increase" | "approve") => {
     if (usdcBalRaw <= 0n) {
-      onNotify("info", "No USDC Available", "Managed wallet currently has 0 USDC.");
+      onNotify("info", "No USDC in your wallet");
       return;
     }
     const raw = pct === 100 ? usdcBalRaw : (usdcBalRaw * BigInt(pct)) / 100n;
@@ -377,7 +378,7 @@ export const IntentActionModal: React.FC<Props> = ({
           gasEstimate: res.simulation.gasEstimate,
           simulationData: res.approval,
         });
-        onNotify("info", "Ready to confirm", "Check the details, then confirm to send.");
+        onNotify("info", "Ready to confirm");
       } else if (modal.type === "mint") {
         const rawCirBtc = parseHumanUnits(mintCirBtc, 8, "cirBTC");
         const rawUsdc = parseHumanUnits(mintUsdc, 6, "USDC");
@@ -396,14 +397,14 @@ export const IntentActionModal: React.FC<Props> = ({
           gasEstimate: res.simulation.gasEstimate,
           simulationData: res.simulation,
         });
-        onNotify("info", "Ready to confirm", "Check the details, then confirm to send.");
+        onNotify("info", "Ready to confirm");
       } else if (modal.type === "import") {
         const res = await api.importPosition(importTokenId.trim(), idempotencyKey);
         setPreparedIntent({
           intentId: res.intentId,
           simulationData: res.position,
         });
-        onNotify("success", "Position found", `Position #${res.position.tokenId} belongs to your Stillwater wallet.`);
+        onNotify("success", "Position found", `Position #${res.position.tokenId} is yours.`);
       } else if (modal.type === "action") {
         const deadline = String(Math.floor(Date.now() / 1000) + 1800);
         const rawCirBtc = modal.kind === "increase" ? parseHumanUnits(actionAmountCirBtc, 8, "cirBTC", true) : undefined;
@@ -429,12 +430,12 @@ export const IntentActionModal: React.FC<Props> = ({
           gasEstimate: res.simulation.gasEstimate,
           simulationData: res.simulation.output,
         });
-        onNotify("info", "Ready to confirm", "Check the details, then confirm to send.");
+        onNotify("info", "Ready to confirm");
       }
     } catch (err: unknown) {
       console.error("Preparation failed", err);
       const msg = err instanceof Error ? err.message : "Preparation failed";
-      onNotify("error", "Couldn't prepare this action", msg);
+      onNotify("error", "Couldn't prepare this", msg);
     } finally {
       setLoading(false);
     }
@@ -454,42 +455,20 @@ export const IntentActionModal: React.FC<Props> = ({
       onNotify(
         "info",
         "Transaction sent",
-        `Waiting for Arc to confirm ${res.transactionHash.slice(0, 10)}…`,
+        "Waiting for Arc to confirm.",
       );
 
-      let confirmed = false;
-      for (let attempt = 0; attempt < 6; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        try {
-          const rec = await api.reconcileAttempt(res.attemptId);
-          if (rec.status === "confirmed") {
-            onNotify(
-              "success",
-              "Done",
-              "Arc confirmed the transaction.",
-            );
-            confirmed = true;
-            break;
-          }
-        } catch {
-          // Retry
-        }
-      }
-
-      if (!confirmed) {
-        onNotify(
-          "info",
-          "Transaction sent",
-          "Still waiting for Arc to confirm. Your positions will update when it does.",
-        );
-      }
+      await waitForAttempt(res.attemptId);
+      onNotify("success", "Done");
 
       await onSuccess();
       onClose();
     } catch (err: unknown) {
       console.error("Execution error", err);
       const msg = err instanceof Error ? err.message : "Execution failed";
-      onNotify("error", "Couldn't send the transaction", msg);
+      onNotify("error", "Transaction failed", msg);
+      // A failed transaction can still have cost a network fee: show current balances now.
+      void onSuccess();
     } finally {
       setLoading(false);
     }

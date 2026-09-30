@@ -26,7 +26,8 @@ export function KoiBand({ min, max, price, labels, size = "large" }: Props) {
   const where = inside ? "inside your band" : ratio < 0 ? "below your band" : "above your band";
   return (
     <div className="flex flex-col gap-2">
-      <Wave />
+      {/* The small band sits in tight forms; the waves are only decoration. */}
+      {large ? <Wave /> : null}
       <div className={`relative ${large ? "h-[200px]" : "h-[132px]"}`}
         role="img" aria-label={`Price ${formatPoolPrice(price)}, ${where} of ${formatPoolPrice(min)} to ${formatPoolPrice(max)}`}>
         <div className="absolute inset-y-[6%] rounded-full border-2 border-dashed border-band bg-band-fill"
@@ -45,7 +46,7 @@ export function KoiBand({ min, max, price, labels, size = "large" }: Props) {
         <span className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${BAND_LEFT}%` }}>{labels?.min ?? `$${formatPoolPrice(min)}`}</span>
         <span className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${100 - BAND_LEFT}%` }}>{labels?.max ?? `$${formatPoolPrice(max)}`}</span>
       </div>
-      <Wave flip />
+      {large ? <Wave flip /> : null}
     </div>
   );
 }
