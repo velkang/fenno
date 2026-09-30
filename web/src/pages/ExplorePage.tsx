@@ -4,6 +4,7 @@ import { api, type PublicPool } from "../lib/api-client";
 import { ARC_TOKENS, tokenWaters, type Waters } from "@stillwater/chain";
 import { IconSearch } from "../components/Icons";
 import { usdcDecimals as poolUsdcDecimals } from "../lib/swap-actions";
+import { Loading, Skeleton } from "../components/Skeleton";
 
 export const PAGE_TITLE = "text-[clamp(2.2rem,4.5vw,3.5rem)] leading-[1.1] font-semibold tracking-[-.02em]";
 export const PAGE_INTRO = "mt-2 max-w-[760px] text-[1.2rem] leading-relaxed text-ink-muted";
@@ -131,7 +132,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
       <div className={`${TABLE_GRID} border-b border-line text-[.85rem] font-semibold tracking-[.06em] text-ink-muted uppercase max-[800px]:hidden`} aria-hidden="true">
         <span>Pool</span><span>Token price</span><span>USDC in pool</span><span>You earn</span><span />
       </div>
-      {loading ? <p className={STATE_TEXT} role="status">Looking through the pools…</p>
+      {loading ? <PoolRowsSkeleton />
         : error ? <p className={`${STATE_TEXT} text-danger`} role="alert">{error} <button type="button" className="ml-2.5 text-link underline" onClick={() => { setError(null); setLoading(true); setRetry((value) => value + 1); }}>Try again</button></p>
           : pools.length === 0 ? <p className={STATE_TEXT}>{settledQuery
             ? "No pool found. Check the token address or try another name."
@@ -167,4 +168,19 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
     </div> : null}
     <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
   </section>;
+}
+
+function PoolRowsSkeleton() {
+  return <Loading label="Loading pools…">
+    {Array.from({ length: 6 }, (_, row) => <div key={row} className={`${TABLE_GRID} min-h-[92px] border-b border-line last:border-b-0`}>
+      <span className="flex items-center gap-4 max-[800px]:col-span-full">
+        <Skeleton className="size-12 flex-none" />
+        <span className="flex flex-col gap-2"><Skeleton className="h-4 w-36" /><Skeleton className="h-3 w-28" /></span>
+      </span>
+      <Skeleton className="h-4 w-20" />
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-4 w-14" />
+      <Skeleton className="h-4 w-24 max-[800px]:justify-self-end" />
+    </div>)}
+  </Loading>;
 }

@@ -5,8 +5,7 @@ import {
   TransactionNotFoundError,
   TransactionReceiptNotFoundError,
 } from "viem";
-import { importWrappingKey } from "./crypto";
-import { D1WalletLifecycleStore } from "./wallet-lifecycle-store";
+import { createCircleWallet, signWithCircle, type CircleEnv } from "./circle";
 import { D1MainnetEvaluationStore } from "./mainnet-evaluation-store";
 import { D1MainnetRehearsalStore } from "./mainnet-rehearsal-store";
 import { D1MainnetReconciliationStore } from "./mainnet-reconciliation-store";
@@ -30,44 +29,34 @@ import {
 } from "./mainnet-reconciler";
 import { MainnetSubmissionError } from "./mainnet-submission";
 import {
-  rotateManagedWalletKey,
-  WalletLifecycleError,
-} from "./lifecycle";
-import {
   D1WalletProvisioningStore,
   ProvisioningError,
   provisionWallet,
 } from "./provision";
 
 export {
-  generateWrappingKey,
-  importWrappingKey,
-  provisionEncryptedWallet,
-  rotateEncryptedWallet,
-  withManagedAccount,
-  type EncryptedWallet,
-} from "./crypto";
+  CircleError,
+  createCircleWallet,
+  entitySecretCiphertext,
+  signWithCircle,
+  type CircleEnv,
+} from "./circle";
 export type { WalletState } from "./policy";
 export {
   D1WalletProvisioningStore,
   ProvisioningError,
   provisionWallet,
+  type CreateCustodyWallet,
   type ProvisionedWallet,
   type StoredManagedWallet,
   type WalletProvisioningStore,
 } from "./provision";
-export { D1WalletLifecycleStore } from "./wallet-lifecycle-store";
-export {
-  rotateManagedWalletKey,
-  WalletLifecycleError,
-  type LifecycleWallet,
-  type WalletLifecycleStore,
-} from "./lifecycle";
 export { D1MainnetEvaluationStore } from "./mainnet-evaluation-store";
 export {
   evaluateLoadedMainnetIntent,
   evaluateMainnetIntent,
   MainnetEvaluationError,
+  type CustodyWallet,
   type LoadedMainnetIntent,
   type MainnetAuditClient,
   type MainnetEvaluation,
@@ -110,10 +99,8 @@ export {
   type MainnetSubmissionStore,
 } from "./mainnet-submission";
 
-type Env = {
+type Env = CircleEnv & {
   DB: D1Database;
-  WALLET_KEK_V1: string;
-  WALLET_KEK_V2?: string;
   // Optional override; without it, Arc's default public RPC is used.
   ARC_RPC_URL?: string;
   // Optional: "true" halts all signing except USDC withdrawals.
@@ -139,15 +126,6 @@ async function body(request: Request): Promise<InternalRequest | Response> {
   }
 }
 
-async function wrappingKeys(env: Env): Promise<Map<number, CryptoKey>> {
-  const keys = new Map<number, CryptoKey>();
-  keys.set(1, await importWrappingKey(env.WALLET_KEK_V1));
-  if (env.WALLET_KEK_V2) {
-    keys.set(2, await importWrappingKey(env.WALLET_KEK_V2));
-  }
-  return keys;
-}
-
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -166,18 +144,18 @@ export default {
       try {
         const result = await provisionWallet(
           new D1WalletProvisioningStore(env.DB),
-          await importWrappingKey(env.WALLET_KEK_V1),
+          (idempotencyKey) => createCircleWallet(env, idempotencyKey),
           {
             userId: input.userId,
             walletId: input.walletId,
-            keyVersion: 1,
             now: Date.now(),
           },
         );
         return Response.json(result, { status: result.created ? 201 : 200 });
       } catch (error) {
         if (error instanceof ProvisioningError) {
-          const status = error.code === "VERIFIED_OWNER_NOT_FOUND" ? 404 : 409;
+          const status = error.code === "VERIFIED_OWNER_NOT_FOUND" ? 404
+            : error.code === "CUSTODY_WALLET_CREATE_FAILED" ? 502 : 409;
           return Response.json({ error: error.code }, { status });
         }
         return Response.json({ error: "PROVISIONING_FAILED" }, { status: 500 });
@@ -281,7 +259,8 @@ export default {
             sendRawTransaction: ({ serializedTransaction }) =>
               client.sendRawTransaction({ serializedTransaction }),
           },
-          getWrappingKeys: () => wrappingKeys(env),
+          signTransaction: (circleWalletId, transaction) =>
+            signWithCircle(env, circleWalletId, transaction),
           emergencyStop: env.EMERGENCY_STOP === "true",
         });
         return Response.json(result, { status: 202 });
@@ -340,38 +319,6 @@ export default {
           return Response.json({ error: error.code }, { status: error.status });
         }
         return Response.json({ error: "MAINNET_RECONCILIATION_FAILED" }, { status: 500 });
-      }
-    }
-
-    if (url.pathname === "/internal/v1/wallets/rotate-key") {
-      const input = await body(request);
-      if (input instanceof Response) return input;
-      if (!isIdentifier(input.userId) || !isIdentifier(input.walletId)) {
-        return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
-      }
-      if (!env.WALLET_KEK_V2) {
-        return Response.json({ error: "NEXT_KEY_UNAVAILABLE" }, { status: 503 });
-      }
-
-      try {
-        const result = await rotateManagedWalletKey(
-          new D1WalletLifecycleStore(env.DB),
-          await importWrappingKey(env.WALLET_KEK_V1),
-          await importWrappingKey(env.WALLET_KEK_V2),
-          {
-            userId: input.userId,
-            walletId: input.walletId,
-            currentKeyVersion: 1,
-            nextKeyVersion: 2,
-            now: Date.now(),
-          },
-        );
-        return Response.json(result);
-      } catch (error) {
-        if (error instanceof WalletLifecycleError) {
-          return Response.json({ error: error.code }, { status: 409 });
-        }
-        return Response.json({ error: "WALLET_ROTATION_FAILED" }, { status: 500 });
       }
     }
 

@@ -1,13 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { AlphaWalletSummary, Waters } from "@stillwater/chain";
 import { ALPHA_POOL } from "@stillwater/chain";
 import type { AuthUser, ManagedWalletRecord } from "../lib/api-client";
-import type { ModalType } from "../components/IntentActionModal";
 import { Koi } from "../components/Icons";
-import { formatUsd, pondFromV4, pondHeadline, pondsFromSummary, tomoNotes, type Pond, type TomoNote } from "../lib/ponds";
+import { pondFromV4, pondHeadline, pondsFromSummary, tomoNotes, type TomoNote } from "../lib/ponds";
 import { ChooseWaters } from "../components/pond/ChooseWaters";
 import { KoiBandCard } from "../components/pond/KoiBandCard";
-import { PondList, type PondAction } from "../components/pond/PondList";
 import { TomoCard } from "../components/pond/TomoCard";
 import { useV4Ponds } from "../components/pond/useV4Ponds";
 
@@ -17,53 +15,21 @@ type Props = {
   summary: AlphaWalletSummary | null;
   onRefresh: () => Promise<void>;
   onNotify: (type: "success" | "error" | "info", title: string, message?: string) => void;
-  onOpenModal: (modal: ModalType) => void;
+  onOpenPositions: () => void;
   onOpenAuth: () => void;
   onExplore: (waters?: Waters) => void;
   onOpenPool: (address: string) => void;
 };
 
-const V3_MODAL_KIND = { collect: "collect", add: "increase", remove: "decrease", close: "withdraw" } as const;
-
-export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenModal, onOpenAuth, onExplore, onOpenPool }: Props) {
+export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenPositions, onOpenAuth, onExplore, onOpenPool }: Props) {
   const v4 = useV4Ponds(wallet, onRefresh, onNotify);
-  const [collecting, setCollecting] = useState(false);
   const ponds = useMemo(() => [...v4.positions.map(pondFromV4), ...pondsFromSummary(summary)], [v4.positions, summary]);
   const gatheredUsd = ponds.reduce((sum, pond) => sum + (pond.gatheredUsd ?? 0), 0);
-  const collectable = ponds.filter((pond) => pond.v4 && (pond.gatheredUsd ?? 0) >= 0.005);
-  const collectAllUsd = collectable.reduce((sum, pond) => sum + (pond.gatheredUsd ?? 0), 0);
   // Feature the pond that needs attention first, else the most valuable one.
   const featured = [...ponds].sort((a, b) => Number(b.state !== "feeding") - Number(a.state !== "feeding")
     || (b.valueUsd ?? 0) - (a.valueUsd ?? 0))[0];
   const [line1, line2] = pondHeadline(ponds);
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }).toUpperCase();
-  const busy = collecting || v4.busy !== null || v4.pendingAttempt !== null;
-
-  const act = async (pond: Pond, action: PondAction) => {
-    if (pond.v3) {
-      onOpenModal({ type: "action", kind: V3_MODAL_KIND[action], position: pond.v3 });
-      return;
-    }
-    if (!pond.v4) return;
-    if (action === "close" && !window.confirm(
-      `Close your ${pond.pair} pond? Both tokens and any fees it gathered go back to your Stillwater wallet.`)) return;
-    await v4.run(pond.v4, action === "close" ? "withdraw" : "collect");
-  };
-
-  const collectAll = async () => {
-    setCollecting(true);
-    let collected = 0;
-    try {
-      for (const pond of collectable) {
-        if (!await v4.run(pond.v4!, "collect", { quiet: true })) break;
-        collected += pond.gatheredUsd ?? 0;
-      }
-    } finally {
-      setCollecting(false);
-      await Promise.all([v4.refresh(), onRefresh()]);
-    }
-    if (collected > 0) onNotify("success", "Fees collected", `${formatUsd(collected)} is in your Stillwater wallet.`);
-  };
 
   const openPondPool = (note: TomoNote) => {
     const pool = note.pond?.v4?.pool.address ?? (note.pond?.v3 ? ALPHA_POOL.address : null);
@@ -105,20 +71,12 @@ export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenMod
         ) : (
           <>
             {featured ? <KoiBandCard pond={featured} /> : null}
-            <PondList ponds={ponds} busy={busy} collectAllUsd={collectAllUsd} onCollectAll={() => void collectAll()}
-              onAction={(pond, action) => void act(pond, action)} />
-            {v4.pendingAttempt ? (
-              <button type="button" onClick={() => void v4.checkPending()} className="self-start text-[1rem] font-semibold text-rest">
-                Check my last step
-              </button>
-            ) : null}
-            {v4.nextPage !== null ? (
-              <button type="button" onClick={() => void v4.loadMore()} disabled={v4.loading}
-                className="self-start text-[1rem] font-semibold text-link disabled:opacity-50">Show more ponds</button>
-            ) : null}
+            <button type="button" onClick={onOpenPositions}
+              className="min-h-14 self-start rounded-full border border-line px-7 text-[1.15rem] font-semibold text-ink hover:bg-tint">
+              See your positions
+            </button>
           </>
         )}
-        {v4.loading && empty && wallet ? <p role="status" className="text-ink-muted">Looking for your ponds…</p> : null}
         {v4.error ? <p role="alert" className="text-danger">{v4.error}</p> : null}
       </section>
 

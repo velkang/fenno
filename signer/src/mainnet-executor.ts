@@ -3,12 +3,13 @@ import {
 } from "@stillwater/chain";
 import {
   keccak256,
+  parseTransaction,
+  recoverTransactionAddress,
   type Address,
   type Hex,
   type TransactionSerializableEIP1559,
   type TransactionSerializedEIP1559,
 } from "viem";
-import { withManagedAccount } from "./crypto";
 import {
   evaluateLoadedMainnetIntent,
   type MainnetAuditClient,
@@ -63,7 +64,8 @@ export async function executeMainnetIntent(input: {
   reservationStore: Pick<ExecutionRehearsalStore, "reserve" | "release">;
   submissionStore: MainnetSubmissionStore;
   rpc: MainnetExecutionRpc;
-  getWrappingKeys: () => Promise<ReadonlyMap<number, CryptoKey>>;
+  /** Signs with the custody provider (Circle) and returns the serialized transaction. */
+  signTransaction: (circleWalletId: string, transaction: TransactionSerializableEIP1559) => Promise<Hex>;
   emergencyStop: boolean;
   now?: () => number;
 }): Promise<MainnetExecutionResult> {
@@ -83,14 +85,9 @@ export async function executeMainnetIntent(input: {
   if (evaluation.decision !== "allowed") {
     throw new MainnetExecutionError(evaluation.reasonCode, 422);
   }
-  if (!loaded.encryptedWallet) {
-    throw new MainnetExecutionError("ENCRYPTED_WALLET_UNAVAILABLE", 500);
-  }
-  const wrappingKey = (await input.getWrappingKeys()).get(
-    loaded.encryptedWallet.keyVersion,
-  );
-  if (!wrappingKey) {
-    throw new MainnetExecutionError("KEY_VERSION_UNAVAILABLE", 503);
+  const custody = loaded.custody;
+  if (!custody) {
+    throw new MainnetExecutionError("CUSTODY_WALLET_UNAVAILABLE", 500);
   }
 
   const [nonce, fees, estimatedGas] = await Promise.all([
@@ -143,7 +140,7 @@ export async function executeMainnetIntent(input: {
   const reservedAt = now();
   if (!(await input.reservationStore.reserve({
     intentId: loaded.intentId,
-    walletId: loaded.encryptedWallet.walletId,
+    walletId: custody.walletId,
     nonce,
     now: reservedAt,
     leaseExpiresAt: reservedAt + 30_000,
@@ -165,15 +162,16 @@ export async function executeMainnetIntent(input: {
 
   let signed: TransactionSerializedEIP1559;
   try {
-    signed = await withManagedAccount(
-      loaded.encryptedWallet,
-      wrappingKey,
-      (account) => account.signTransaction(transaction),
-    ) as TransactionSerializedEIP1559;
+    signed = await input.signTransaction(custody.circleWalletId, transaction) as TransactionSerializedEIP1559;
+    // Never broadcast what we did not build: the remote signature must cover
+    // exactly this transaction and come from this wallet.
+    if (!(await signedAsBuilt(signed, transaction, custody.address))) {
+      throw new Error("SIGNED_TRANSACTION_MISMATCH");
+    }
   } catch {
     await input.reservationStore.release({
       intentId: loaded.intentId,
-      walletId: loaded.encryptedWallet.walletId,
+      walletId: custody.walletId,
       nonce,
       now: now(),
     });
@@ -215,4 +213,26 @@ export async function executeMainnetIntent(input: {
     transactionHash,
     nonce,
   };
+}
+
+async function signedAsBuilt(
+  signed: TransactionSerializedEIP1559,
+  built: TransactionSerializableEIP1559,
+  wallet: Address,
+): Promise<boolean> {
+  // parseTransaction leaves zero-valued fields out, so compare with defaults.
+  const parsed = parseTransaction(signed);
+  const same = parsed.type === "eip1559" &&
+    parsed.chainId === built.chainId &&
+    (parsed.nonce ?? 0) === (built.nonce ?? 0) &&
+    parsed.to?.toLowerCase() === built.to?.toLowerCase() &&
+    (parsed.data ?? "0x").toLowerCase() === (built.data ?? "0x").toLowerCase() &&
+    (parsed.value ?? 0n) === (built.value ?? 0n) &&
+    (parsed.gas ?? 0n) === (built.gas ?? 0n) &&
+    (parsed.maxFeePerGas ?? 0n) === (built.maxFeePerGas ?? 0n) &&
+    (parsed.maxPriorityFeePerGas ?? 0n) === (built.maxPriorityFeePerGas ?? 0n) &&
+    (parsed.accessList ?? []).length === 0;
+  if (!same) return false;
+  const signer = await recoverTransactionAddress({ serializedTransaction: signed });
+  return signer.toLowerCase() === wallet.toLowerCase();
 }

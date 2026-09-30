@@ -5,11 +5,11 @@ This Worker is a private signing boundary for Arc Mainnet. It must be called onl
 Before deployment:
 
 1. The D1 database it shares with the API (`DB`) is set in `wrangler.jsonc`.
-2. Generate a random 32-byte wrapping key (`openssl rand -base64 32`) and add it as the `WALLET_KEK_V1` secret under the Worker's Settings → Variables & Secrets in the Cloudflare dashboard. Keep a copy: without it no managed wallet can be decrypted.
-3. Do not copy that secret to the API, D1, build logs, or repository configuration.
+2. Add `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` as secrets and `CIRCLE_WALLET_SET_ID` as a variable under the Worker's Settings → Variables & Secrets in the Cloudflare dashboard (see Circle wallets in the root README).
+3. Do not copy those secrets to the API, D1, build logs, or repository configuration.
 4. The API reaches this Worker through its `SIGNER` service binding.
 
-Internal operations provision encrypted wallets, rotate wrapping-key versions, and evaluate, execute, and reconcile mainnet intents. They never return key material.
+Internal operations provision Circle wallets and evaluate, execute, and reconcile mainnet intents. The signer holds no private keys: Circle signs, and the executor checks that the signed transaction is exactly the one it built, from the wallet's own address, before broadcasting it.
 
 The mainnet policy decoder independently validates exact approval and Uniswap position calldata, payload hashes, ownership context, wallet state, configured value caps, recipient, liquidity, slippage, deadlines, emergency stop, and fresh simulation evidence. A private audit-only route loads prepared intents from D1, revalidates current Arc ownership/liquidity, replays the exact call at a safe block, and stores an allow/reject evaluation.
 
@@ -21,4 +21,4 @@ The internal `handoffMainnetSubmission` primitive is reserved for the future sig
 
 `POST /internal/v1/intents/execute-mainnet` connects those controls into one executor. Policy evaluation must pass with the optional emergency stop off (`EMERGENCY_STOP` unset or not `true`). The executor signs the same in-memory intent object that passed policy, persists its derived hash before broadcast, and rejects a different RPC-returned hash. The API applies its own ownership check before calling this route.
 
-None of the mainnet audit, rehearsal, or reconciliation paths loads a wrapping key, signs, or broadcasts.
+None of the mainnet audit, rehearsal, or reconciliation paths calls Circle, signs, or broadcasts.

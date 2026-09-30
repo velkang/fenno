@@ -12,7 +12,8 @@ export function useV4Ponds(wallet: ManagedWalletRecord | null, onRefresh: () => 
   const [positions, setPositions] = useState<V4Position[]>([]);
   const [nextPage, setNextPage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Start as loading when there is a wallet, so the page never flashes "no positions" first.
+  const [loading, setLoading] = useState(wallet !== null);
   const [busy, setBusy] = useState<string | null>(null);
   const pendingKey = wallet ? `stillwater-v4-position-attempt:${wallet.id}` : null;
   const [pendingAttempt, setPendingAttempt] = useState<string | null>(null);

@@ -12,7 +12,6 @@ export type ManagedWalletRecord = {
   id: string;
   address: string;
   state: "provisioning" | "active" | "paused" | "withdrawing" | "closed" | "quarantined";
-  key_version: number;
   created_at: number;
   updated_at: number;
 };

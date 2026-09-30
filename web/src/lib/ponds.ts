@@ -149,7 +149,7 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number): TomoNote[] {
   if (gatheredUsd >= 1) {
     notes.push({ id: "gathered", message: `Your ponds have gathered ${formatUsd(gatheredUsd)} in fees.`,
       advice: "Collecting moves the fees to your Stillwater wallet. Your ponds keep earning either way.",
-      steps: ["Press Collect under Your ponds.", "Each pond with fees is collected in turn.", "The fees land in your Stillwater wallet."] });
+      steps: ["Open Positions and press Collect.", "Each pond with fees is collected in turn.", "The fees land in your Stillwater wallet."] });
   }
   if (ponds.length > 0 && notes.length === 0) {
     notes.push({ id: "calm", message: "All your koi are feeding. Nothing needs you today.",

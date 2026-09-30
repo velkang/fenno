@@ -119,11 +119,7 @@ type Row = {
   swap_deadline: number | null;
   constraints_json: string | null;
   wallet_id: string;
-  key_version: number;
-  ciphertext: string;
-  ciphertext_iv: string;
-  wrapped_data_key: string;
-  wrapped_data_key_iv: string;
+  circle_wallet_id: string | null;
 };
 
 const allowedKinds = new Set<string>([
@@ -150,9 +146,7 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
       `SELECT wi.id AS intent_id, wi.kind, wi.status, wi.expires_at,
               wi.payload_hash, mw.address AS wallet_address,
               mw.state AS wallet_state, u.owner_address AS root_owner_address,
-              mw.id AS wallet_id, mw.key_version, mw.ciphertext,
-              mw.ciphertext_iv, mw.wrapped_data_key,
-              mw.wrapped_data_key_iv,
+              mw.id AS wallet_id, mw.circle_wallet_id,
               ai.chain_id AS approval_chain_id,
               ai.token_address AS approval_target,
               ai.pool_address AS approval_pool_address,
@@ -383,15 +377,13 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
             tokenDecimals: row.swap_token_decimals,
           }
         : undefined,
-      encryptedWallet: {
-        walletId: row.wallet_id,
-        address: getAddress(row.wallet_address),
-        keyVersion: row.key_version,
-        ciphertext: row.ciphertext,
-        ciphertextIv: row.ciphertext_iv,
-        wrappedDataKey: row.wrapped_data_key,
-        wrappedDataKeyIv: row.wrapped_data_key_iv,
-      },
+      custody: row.circle_wallet_id
+        ? {
+            walletId: row.wallet_id,
+            circleWalletId: row.circle_wallet_id,
+            address: getAddress(row.wallet_address),
+          }
+        : undefined,
     };
   }
 

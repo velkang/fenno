@@ -1,10 +1,9 @@
-import type { Address } from "viem";
-import {
-  provisionEncryptedWallet,
-  type EncryptedWallet,
-} from "./crypto";
+import { getAddress, type Address } from "viem";
 
-export type StoredManagedWallet = EncryptedWallet & {
+export type StoredManagedWallet = {
+  walletId: string;
+  address: Address;
+  circleWalletId: string;
   userId: string;
   ownerAddressAtCreation: Address;
   state: "active";
@@ -30,10 +29,15 @@ export class ProvisioningError extends Error {
   }
 }
 
+/** Creates the custody wallet; the same idempotency key must return the same wallet. */
+export type CreateCustodyWallet = (
+  idempotencyKey: string,
+) => Promise<{ circleWalletId: string; address: Address }>;
+
 export async function provisionWallet(
   store: WalletProvisioningStore,
-  wrappingKey: CryptoKey,
-  input: { userId: string; walletId: string; keyVersion: number; now: number },
+  createWallet: CreateCustodyWallet,
+  input: { userId: string; walletId: string; now: number },
 ): Promise<ProvisionedWallet> {
   const existing = await store.getWalletByUserId(input.userId);
   if (existing) {
@@ -50,13 +54,17 @@ export async function provisionWallet(
   const ownerAddress = await store.getOwnerAddress(input.userId);
   if (!ownerAddress) throw new ProvisioningError("VERIFIED_OWNER_NOT_FOUND");
 
-  const encrypted = await provisionEncryptedWallet(
-    wrappingKey,
-    input.keyVersion,
-    input.walletId,
-  );
+  let custody: Awaited<ReturnType<CreateCustodyWallet>>;
+  try {
+    // The user id makes retries return the same Circle wallet.
+    custody = await createWallet(input.userId);
+  } catch {
+    throw new ProvisioningError("CUSTODY_WALLET_CREATE_FAILED");
+  }
   const wallet: StoredManagedWallet = {
-    ...encrypted,
+    walletId: input.walletId,
+    address: getAddress(custody.address),
+    circleWalletId: custody.circleWalletId,
     userId: input.userId,
     ownerAddressAtCreation: ownerAddress,
     state: "active",
@@ -91,11 +99,7 @@ type WalletRow = {
   owner_address_at_creation: Address;
   address: Address;
   state: "active";
-  key_version: number;
-  ciphertext: string;
-  ciphertext_iv: string;
-  wrapped_data_key: string;
-  wrapped_data_key_iv: string;
+  circle_wallet_id: string;
   created_at: number;
   updated_at: number;
 };
@@ -107,11 +111,7 @@ function fromRow(row: WalletRow): StoredManagedWallet {
     ownerAddressAtCreation: row.owner_address_at_creation,
     address: row.address,
     state: row.state,
-    keyVersion: row.key_version,
-    ciphertext: row.ciphertext,
-    ciphertextIv: row.ciphertext_iv,
-    wrappedDataKey: row.wrapped_data_key,
-    wrappedDataKeyIv: row.wrapped_data_key_iv,
+    circleWalletId: row.circle_wallet_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -140,10 +140,9 @@ export class D1WalletProvisioningStore implements WalletProvisioningStore {
     await this.database
       .prepare(
         `INSERT INTO managed_wallets (
-          id, user_id, owner_address_at_creation, address, state, key_version,
-          ciphertext, ciphertext_iv, wrapped_data_key, wrapped_data_key_iv,
-          created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+          id, user_id, owner_address_at_creation, address, state,
+          circle_wallet_id, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
       )
       .bind(
         wallet.walletId,
@@ -151,11 +150,7 @@ export class D1WalletProvisioningStore implements WalletProvisioningStore {
         wallet.ownerAddressAtCreation,
         wallet.address,
         wallet.state,
-        wallet.keyVersion,
-        wallet.ciphertext,
-        wallet.ciphertextIv,
-        wallet.wrappedDataKey,
-        wallet.wrappedDataKeyIv,
+        wallet.circleWalletId,
         wallet.createdAt,
         wallet.updatedAt,
       )

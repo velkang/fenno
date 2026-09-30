@@ -20,13 +20,13 @@ const ACTIONS: { id: PondAction; label: string; v3Only?: boolean }[] = [
 
 const GHOST = "min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50";
 
-/** "Your ponds": one row per position, with its actions behind Manage. */
+/** "Your positions": one row per position, with its actions behind Manage. */
 export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <section aria-labelledby="ponds-title" className="flex flex-col">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-5">
-        <h2 id="ponds-title" className="text-[2.1rem] font-semibold">Your ponds</h2>
+        <h1 id="ponds-title" className="text-[2.4rem] font-semibold">Your positions</h1>
         {collectAllUsd > 0 ? (
           <button type="button" onClick={onCollectAll} disabled={busy}
             className="min-h-14 rounded-full bg-accent px-7 text-[1.15rem] font-semibold text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50">

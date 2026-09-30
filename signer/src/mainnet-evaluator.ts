@@ -21,13 +21,18 @@ import {
   type PoolDiscoveryClient,
 } from "@stillwater/chain";
 import { verifyTypedData, type Address, type Hex } from "viem";
-import type { EncryptedWallet } from "./crypto";
 import {
   validateMainnetIntent,
   type MainnetIntentKind,
   type MainnetPolicyRequest,
 } from "./mainnet-policy";
 import type { WalletState } from "./policy";
+
+export type CustodyWallet = {
+  walletId: string;
+  circleWalletId: string;
+  address: Address;
+};
 
 export type LoadedMainnetIntent = {
   intentId: string;
@@ -80,7 +85,8 @@ export type LoadedMainnetIntent = {
     signature: Hex;
   };
   swap?: { transaction: Swap; tokenAddress: Address; tokenDecimals: number };
-  encryptedWallet?: EncryptedWallet;
+  /** The Circle wallet that signs for this Stillwater wallet. */
+  custody?: CustodyWallet;
 };
 
 export type MainnetEvaluation = {

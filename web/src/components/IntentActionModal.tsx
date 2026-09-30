@@ -1116,10 +1116,6 @@ export const IntentActionModal: React.FC<Props> = ({
                   );
                 })()}
 
-                <div className="rounded-[18px] border border-feed-line bg-feed-soft p-3.5 text-[.95rem] leading-relaxed text-ink">
-                  Confirming sends <strong className="text-ink">1 transaction</strong> from your Stillwater wallet on Arc Mainnet. Stillwater checks the exact transaction again before sending it.
-                </div>
-
                 <div className="text-[.85rem] text-ink-muted break-all">
                   Technical details: request {preparedIntent.intentId}
                   {preparedIntent.gasEstimate ? `, estimated ${preparedIntent.gasEstimate} gas` : ""}

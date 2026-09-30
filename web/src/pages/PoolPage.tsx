@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { tokenWaters, type AlphaWalletSummary, type Waters } from "@stillwater/chain";
 import { WaterMark } from "../components/Icons";
+import { Loading, Skeleton } from "../components/Skeleton";
 import { api, type ManagedWalletRecord, type PublicPool } from "../lib/api-client";
 import { DepositPage } from "./DepositPage";
 import { SwapPage } from "./SwapPage";
@@ -47,7 +48,7 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
     <p className={PAGE_INTRO}>Stillwater couldn&apos;t read it just now ({error}). Try again in a moment, or pick another pool.</p>
     {onBack ? <button type="button" onClick={onBack} className="mt-2 min-h-12 self-start rounded-full border border-line px-6 text-[1.05rem] font-medium hover:bg-tint">← All pools</button> : null}
   </section>;
-  if (!pool) return <p role="status" className="mx-auto w-full max-w-[1280px] pt-10 text-[1.1rem] text-ink-muted">Reading the pool from Arc…</p>;
+  if (!pool) return <PoolSkeleton />;
   const tierId = tokenWaters(pool.token.address);
   const tier = TIER[tierId];
 
@@ -80,4 +81,22 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
       onNeedTokens={() => setStep("fund")} wallet={wallet} summary={summary} onRefresh={onRefresh}
       onNotify={onNotify} onOpenAuth={onOpenAuth} />}
   </div>;
+}
+
+function PoolSkeleton() {
+  return <Loading label="Loading the pool…" className="mx-auto flex w-full max-w-[1280px] flex-col">
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-6">
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-5 w-[min(560px,80vw)]" />
+      </div>
+      <Skeleton className="h-11 w-36" />
+    </div>
+    <div className="mb-7 flex gap-9 border-b border-line pb-3">
+      <Skeleton className="h-6 w-40" />
+      <Skeleton className="h-6 w-36" />
+    </div>
+    <Skeleton className="h-[360px] w-full max-w-[720px] rounded-[28px]" />
+  </Loading>;
 }

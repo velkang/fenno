@@ -58,7 +58,7 @@ Requires Node 22.13 or newer and pnpm 11.
    cp signer/.dev.vars.example signer/.dev.vars
    ```
 
-   In `signer/.dev.vars`, set `WALLET_KEK_V1` to a fresh 32-byte key (`openssl rand -base64 32`). Use it only for local development. Anyone with this key and the local database controls the wallets in it.
+   In `signer/.dev.vars`, set the three `CIRCLE_*` values (see [Circle wallets](#circle-wallets)). Anyone with the API key and entity secret controls every Stillwater wallet in that Circle account.
 
 3. Create the local database:
 
@@ -107,13 +107,14 @@ All variables and secrets live outside the repository: in the Cloudflare dashboa
 
 | Variable | Worker | Meaning |
 | --- | --- | --- |
-| `WALLET_KEK_V1` | signer | **Required secret**: the key that wraps every managed wallet key |
+| `CIRCLE_API_KEY` | signer | **Required secret**: the Circle API key for the account that holds Stillwater wallets |
+| `CIRCLE_ENTITY_SECRET` | signer | **Required secret**: the registered 32-byte hex entity secret |
+| `CIRCLE_WALLET_SET_ID` | signer | **Required**: the Circle wallet set new wallets are created in |
 | `AUTH_URI` | api | **Required**: the web app's URL; sign-in messages are bound to its host |
 | `AUTH_COOKIE_SECURE` | api | Local only: `false` allows the session cookie over plain `http`. Never set it in production |
 | `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
 | `ARC_RPC_URL` | api, signer, indexer | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
 | `ARC_ARCHIVE_RPC_URL` | indexer | Optional; a full-history RPC for the pool backfill beyond the last ~400k blocks. Defaults to `https://rpc.quicknode.mainnet.arc.io` |
-| `WALLET_KEK_V2` | signer | Optional secret, only needed to rotate to a new wrapping key |
 
 Mainnet transactions are allowed by default; there are no per-action value or fee limits.
 
@@ -141,20 +142,32 @@ There are four Workers:
    | `stillwater-indexer` | `indexer` | `pnpm install --frozen-lockfile` | `npx wrangler deploy` (default) |
 
    - The API's deploy command applies any new database migrations before each deploy.
-   - For `stillwater-web`, add the build variable `VITE_REOWN_PROJECT_ID` (your Reown project ID) and add the website's URL to that Reown project's allowed domains.
+   - For `stillwater-web`, add the build variable `VITE_REOWN_PROJECT_ID` (your Reown project ID) and add the website's URL to that Reown project's allowed domains. People sign in with email, Google or X only; if the Reown project shows sign-in toggles, turn those three on and wallets off.
    - Optionally set build watch paths so a Worker rebuilds only when its folder or `chain/` changes.
    - If a build fails on the Node or pnpm version, add the build variables `NODE_VERSION` = `22` and `PNPM_VERSION` = `11.1.0`. If the migration step fails for lack of permission, give the build's API token D1 edit access, or run the migrations once yourself.
 
-3. **Set the two required values.** Under each Worker's Settings → Variables & Secrets:
+3. **Set the required values.** Under each Worker's Settings → Variables & Secrets:
 
    | Worker | Name | Type | Value |
    | --- | --- | --- | --- |
-   | `stillwater-signer` | `WALLET_KEK_V1` | Secret | Output of `openssl rand -base64 32`. Keep a copy somewhere safe: without it no managed wallet can be decrypted |
+   | `stillwater-signer` | `CIRCLE_API_KEY` | Secret | Your Circle mainnet API key |
+   | `stillwater-signer` | `CIRCLE_ENTITY_SECRET` | Secret | Your registered entity secret |
+   | `stillwater-signer` | `CIRCLE_WALLET_SET_ID` | Text | The wallet set's id |
    | `stillwater-api` | `AUTH_URI` | Text | The website's URL, shown on the `stillwater-web` Worker's page, e.g. `https://stillwater-web.<your-subdomain>.workers.dev` |
 
 4. **Open the website and sign in.** Saving a variable in the dashboard applies it immediately, so setting `EMERGENCY_STOP` to `true` on the signer halts signing without a commit.
 
 In production, Explore lists pools newest first, with live on-chain prices. New pools appear within seconds. Older pools fill in as the backfill works through history, which takes a few hours after the first deploy.
+
+## Circle wallets
+
+Stillwater wallets are Circle developer-controlled wallets: Circle holds the keys, and the signer asks Circle to sign each transaction it has checked, then broadcasts it itself. Set this up once in the Circle Developer Console, on mainnet:
+
+1. Create an API key.
+2. Generate and register an entity secret, and keep the recovery file somewhere safe.
+3. Create a wallet set and note its id.
+
+Wallets are created on Circle's `EVM` chain, which signs for Arc by chain id. The signer fetches the entity public key from Circle itself.
 
 ## Checks
 

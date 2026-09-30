@@ -1,18 +1,16 @@
 import React from "react";
-import { useAccount, useChainId } from "wagmi";
+import { useAccount } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
-import { ARC_CHAIN_ID } from "@stillwater/chain";
 import type { AuthUser } from "../lib/api-client";
 import { IconRipple } from "./Icons";
 
-export type PageRoute = "pond" | "explore" | "pool" | "swap";
+export type PageRoute = "pond" | "positions" | "explore" | "pool" | "swap";
 
 type Props = {
   user: AuthUser | null;
   walletAddress?: string;
   activePage: PageRoute;
   onNavigate: (page: PageRoute) => void;
-  onLogout: () => void;
   onOpenAuthModal?: () => void;
   onOpenWallet: () => void;
   walletOpen?: boolean;
@@ -20,6 +18,7 @@ type Props = {
 
 const NAV: { key: Exclude<PageRoute, "pool">; label: string }[] = [
   { key: "pond", label: "Pond" },
+  { key: "positions", label: "Positions" },
   { key: "explore", label: "Explore pools" },
   { key: "swap", label: "Swap" },
 ];
@@ -29,12 +28,10 @@ const PILL = "inline-flex min-h-11 items-center gap-2.5 rounded-full border bord
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 export const Header: React.FC<Props> = ({
-  user, walletAddress, activePage, onNavigate, onLogout, onOpenAuthModal, onOpenWallet, walletOpen = false,
+  user, walletAddress, activePage, onNavigate, onOpenAuthModal, onOpenWallet, walletOpen = false,
 }) => {
   const { open } = useAppKit();
   const { isConnected } = useAccount();
-  const chainId = useChainId();
-  const onArc = !isConnected || chainId === ARC_CHAIN_ID;
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-paper/95 px-[clamp(16px,4vw,80px)] text-ink backdrop-blur">
@@ -59,25 +56,15 @@ export const Header: React.FC<Props> = ({
         </nav>
 
         <div className="flex items-center justify-end gap-2.5">
-          <button type="button" onClick={() => open({ view: "Networks" })} title="Network"
-            className={`${PILL} max-[520px]:hidden`}>
-            <span className={`h-2 w-2 rounded-full ${onArc ? "bg-feed" : "bg-danger"}`} />
-            {onArc ? "Arc Mainnet" : "Switch to Arc"}
-          </button>
           {user ? (
-            <>
-              <button type="button" onClick={onOpenWallet} aria-haspopup="dialog" aria-expanded={walletOpen}
-                aria-label="Open your Stillwater wallet" className={PILL}>
-                {walletAddress ? shortAddress(walletAddress) : "Wallet"}
-              </button>
-              <button type="button" onClick={onLogout} className="min-h-11 px-2 text-[.95rem] text-ink-muted hover:text-ink max-[520px]:hidden">
-                Log out
-              </button>
-            </>
+            <button type="button" onClick={onOpenWallet} aria-haspopup="dialog" aria-expanded={walletOpen}
+              aria-label="Open your Stillwater wallet" className={PILL}>
+              {walletAddress ? shortAddress(walletAddress) : "Wallet"}
+            </button>
           ) : (
             <button type="button" onClick={onOpenAuthModal ?? (() => open())}
               className="inline-flex min-h-11 items-center rounded-full bg-accent px-5 text-[.95rem] font-semibold text-on-accent transition-colors hover:bg-accent-hover">
-              {isConnected ? "Sign in" : "Connect & sign in"}
+              {isConnected ? "Sign in" : "Get started"}
             </button>
           )}
         </div>

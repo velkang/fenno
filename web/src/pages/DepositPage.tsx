@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { formatUnits, getAddress, parseUnits, zeroAddress } from "viem";
-import { useAccount } from "wagmi";
 import {
   ALPHA_POOL,
   type AlphaWalletSummary,
@@ -11,6 +10,7 @@ import { api, type ManagedWalletRecord, type PublicPool, type TokenPoolDiscovery
 import { alignTick, pairedAmount, priceToTick, tickToPrice } from "../lib/range-math";
 import { ensureV4Allowance, v4MintApprovals } from "../lib/v4-actions";
 import { KoiBand } from "../components/pond/KoiBand";
+import { Loading, Skeleton } from "../components/Skeleton";
 import { PositionReview, PRIMARY_ACTION } from "../components/PositionReview";
 import { STRATEGIES, StrategyCards, type StrategyKey } from "../components/StrategyCards";
 import { formatFeeTier, formatPoolPrice } from "./ExplorePage";
@@ -84,7 +84,6 @@ export const DepositPage: React.FC<Props> = ({
   onOpenAuth,
 }) => {
   const { open } = useAppKit();
-  const { isConnected } = useAccount();
   const v4Pool = pool?.protocol === "uniswap-v4" ? pool : null;
 
   // Search & Token selection omnibar state
@@ -451,8 +450,12 @@ export const DepositPage: React.FC<Props> = ({
   const approvals = reviewing ? approvalsNeeded() : [];
 
   if (initialPoolAddress && !v4Pool && !isCanonical && !activeCustomPool) {
-    return <p className={`${DISCOVERY_STATE} ${discoveryError ? "text-danger" : "text-link"}`} role={discoveryError ? "alert" : "status"}>
-      {discoveryError ?? "Loading selected pool and range…"}</p>;
+    if (discoveryError) return <p className={`${DISCOVERY_STATE} text-danger`} role="alert">{discoveryError}</p>;
+    return <Loading label="Loading the pool and your range…"
+      className="grid grid-cols-[minmax(0,1fr)_minmax(320px,420px)] items-start gap-[clamp(24px,3vw,40px)] max-[1040px]:grid-cols-1">
+      <Skeleton className="h-[440px] rounded-[28px]" />
+      <Skeleton className="h-[320px] rounded-[28px]" />
+    </Loading>;
   }
 
   return (
@@ -483,7 +486,10 @@ export const DepositPage: React.FC<Props> = ({
           ) : null}
         </div>
         {discovering ? (
-          <p className={`${DISCOVERY_STATE} text-link`} role="status">Checking Arc for token details and active pools…</p>
+          <Loading label="Checking Arc for this token's pools…" className="mt-3 flex flex-col gap-2">
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="h-4 w-40" />
+          </Loading>
         ) : discoveryError ? (
           <p className={`${DISCOVERY_STATE} text-danger`} role="alert">{discoveryError}</p>
         ) : null}
@@ -599,7 +605,7 @@ export const DepositPage: React.FC<Props> = ({
           {!wallet ? (
             <button type="button" className={PRIMARY_ACTION} onClick={() => { if (onOpenAuth) onOpenAuth(); else open(); }}>
               <IconWallet size={18} />
-              <span>{isConnected ? "Sign in to add liquidity" : "Connect wallet to add liquidity"}</span>
+              <span>Sign in to add liquidity</span>
             </button>
           ) : !reviewing ? (
             <button type="submit" form="deposit-form" className={PRIMARY_ACTION}

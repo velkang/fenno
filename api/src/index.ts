@@ -626,11 +626,11 @@ export function createApp(dependencies: AppDependencies = {}) {
 
   app.get("/v1/wallets/me", async (context) => {
     const wallet = await context.env.DB.prepare(
-      `SELECT id, address, state, key_version, created_at, updated_at
+      `SELECT id, address, state, created_at, updated_at
        FROM managed_wallets WHERE user_id = ?1`,
     )
       .bind(context.get("user").id)
-      .first<{ id: string; address: Address; state: string; key_version: number; created_at: number; updated_at: number }>();
+      .first<{ id: string; address: Address; state: string; created_at: number; updated_at: number }>();
     if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
 
     // Auto-reconcile any pending submitted attempt
@@ -2440,28 +2440,6 @@ export function createApp(dependencies: AppDependencies = {}) {
       .first<{ id: string; address: string; state: string; updated_at: number }>();
     if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
     return context.json({ wallet });
-  });
-
-  app.post("/v1/wallets/rotate-key", async (context) => {
-    const user = context.get("user");
-    const wallet = await context.env.DB.prepare(
-      "SELECT id FROM managed_wallets WHERE user_id = ?1",
-    )
-      .bind(user.id)
-      .first<{ id: string }>();
-    if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
-
-    const response = await context.env.SIGNER.fetch(
-      new Request("http://stillwater-signer/internal/v1/wallets/rotate-key", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId: user.id, walletId: wallet.id }),
-      }),
-    );
-    return new Response(response.body, {
-      status: response.status,
-      headers: { "content-type": "application/json" },
-    });
   });
 
   return app;

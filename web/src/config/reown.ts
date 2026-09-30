@@ -42,6 +42,17 @@ export const modal = createAppKit({
     url: typeof window !== "undefined" ? window.location.origin : "http://localhost:5173",
     icons: ["https://avatars.githubusercontent.com/u/179229932"],
   },
+  // Sign-in is email, Google or X only: no external wallets. The login account
+  // only signs the sign-in message and withdrawal approvals; Stillwater wallets
+  // hold the funds. EOA accounts keep those signatures plain ECDSA.
+  features: {
+    email: true,
+    socials: ["google", "x"],
+    emailShowWallets: false,
+    connectMethodsOrder: ["email", "social"],
+  },
+  enableWallets: false,
+  defaultAccountTypes: { eip155: "eoa" },
   themeMode: systemTheme(),
   themeVariables: themeVariables(systemTheme()),
 });

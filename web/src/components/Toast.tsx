@@ -18,7 +18,7 @@ const DOT: Record<ToastMessage["type"], string> = { success: "bg-feed", error: "
 export const ToastContainer: React.FC<Props> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed right-6 bottom-6 z-80 flex w-[min(400px,calc(100vw-32px))] flex-col gap-3 max-[520px]:right-4 max-[520px]:bottom-4">
+    <div className="fixed top-24 right-6 z-80 flex w-[min(400px,calc(100vw-32px))] flex-col gap-3 max-[760px]:top-4 max-[520px]:right-4">
       {toasts.map((toast) => (
         <div key={toast.id} role={toast.type === "error" ? "alert" : "status"}
           className="grid grid-cols-[12px_minmax(0,1fr)_auto] items-start gap-3.5 rounded-[22px] border border-line bg-card px-5 py-4 shadow-xl">
