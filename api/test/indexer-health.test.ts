@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   getIndexerHealth,
+  type DiscoveryCheckpoint,
   type IndexerHealthStore,
   type IndexerRun,
 } from "../src/indexer-health";
 
-function store(latest: IndexerRun | null, success: IndexerRun | null) {
+const freshDiscovery = [
+  { name: "v4_pools_created", blockNumber: 500, updatedAt: 2_900 },
+  { name: "v3_pools_created", blockNumber: 500, updatedAt: 2_900 },
+];
+
+function store(latest: IndexerRun | null, success: IndexerRun | null,
+  checkpoints: DiscoveryCheckpoint[] = freshDiscovery) {
   return {
     latestRun: async () => latest,
     latestSuccessfulRun: async () => success,
+    discoveryCheckpoints: async () => checkpoints,
   } satisfies IndexerHealthStore;
 }
 
@@ -33,7 +41,23 @@ describe("indexer health", () => {
     expect(health.body).toMatchObject({
       status: "healthy",
       latestSuccess: { blockNumber: 100, ageMs: 1_000 },
+      discovery: { v4: { blockNumber: 500, ageMs: 100 }, v3: { blockNumber: 500, ageMs: 100 } },
     });
+  });
+
+  it("is stale when live pool discovery falls behind, so new pools would be missing", async () => {
+    const health = await getIndexerHealth(
+      store(successfulRun, successfulRun, [freshDiscovery[0]]),
+      { now: () => 3_000, staleAfterMs: 5_000 },
+    );
+    expect(health.httpStatus).toBe(503);
+    expect(health.body).toMatchObject({ status: "stale", discovery: { v3: null } });
+
+    const lagging = await getIndexerHealth(
+      store(successfulRun, successfulRun, freshDiscovery.map((entry) => ({ ...entry, updatedAt: 0 }))),
+      { now: () => 90_000, staleAfterMs: 100_000 },
+    );
+    expect(lagging.body.status).toBe("stale");
   });
 
   it("reports stale successful indexing", async () => {

@@ -20,10 +20,22 @@ export function poolSpotPrice(pool: PublicPool): number {
   return tokenIsZero ? token1PerToken0 : 1 / token1PerToken0;
 }
 
+const SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉";
+
+/**
+ * A token price for display. Tiny prices use the zero-count notation DEX sites use:
+ * 0.0₅4455 is 0.000004455 (five zeros after the decimal point). Huge ones are compact.
+ */
 export function formatPoolPrice(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "—";
-  return value >= 1 ? value.toLocaleString("en-US", { maximumFractionDigits: 4 })
-    : value.toLocaleString("en-US", { maximumSignificantDigits: 5 });
+  if (value >= 1_000_000) return value.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 2 });
+  if (value >= 1) return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  if (value >= 0.0001) return value.toLocaleString("en-US", { maximumSignificantDigits: 5 });
+  const [mantissa, exponent] = value.toExponential(3).split("e");
+  const zeros = -Number(exponent) - 1;
+  const digits = mantissa!.replace(".", "").replace(/0+$/, "");
+  const count = [...String(zeros)].map((digit) => SUBSCRIPT_DIGITS[Number(digit)]).join("");
+  return `0.0${count}${digits}`;
 }
 
 // 0x800000 marks a v4 pool whose fee changes trade by trade.

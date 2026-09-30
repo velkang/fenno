@@ -18,6 +18,10 @@
       "binding": "SIGNER",
       "service": "stillwater-signer",
     },
+    {
+      "binding": "INDEXER",
+      "service": "stillwater-indexer",
+    },
   ],
   "observability": { "enabled": true, "head_sampling_rate": 0.2 },
 }

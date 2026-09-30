@@ -40,6 +40,8 @@ export type PublicPool = {
   lpFee?: number;
   blockNumber: number | null;
   updatedAt: number;
+  // Block the pool was created in; null until the indexer's backfill reaches it.
+  createdBlock?: number | null;
 };
 
 export type V4Position = {

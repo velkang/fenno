@@ -83,6 +83,8 @@ export type Bindings = {
   AUTH_COOKIE_SECURE?: string;
   // Optional override; without it, Arc's default public RPC is used.
   ARC_RPC_URL?: string;
+  // The indexer's private discovery endpoint; a pasted token address is looked up through it.
+  INDEXER?: Fetcher;
 };
 
 type Variables = {
@@ -159,6 +161,7 @@ type CombinedPoolRow = {
   lp_fee: number | null;
   block_number: number;
   updated_at: number;
+  created_block: number | null;
 };
 
 const poolTokenAbi = parseAbi(["function token0() view returns (address)", "function token1() view returns (address)"]);
@@ -224,7 +227,58 @@ function publicCombinedPool(row: CombinedPoolRow) {
       lpFee: row.lp_fee ?? undefined } : {}),
     blockNumber: row.block_number as number | null,
     updatedAt: row.updated_at,
+    createdBlock: row.created_block ?? null,
   };
+}
+
+const v3PoolStateAbi = parseAbi([
+  "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16, uint16, uint16, uint8, bool)",
+  "function liquidity() view returns (uint128)",
+]);
+const v4StateViewAbi = parseAbi([
+  "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)",
+  "function getLiquidity(bytes32 poolId) view returns (uint128)",
+]);
+type MulticallClient = {
+  multicall(input: { contracts: unknown[]; allowFailure: true }): Promise<Array<{ status: string; result?: unknown }>>;
+};
+
+/** Listed pools with their current on-chain price and liquidity, in one multicall. */
+async function withLiveState(client: MulticallClient, pools: ReturnType<typeof publicCombinedPool>[]) {
+  const contracts = pools.flatMap((pool): unknown[] => pool.protocol === "uniswap-v4"
+    ? [{ address: UNISWAP_V4_ARC.stateView, abi: v4StateViewAbi, functionName: "getSlot0", args: [pool.address] },
+      { address: UNISWAP_V4_ARC.stateView, abi: v4StateViewAbi, functionName: "getLiquidity", args: [pool.address] }]
+    : [{ address: pool.address, abi: v3PoolStateAbi, functionName: "slot0" },
+      { address: pool.address, abi: v3PoolStateAbi, functionName: "liquidity" },
+      { address: ARC_TOKENS.USDC.address, abi: usdcBalanceAbi, functionName: "balanceOf", args: [pool.address] }]);
+  if (contracts.length === 0) return pools;
+  const results = await client.multicall({ contracts, allowFailure: true });
+  let index = 0;
+  return pools.map((pool) => {
+    const count = pool.protocol === "uniswap-v4" ? 2 : 3;
+    const [slot0, liquidity, reserve] = results.slice(index, index += count);
+    const sqrtPriceX96 = slot0?.status === "success" ? (slot0.result as readonly [bigint, number])[0] : 0n;
+    if (sqrtPriceX96 === 0n || liquidity?.status !== "success") return pool;
+    return { ...pool, sqrtPriceX96: sqrtPriceX96.toString(),
+      tick: Number((slot0!.result as readonly [bigint, number])[1]), liquidity: String(liquidity.result),
+      ...(reserve?.status === "success" ? { usdcReserve: String(reserve.result) } : {}) };
+  });
+}
+
+/** Asks the indexer to find and store a token's USDC pools; true when any were found. */
+async function discoverTokenPools(env: Bindings, tokenAddress: Address): Promise<boolean> {
+  if (!env.INDEXER) return false;
+  const response = await env.INDEXER.fetch(new Request("http://stillwater-indexer/internal/v1/pools/discover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tokenAddress }),
+  }));
+  if (!response.ok) {
+    console.warn("Token pool discovery failed", tokenAddress, response.status);
+    return false;
+  }
+  const { found } = await response.json() as { found: number };
+  return found > 0;
 }
 
 async function livePublicPools(client: PoolDiscoveryClient, tokenAddress: Address) {
@@ -362,56 +416,77 @@ export function createApp(dependencies: AppDependencies = {}) {
   });
 
   app.get("/v1/pools", async (context) => {
+    // Listings are shared by every visitor, so they are cached briefly at the edge.
+    const cache = typeof caches === "undefined" ? null : (caches as unknown as { default: Cache }).default;
+    const cacheKey = new Request(context.req.url, { method: "GET" });
+    const cached = await cache?.match(cacheKey).catch(() => undefined);
+    if (cached) return cached;
     const query = (context.req.query("q") ?? "").trim().slice(0, 80);
     const offsetValue = Number(context.req.query("offset") ?? "0");
     const offset = Number.isSafeInteger(offsetValue) && offsetValue >= 0 ? Math.min(offsetValue, 10_000) : 0;
-    const rows = await context.env.DB.prepare(
+    const selectPools = () => context.env.DB.prepare(
       `WITH pools AS (
          SELECT 'uniswap-v3' AS protocol, pool_address AS address,
            token_address, token_symbol, token_decimals,
            token0_address AS token0, token1_address AS token1,
            fee, tick_spacing, sqrt_price_x96, tick, liquidity,
-           usdc_reserve, NULL AS hooks, NULL AS lp_fee, block_number, updated_at
+           usdc_reserve, NULL AS hooks, NULL AS lp_fee, block_number, updated_at, created_block
          FROM pool_directory
          UNION ALL
          SELECT 'uniswap-v4' AS protocol, pool_id AS address,
            token_address, token_symbol, token_decimals,
            currency0 AS token0, currency1 AS token1,
            fee, tick_spacing, sqrt_price_x96, tick, liquidity,
-           NULL AS usdc_reserve, hooks, lp_fee, block_number, updated_at
+           NULL AS usdc_reserve, hooks, lp_fee, block_number, updated_at, created_block
          FROM v4_pool_directory
        )
        SELECT * FROM pools
        WHERE liquidity != '0' AND (?1 = '' OR token_symbol LIKE ?2 ESCAPE '\\'
          OR token_address = ?1 COLLATE NOCASE OR address = ?1 COLLATE NOCASE)
-       ORDER BY token_symbol COLLATE NOCASE, fee, address
+       ORDER BY created_block IS NULL, created_block DESC, token_symbol COLLATE NOCASE, fee, address
        LIMIT 26 OFFSET ?3`,
     ).bind(query, `%${query.replace(/[\\%_]/g, "\\$&")}%`, offset)
       .all<CombinedPoolRow>();
-    let pools = rows.results.slice(0, 25).map(publicCombinedPool);
-    if (isAddress(query) && pools.length === 0) {
-      const client = (dependencies.createChainClient?.(context.env) ??
-        createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })) as PoolDiscoveryClient;
+    let rows = await selectPools();
+    const client = (dependencies.createChainClient?.(context.env) ??
+      createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })) as
+      PoolDiscoveryClient & MulticallClient;
+    if (isAddress(query) && rows.results.length === 0 && getAddress(query) !== ARC_TOKENS.USDC.address) {
+      // A pasted token address the directory does not list yet: the indexer looks it up on chain now.
+      const address = getAddress(query);
       try {
-        const address = getAddress(query);
-        if (address !== ARC_TOKENS.USDC.address) {
-          pools = await livePublicPools(client, address);
-          if (pools.length === 0) {
-            const [token0, token1] = await Promise.all(["token0", "token1"].map((functionName) =>
-              client.readContract({ address, abi: poolTokenAbi, functionName })));
-            if (token0 === ARC_TOKENS.USDC.address || token1 === ARC_TOKENS.USDC.address) {
-              const token = getAddress(token0 === ARC_TOKENS.USDC.address ? token1 as string : token0 as string);
-              pools = (await livePublicPools(client, token)).filter((pool) =>
-                pool.address.toLowerCase() === address.toLowerCase());
-            }
+        let found = await discoverTokenPools(context.env, address);
+        if (!found) {
+          // A pasted v3 pool address: discover its token, whose pools include it.
+          const [token0, token1] = await Promise.all(["token0", "token1"].map((functionName) =>
+            client.readContract({ address, abi: poolTokenAbi, functionName })));
+          if (token0 === ARC_TOKENS.USDC.address || token1 === ARC_TOKENS.USDC.address) {
+            found = await discoverTokenPools(context.env,
+              getAddress(token0 === ARC_TOKENS.USDC.address ? token1 as string : token0 as string));
           }
         }
+        if (found) rows = await selectPools();
       } catch (error) {
         console.warn("Contract address search failed", query, error);
         // A contract address with no eligible pools is an empty result, not a server failure.
       }
     }
-    return context.json({ pools, nextOffset: rows.results.length > 25 ? offset + 25 : null });
+    let pools = rows.results.slice(0, 25).map(publicCombinedPool);
+    try {
+      pools = await withLiveState(client, pools);
+    } catch (error) {
+      console.warn("Live pool state unavailable; listing stored state", error);
+    }
+    const response = context.json({ pools, nextOffset: rows.results.length > 25 ? offset + 25 : null });
+    response.headers.set("Cache-Control", "public, max-age=10");
+    if (cache) {
+      try {
+        context.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+      } catch {
+        // No execution context (tests): nothing to cache into.
+      }
+    }
+    return response;
   });
 
   app.get("/v1/pools/:poolAddress", async (context) => {

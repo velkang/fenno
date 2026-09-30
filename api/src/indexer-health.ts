@@ -8,9 +8,15 @@ export type IndexerRun = {
   completedAt: number | null;
 };
 
+export type DiscoveryCheckpoint = { name: string; blockNumber: number; updatedAt: number };
+
+// Live pool discovery checkpoints, advanced every ~10 s by the indexer's PoolDiscovery object.
+const DISCOVERY_CHECKPOINTS = ["v4_pools_created", "v3_pools_created"];
+
 export interface IndexerHealthStore {
   latestRun(): Promise<IndexerRun | null>;
   latestSuccessfulRun(): Promise<IndexerRun | null>;
+  discoveryCheckpoints(): Promise<DiscoveryCheckpoint[]>;
 }
 
 export class D1IndexerHealthStore implements IndexerHealthStore {
@@ -43,17 +49,29 @@ export class D1IndexerHealthStore implements IndexerHealthStore {
   latestSuccessfulRun() {
     return this.read("WHERE status = 'succeeded'");
   }
+
+  async discoveryCheckpoints() {
+    const rows = await this.db.prepare(
+      `SELECT name, block_number, updated_at FROM chain_indexer_checkpoints
+       WHERE name IN (SELECT value FROM json_each(?1))`,
+    ).bind(JSON.stringify(DISCOVERY_CHECKPOINTS))
+      .all<{ name: string; block_number: number; updated_at: number }>();
+    return rows.results.map((row) => ({ name: row.name, blockNumber: Number(row.block_number),
+      updatedAt: Number(row.updated_at) }));
+  }
 }
 
 export async function getIndexerHealth(
   store: IndexerHealthStore,
-  options: { now?: () => number; staleAfterMs?: number } = {},
+  options: { now?: () => number; staleAfterMs?: number; discoveryStaleAfterMs?: number } = {},
 ) {
   const now = options.now ?? Date.now;
   const staleAfterMs = options.staleAfterMs ?? 15 * 60 * 1_000;
-  const [latestRun, latestSuccess] = await Promise.all([
+  const discoveryStaleAfterMs = options.discoveryStaleAfterMs ?? 60 * 1_000;
+  const [latestRun, latestSuccess, checkpoints] = await Promise.all([
     store.latestRun(),
     store.latestSuccessfulRun(),
+    store.discoveryCheckpoints(),
   ]);
   if (!latestRun) {
     return { httpStatus: 503 as const, body: { status: "unavailable" as const } };
@@ -62,7 +80,15 @@ export async function getIndexerHealth(
   const successAgeMs = latestSuccess?.completedAt === null || !latestSuccess
     ? null
     : Math.max(0, now() - latestSuccess.completedAt);
-  const stale = successAgeMs === null || successAgeMs > staleAfterMs;
+  const discovery = Object.fromEntries(DISCOVERY_CHECKPOINTS.map((name) => {
+    const checkpoint = checkpoints.find((entry) => entry.name === name);
+    return [name.slice(0, 2), checkpoint
+      ? { blockNumber: checkpoint.blockNumber, ageMs: Math.max(0, now() - checkpoint.updatedAt) }
+      : null];
+  })) as Record<"v4" | "v3", { blockNumber: number; ageMs: number } | null>;
+  // A new pool is only as visible as the slowest discovery pass.
+  const discoveryStale = Object.values(discovery).some((entry) => !entry || entry.ageMs > discoveryStaleAfterMs);
+  const stale = successAgeMs === null || successAgeMs > staleAfterMs || discoveryStale;
   const status = latestRun.status === "failed"
     ? "failed"
     : stale
@@ -91,6 +117,7 @@ export async function getIndexerHealth(
             ageMs: successAgeMs,
           }
         : null,
+      discovery,
     },
   };
 }

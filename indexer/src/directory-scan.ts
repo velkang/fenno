@@ -1,10 +1,9 @@
 import { ARC_CHAIN_ID } from "@stillwater/chain";
 import { toHex, type Address, type Hex } from "viem";
 
-// Helpers shared by the v3 and v4 pool directories. Both run within Cloudflare's
-// free plan: 50 subrequests (HTTP + D1 statements) and 10 ms CPU per invocation.
-// Calls issued together are sent as one JSON-RPC batch by the transport, and pool
-// state is read with raw eth_calls because decoding through viem costs far more CPU.
+// Helpers shared by the v3 and v4 pool directories. Calls issued together are sent
+// as one JSON-RPC batch by the transport, and pool state is read with raw eth_calls
+// because decoding through viem costs far more CPU.
 
 export type RawRpcClient = {
   request(args: { method: string; params: unknown[] }): Promise<unknown>;
@@ -12,34 +11,14 @@ export type RawRpcClient = {
 
 export type RpcLog = { address: Address; blockNumber: Hex; topics: Hex[]; data: Hex };
 
-export type Seen = { key: string; block: bigint; log: RpcLog };
-
-const LOG_CHUNK = 1_000n;
-
-/** Fetches logs for [first, last], at most `maxChunks` 1k-block chunks, in one batch. */
-export async function scanLogs(client: RawRpcClient, filter: { address?: Address; topics: unknown[] },
-  first: bigint, safe: bigint, maxChunks: number): Promise<{ logs: RpcLog[]; scannedTo: bigint }> {
-  const last = first + LOG_CHUNK * BigInt(maxChunks) - 1n < safe
-    ? first + LOG_CHUNK * BigInt(maxChunks) - 1n : safe;
-  const ranges: Array<[bigint, bigint]> = [];
-  for (let from = first; from <= last; from += LOG_CHUNK) {
-    ranges.push([from, from + LOG_CHUNK - 1n < last ? from + LOG_CHUNK - 1n : last]);
-  }
-  const chunks = await Promise.all(ranges.map(([fromBlock, toBlock]) => client.request({
+/** Logs of `address` in [from, to] matching any of the topic filters, in one batch. */
+export async function fetchLogs(client: RawRpcClient, address: Address, topicSets: unknown[][],
+  from: bigint, to: bigint): Promise<RpcLog[]> {
+  const results = await Promise.all(topicSets.map((topics) => client.request({
     method: "eth_getLogs",
-    params: [{ ...filter, fromBlock: toHex(fromBlock), toBlock: toHex(toBlock) }],
+    params: [{ address, topics, fromBlock: toHex(from), toBlock: toHex(to) }],
   }) as Promise<RpcLog[]>));
-  return { logs: chunks.flat(), scannedTo: last };
-}
-
-/** First log per key, in block order (logs arrive in block order). */
-export function firstSeen(logs: RpcLog[], keyOf: (log: RpcLog) => string | null): Seen[] {
-  const seen = new Map<string, Seen>();
-  for (const log of logs) {
-    const key = keyOf(log);
-    if (key !== null && !seen.has(key)) seen.set(key, { key, block: BigInt(log.blockNumber), log });
-  }
-  return [...seen.values()];
+  return results.flat();
 }
 
 /**
@@ -128,7 +107,7 @@ export async function saveSkips(db: D1Database, protocol: "uniswap-v3" | "uniswa
 
 /** Upserts rows through one statement per chunk; `columns` are the JSON field names. */
 export async function upsertRows(db: D1Database, table: string, keyColumn: string, columns: string[],
-  updateColumns: string[], rows: Array<Record<string, string | number>>): Promise<void> {
+  updateColumns: string[], rows: Array<Record<string, string | number | null>>): Promise<void> {
   const select = columns.map((column) => `value ->> '$.${column}'`).join(", ");
   const update = updateColumns.map((column) => `${column}=excluded.${column}`).join(", ");
   for (let start = 0; start < rows.length; start += 200) {

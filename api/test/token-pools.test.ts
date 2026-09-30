@@ -228,7 +228,7 @@ describe("token pool discovery route", () => {
     expect(await response.json()).toEqual({ error: "POOL_QUOTE_UNAVAILABLE" });
   });
 
-  it("lists v3 and v4 pools together with sourced metrics", async () => {
+  it("lists v3 and v4 pools together, newest first, with their live on-chain state", async () => {
     const v4Id = `0x${"ab".repeat(32)}`;
     const statement = {
       bind: vi.fn().mockReturnThis(),
@@ -263,17 +263,24 @@ describe("token pool discovery route", () => {
       AUTH_URI: "http://localhost:8787",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",
     } satisfies Bindings;
-    const response = await createApp().request("/v1/pools?q=MEME", {}, env);
+    const chainClient = { multicall: async () => [
+      { status: "success", result: [2n ** 96n, 5] }, { status: "success", result: 777n },
+      { status: "success", result: 5_000_000n },
+      { status: "success", result: [2n ** 96n, 9, 0, 3000] }, { status: "success", result: 888n },
+    ] } as unknown as ChainReadClient;
+    const response = await createApp({ createChainClient: () => chainClient })
+      .request("/v1/pools?q=MEME", {}, env);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       pools: [{ address: pool, token: { address: token, symbol: "MEME" },
-        usdcReserve: "4000000", blockNumber: 123 },
-      { protocol: "uniswap-v4", address: v4Id, usdcReserve: null,
+        tick: 5, liquidity: "777", usdcReserve: "5000000", blockNumber: 123 },
+      { protocol: "uniswap-v4", address: v4Id, tick: 9, liquidity: "888", usdcReserve: null,
         blockNumber: 124 }],
       nextOffset: null,
     });
     expect(statement.bind).toHaveBeenCalledWith("MEME", "%MEME%", 0);
+    expect(vi.mocked(env.DB.prepare).mock.calls[0]?.[0]).toContain("ORDER BY created_block IS NULL, created_block DESC");
   });
 
   it("lists indexed v4 pools by token address without inventing a reserve", async () => {
@@ -294,12 +301,41 @@ describe("token pool discovery route", () => {
       AUTH_URI: "http://localhost:8787",
       ARC_RPC_URL: "https://rpc.mainnet.arc.io",
     } satisfies Bindings;
-    const response = await createApp().request(`/v1/pools?q=${token}`, {}, env);
+    // Failed live reads leave the stored state in place.
+    const chainClient = { multicall: async () => [{ status: "failure" }, { status: "failure" }] } as unknown as ChainReadClient;
+    const response = await createApp({ createChainClient: () => chainClient }).request(`/v1/pools?q=${token}`, {}, env);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ pools: [{ protocol: "uniswap-v4",
-      address: poolId, hooks: zeroAddress, usdcReserve: null,
+      address: poolId, hooks: zeroAddress, usdcReserve: null, liquidity: "99",
       token: { address: token, symbol: "MEME" } }] });
     expect(statement.bind).toHaveBeenCalledWith(token, `%${token}%`, 0);
+  });
+
+  it("looks up a pasted token the directory does not list yet through the indexer", async () => {
+    const poolId = `0x${"cd".repeat(32)}`;
+    const row = { protocol: "uniswap-v4", address: poolId, token0: zeroAddress, token1: token,
+      fee: 8_388_608, tick_spacing: 200, hooks: zeroAddress, token_address: token, token_symbol: "HOMER",
+      token_decimals: 18, sqrt_price_x96: (2n ** 96n).toString(), tick: 0, liquidity: "99",
+      lp_fee: 0, usdc_reserve: null, block_number: 123, updated_at: 456, created_block: 120 };
+    const statement = {
+      bind: vi.fn().mockReturnThis(),
+      all: vi.fn().mockResolvedValueOnce({ results: [] }).mockResolvedValueOnce({ results: [row] }),
+    };
+    const indexer = { fetch: vi.fn(async () => Response.json({ found: 1 })) };
+    const env = {
+      DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
+      SIGNER: {} as Fetcher,
+      AUTH_URI: "http://localhost:8787",
+      INDEXER: indexer as unknown as Fetcher,
+    } satisfies Bindings;
+    const chainClient = { multicall: async () => [] } as unknown as ChainReadClient;
+    const response = await createApp({ createChainClient: () => chainClient }).request(`/v1/pools?q=${token}`, {}, env);
+
+    expect(await response.json()).toMatchObject({ pools: [{ address: poolId, createdBlock: 120,
+      token: { symbol: "HOMER" } }] });
+    const request = (indexer.fetch.mock.calls as unknown as Request[][])[0]![0]!;
+    expect(new URL(request.url).pathname).toBe("/internal/v1/pools/discover");
+    expect(await request.json()).toEqual({ tokenAddress: token });
   });
 
   it("quotes a native-USDC v4 swap and rejects a stale reviewed minimum", async () => {
