@@ -265,6 +265,8 @@ export default {
             simulateContract: (parameters) =>
               auditClient.simulateContract(parameters),
             getBlock: (parameters) => auditClient.getBlock(parameters),
+            // v3 swaps, approvals and mints verify the pool contract before signing.
+            getCode: (parameters) => client.getCode(parameters),
             call: (parameters) => auditClient.call(parameters),
             getTransactionCount: ({ address, blockTag }) =>
               client.getTransactionCount({ address, blockTag }),

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ARC_TOKENS,
   UNISWAP_V3_ARC,
+  canSpendArcUsdc,
   UNISWAP_V4_ARC,
   v4PositionManagerReadAbi,
   v4PoolId,
@@ -16,6 +17,33 @@ const token = getAddress("0x2222222222222222222222222222222222222222");
 const pool = getAddress("0x3333333333333333333333333333333333333333");
 
 describe("token pool discovery route", () => {
+  it("offers a maximum withdrawal that still passes the prepare-time fee check", async () => {
+    // Measured on Arc: a 1-unit USDC transfer estimates 49,097 gas, a near-full one 49,121.
+    const sessionToken = "withdrawal-max-session";
+    const sessionHash = await hashOpaqueValue(sessionToken);
+    const wallet = getAddress("0x4444444444444444444444444444444444444444");
+    const authStore = { findSessionUser: async (value: string) =>
+      value === sessionHash ? { id: "user-1", ownerAddress: owner } : null } as unknown as AuthStore;
+    const db = { prepare() { return { bind() { return this; },
+      async first() { return { address: wallet, state: "active" }; } }; } } as unknown as D1Database;
+    const balance = 7_456_314_456_657_857_000n;
+    const maxFeePerGas = 40_000_000_000n;
+    const chainClient = {
+      async getBalance() { return balance; },
+      async estimateGas() { return 49_097n; },
+      async estimateFeesPerGas() { return { maxFeePerGas }; },
+    } as unknown as ChainReadClient;
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787" } satisfies Bindings;
+    const response = await createApp({ createAuthStore: () => authStore, createChainClient: () => chainClient })
+      .request("/v1/wallets/withdrawals/maximum", { method: "POST",
+        headers: { cookie: `stillwater_session=${sessionToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ recipient: owner }) }, env);
+    expect(response.status).toBe(200);
+    const { maximum } = await response.json() as { maximum: string };
+    const prepareReserve = (49_121n * 120n * maxFeePerGas + 99n) / 100n;
+    expect(canSpendArcUsdc(balance, BigInt(maximum), prepareReserve)).toBe(true);
+  });
+
   it("returns the signed-in wallet's live balance of any token", async () => {
     const sessionToken = "token-balance-session";
     const sessionHash = await hashOpaqueValue(sessionToken);

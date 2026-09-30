@@ -951,7 +951,9 @@ export function createApp(dependencies: AppDependencies = {}) {
       client.estimateGas({ account: wallet.address, to: probe.to, data: probe.data, value: 0n }),
       client.estimateFeesPerGas(),
     ]);
-    const feeReserve = (gas * 120n * fees.maxFeePerGas + 99n) / 100n;
+    // More headroom than prepare's 120% check: the real transfer's gas and the base fee can
+    // come out slightly higher by the time the owner has signed.
+    const feeReserve = (gas * 150n * fees.maxFeePerGas + 99n) / 100n;
     const maximum = maxArcUsdcAmount(balance, feeReserve);
     return context.json({ maximum: maximum.toString(), feeReserve: feeReserve.toString() });
   });

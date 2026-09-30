@@ -116,6 +116,7 @@ function rpc(overrides: Partial<MainnetExecutionRpc> = {}): MainnetExecutionRpc 
     readContract: async () => { throw new Error("not used"); },
     simulateContract: async () => { throw new Error("not used"); },
     getBlock: async () => ({ number: 100n, hash: blockHash }),
+    getCode: async () => undefined,
     call: async () => ({}),
     getTransactionCount: async () => 7,
     estimateFeesPerGas: async () => ({

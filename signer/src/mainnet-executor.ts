@@ -29,6 +29,8 @@ export type MainnetExecutionResult = {
 };
 
 export type MainnetExecutionRpc = MainnetAuditClient & {
+  // Required here: v3 swaps, approvals and mints fail revalidation without it.
+  getCode(parameters: { address: Address; blockNumber?: bigint }): Promise<Hex | undefined>;
   getBalance?(input: { address: Address }): Promise<bigint>;
   getTransactionCount(input: {
     address: Address;

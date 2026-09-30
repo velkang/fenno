@@ -1,5 +1,5 @@
-import { getAddress } from "viem";
-import { describe, expect, it } from "vitest";
+import { createPublicClient, getAddress } from "viem";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALPHA_POOL,
   ARC_CHAIN_ID,
@@ -7,6 +7,7 @@ import {
   UNISWAP_SHARED_ARC,
   UNISWAP_V3_ARC,
   arc,
+  arcRpcTransport,
   canSpendArcUsdc,
   maxArcUsdcAmount,
 } from "../src";
@@ -62,5 +63,28 @@ describe("Arc alpha configuration", () => {
     expect(canSpendArcUsdc(balance, 5_980_000n, reserve)).toBe(true);
     expect(canSpendArcUsdc(balance, 5_980_001n, reserve)).toBe(false);
     expect(maxArcUsdcAmount(1n, reserve)).toBe(0n);
+  });
+});
+
+describe("arcRpcTransport", () => {
+  it("keeps concurrent clients for the same URL in separate batches", async () => {
+    // Workers cancels a request whose RPC result resolves inside another request's batch.
+    const bodies: string[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const body = String(init?.body);
+      bodies.push(body);
+      const calls = JSON.parse(body) as { id: number }[];
+      return new Response(JSON.stringify(calls.map(({ id }) => ({ jsonrpc: "2.0", id, result: "0x1" }))),
+        { headers: { "content-type": "application/json" } });
+    });
+    try {
+      const first = createPublicClient({ chain: arc, transport: arcRpcTransport("https://rpc.example") });
+      const second = createPublicClient({ chain: arc, transport: arcRpcTransport("https://rpc.example") });
+      await Promise.all([first.getBlockNumber({ cacheTime: 0 }), second.getBlockNumber({ cacheTime: 0 })]);
+      expect(bodies).toHaveLength(2);
+      expect(bodies.every((body) => JSON.parse(body).length === 1)).toBe(true);
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 });

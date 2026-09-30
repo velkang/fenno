@@ -11,8 +11,14 @@ const RPC_WINDOW_MS = 1_100;
  * under the endpoints' rate limit. Waiting costs wall time, not CPU time.
  * One retry: each retry is another subrequest.
  */
-// Without a URL, viem uses the chain's default RPC (Blockdaemon's keyless Arc endpoint).
+// Without a URL, the chain's default RPC is used (Blockdaemon's keyless Arc endpoint).
+let transportCount = 0;
 export function arcRpcTransport(url?: string) {
+  // viem keys its batch queue by URL, so every transport for the same URL in a Worker
+  // isolate would share one queue, and one request's calls would resolve inside another
+  // request, which Workers cancels as hung. A unique fragment (never sent over the
+  // network) gives each transport its own queue.
+  const endpoint = `${url ?? arc.rpcUrls.default.http[0]}#${transportCount++}`;
   let queue: Promise<void> = Promise.resolve();
   let windowStart = 0;
   let sentInWindow = 0;
@@ -30,7 +36,7 @@ export function arcRpcTransport(url?: string) {
     });
     return queue.then(() => fetch(input, init));
   };
-  return http(url, { batch: { batchSize: RPC_CALLS_PER_WINDOW }, retryCount: 1, fetchFn: pacedFetch });
+  return http(endpoint, { batch: { batchSize: RPC_CALLS_PER_WINDOW }, retryCount: 1, fetchFn: pacedFetch });
 }
 
 export const ARC_CHAIN_ID = 5_042;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatUnits, getAddress, isAddress, parseUnits, toHex } from "viem";
 import { useAccount, useChainId, useSignTypedData } from "wagmi";
 import { ARC_CHAIN_ID, withdrawalDomain, withdrawalTypes, type AlphaWalletSummary } from "@stillwater/chain";
-import { api, type ManagedWalletRecord } from "../lib/api-client";
+import { api, ApiError, type ManagedWalletRecord } from "../lib/api-client";
 
 const MUTED_TEXT = "text-[.83rem] leading-[1.55] text-[#b6c1d1]";
 const LABEL_TEXT = "text-[.77rem] text-[#a6b4c6]";
@@ -120,7 +120,9 @@ export function WalletPanel({ open, wallet, canProvision, ownerAddress, summary,
       }
       onNotify("info", "Withdrawal submitted", "Check the wallet balance for confirmation.");
     } catch (error) {
-      onNotify("error", "Withdrawal not completed", error instanceof Error ? error.message : "Try again.");
+      onNotify("error", "Withdrawal not completed", error instanceof ApiError && error.code === "INSUFFICIENT_USDC_AFTER_FEES"
+        ? "Not enough USDC left for the network fee. Try a slightly smaller amount."
+        : error instanceof Error ? error.message : "Try again.");
     } finally {
       setBusy(false);
     }
