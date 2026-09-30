@@ -10,10 +10,11 @@
     "check": "tsc -b"
   },
   "dependencies": {
-    "@stillwater/chain": "workspace:*",
     "@reown/appkit": "^1.6.8",
     "@reown/appkit-adapter-wagmi": "^1.6.8",
+    "@stillwater/chain": "workspace:*",
     "@tanstack/react-query": "^5.66.0",
+    "motion": "^13.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.37.3",

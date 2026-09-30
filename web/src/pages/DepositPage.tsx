@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "motion/react";
 import { formatUnits, getAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import {
   ALPHA_POOL,
@@ -58,6 +59,16 @@ function formatCurrency(value: number): string {
 }
 
 const AMOUNT_PERCENTS = [25, 50, 75, 100];
+
+// One spring for every part of the review layout, so the band shrinking and "Your new pond"
+// sliding in move together. No overshoot: this is money.
+const SPRING = { type: "spring", bounce: 0, visualDuration: 0.4 } as const;
+const STACKED_QUERY = "(max-width: 1040px)";
+const isStacked = () => typeof window !== "undefined" && window.matchMedia(STACKED_QUERY).matches;
+// Side by side the summary slides in from the right; stacked, it rises from below.
+const SUMMARY_OFFSET = () => (isStacked() ? "translateY(56px)" : "translateX(80px)");
+// Stacked, the page first scrolls the summary into view, then it enters.
+const SUMMARY_ENTER = () => (isStacked() ? { ...SPRING, delay: 0.3 } : SPRING);
 
 function tokenMarkText(symbol: string): string {
   return symbol === "cirBTC" ? "cB" : symbol.slice(0, 2).toUpperCase();
@@ -142,6 +153,9 @@ export const DepositPage: React.FC<Props> = ({
 
   // Execution states
   const [reviewing, setReviewing] = useState(false);
+  // "Your new pond" appears on the first Review and stays until the band is chosen again.
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const summaryRef = useRef<HTMLElement>(null);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [v4Balances, setV4Balances] = useState<{ token: string; usdc: string } | null>(null);
@@ -337,6 +351,7 @@ export const DepositPage: React.FC<Props> = ({
       return;
     }
     setReviewing(true);
+    setSummaryOpen(true);
   };
 
   // Approves the maximum so later positions in this pool skip the approval.
@@ -408,6 +423,7 @@ export const DepositPage: React.FC<Props> = ({
       if (await mint()) {
         onNotify("success", "Position opened", "You're earning fees now.");
         setReviewing(false);
+        setSummaryOpen(false);
         setAmount0("");
         setAmount1("");
         await onRefresh();
@@ -439,6 +455,19 @@ export const DepositPage: React.FC<Props> = ({
     setAmount1(val);
     setAmount0(pairFor("usdc", val));
   };
+
+  // Choosing the band again closes "Your new pond" until the next Review.
+  const expandBands = () => {
+    setSummaryOpen(false);
+    setReviewing(false);
+  };
+
+  // Stacked on small screens, the summary opens below the fold: scroll to it before it enters.
+  useEffect(() => {
+    if (!summaryOpen || !isStacked()) return;
+    const frame = window.requestAnimationFrame(() => summaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [summaryOpen]);
 
   const handleStrategy = (next: StrategyKey) => {
     setStrategy(next);
@@ -495,167 +524,183 @@ export const DepositPage: React.FC<Props> = ({
         ) : null}
       </div> : null}
 
-      {/* Band and amounts are trimmed to about the same height; stretching evens out the last few pixels. */}
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-[clamp(24px,3vw,40px)] max-[1040px]:grid-cols-1">
-        <div className="flex min-w-0 flex-col gap-7">
-          <section aria-labelledby="band-heading" className="flex flex-1 flex-col gap-5 rounded-[32px] bg-sage px-[clamp(20px,3.2vw,40px)] py-8">
-            <h2 id="band-heading" className="text-[2rem] font-semibold">Choose your band</h2>
-            <StrategyCards selected={strategy} spotPrice={spotPrice} onSelect={handleStrategy} />
-            <KoiBand min={minPrice} max={maxPrice} price={spotPrice} size="small"
-              labels={{ min: `rests below $${formatPoolPrice(minPrice)}`, max: `rests above $${formatPoolPrice(maxPrice)}` }} />
-            <p className="font-hand text-[1.75rem] leading-snug text-hand">you earn while {token0.symbol}&apos;s price stays between these two.</p>
-            <div className="rounded-[18px] border border-line bg-card">
-              <button type="button" aria-expanded={showProDrawer} onClick={() => setShowProDrawer(!showProDrawer)}
-                className="flex min-h-12 w-full items-center justify-between gap-3 rounded-[inherit] px-4 text-left text-[1rem] text-ink hover:bg-tint">
-                <span className="inline-flex items-center gap-2"><IconSliders size={16} /> Technical details</span>
-                {showProDrawer ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
-              </button>
-              {showProDrawer ? (
-                <div className="grid grid-cols-2 gap-3 px-4 pt-1 pb-4">
-                  <div className={PRO_ITEM}><span>Lower tick</span><strong>{tickLower}</strong></div>
-                  <div className={PRO_ITEM}><span>Upper tick</span><strong>{tickUpper}</strong></div>
-                  <div className={PRO_ITEM}><span>Tick spacing</span><strong>{tickSpacing}</strong></div>
-                  <div className={PRO_ITEM}><span>Pool</span><strong>{poolAddress ? `${poolAddress.slice(0, 8)}…${poolAddress.slice(-6)}` : "—"}</strong></div>
-                </div>
-              ) : null}
-            </div>
-          </section>
-        </div>
+      {/* Band and amounts sit side by side. The first Review click slides "Your new pond" in as a third
+          column while the band shrinks to the selected card; choosing the band again reverses it. */}
+      <MotionConfig reducedMotion="user" transition={SPRING}>
+        <LayoutGroup>
+          <div className={`relative flex gap-[clamp(24px,3vw,40px)] max-[1040px]:flex-col ${summaryOpen ? "items-start max-[1040px]:items-stretch" : "items-stretch"}`}>
+            <motion.section layout aria-label={summaryOpen ? "Your band" : undefined} aria-labelledby={summaryOpen ? undefined : "band-heading"}
+              style={{ borderRadius: 32 }}
+              className={`relative flex flex-col gap-5 overflow-hidden bg-sage max-[1040px]:w-full ${summaryOpen ? "w-[240px] flex-none p-4" : "min-w-0 flex-1 px-[clamp(20px,3.2vw,40px)] py-8"}`}>
+              <AnimatePresence initial={false} mode="popLayout">
+                {summaryOpen ? null : (
+                  <motion.h2 key="band-heading" id="band-heading" layout="position" exit={{ opacity: 0 }}
+                    className="text-[2rem] font-semibold">Choose your band</motion.h2>
+                )}
+              </AnimatePresence>
+              <StrategyCards selected={strategy} spotPrice={spotPrice} onSelect={handleStrategy}
+                collapsed={summaryOpen} onExpand={executing ? undefined : expandBands} />
+              <AnimatePresence initial={false} mode="popLayout">
+                {summaryOpen ? null : (
+                  <motion.div key="band-detail" layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="flex flex-col gap-5">
+                    <KoiBand min={minPrice} max={maxPrice} price={spotPrice} size="small"
+                      labels={{ min: `rests below $${formatPoolPrice(minPrice)}`, max: `rests above $${formatPoolPrice(maxPrice)}` }} />
+                    <p className="font-hand text-[1.75rem] leading-snug text-hand">you earn while {token0.symbol}&apos;s price stays between these two.</p>
+                    <div className="rounded-[18px] border border-line bg-card">
+                      <button type="button" aria-expanded={showProDrawer} onClick={() => setShowProDrawer(!showProDrawer)}
+                        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-[inherit] px-4 text-left text-[1rem] text-ink hover:bg-tint">
+                        <span className="inline-flex items-center gap-2"><IconSliders size={16} /> Technical details</span>
+                        {showProDrawer ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
+                      </button>
+                      {showProDrawer ? (
+                        <div className="grid grid-cols-2 gap-3 px-4 pt-1 pb-4">
+                          <div className={PRO_ITEM}><span>Lower tick</span><strong>{tickLower}</strong></div>
+                          <div className={PRO_ITEM}><span>Upper tick</span><strong>{tickUpper}</strong></div>
+                          <div className={PRO_ITEM}><span>Tick spacing</span><strong>{tickSpacing}</strong></div>
+                          <div className={PRO_ITEM}><span>Pool</span><strong>{poolAddress ? `${poolAddress.slice(0, 8)}…${poolAddress.slice(-6)}` : "—"}</strong></div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.section>
 
-        <section aria-labelledby="amounts-heading" className="flex min-w-0 flex-col gap-5 rounded-[28px] border border-line bg-card px-[clamp(20px,3.2vw,40px)] py-8">
-          <div className="flex flex-col gap-2">
-            <h2 id="amounts-heading" className="text-[2rem] font-semibold">How much to add</h2>
-            <p className="text-[1.05rem] text-ink-muted">Type one amount; the other fills in.</p>
-          </div>
-          <form id="deposit-form" onSubmit={handleReview} className="flex flex-col gap-5">
-            {[
-              { id: "token0-amount", side: "token0" as const, isToken: true, symbol: token0.symbol, value: amount0, onChange: handleAmount0Change,
-                balance: balance0, short: short0, usd: (Number.parseFloat(amount0.trim().replace(",", ".")) || 0) * spotPrice },
-              { id: "token1-amount", side: "token1" as const, isToken: false, symbol: token1.symbol, value: amount1, onChange: handleAmount1Change,
-                balance: balance1, short: short1, usd: Number.parseFloat(amount1.trim().replace(",", ".")) || 0 },
-            ].map((field) => (
-              <div className="flex min-w-0 flex-col gap-2.5" key={field.id}>
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <label htmlFor={field.id} className="flex min-w-0 items-center gap-2.5 text-[1.05rem] font-semibold">
-                    <TokenMark symbol={field.symbol} className={`${MARK_REGULAR} ${MARK_DEFAULT}`} />
-                    <span className="overflow-hidden text-ellipsis">{field.symbol}</span>
-                  </label>
-                  {wallet ? <span className="overflow-hidden text-[.95rem] text-ellipsis whitespace-nowrap text-ink-muted tabular-nums">You have {field.balance}</span> : null}
-                </div>
-                {/* The dollar value sits inside the field so the card stays compact. */}
-                <div className="relative">
-                  <input
-                    id={field.id}
-                    name={field.id}
-                    autoComplete="off"
-                    className="min-h-16 w-full min-w-0 rounded-[18px] border border-line bg-field pr-28 pl-5 text-[1.5rem] text-ink tabular-nums aria-invalid:border-rest-line aria-invalid:text-rest"
-                    type="text"
-                    inputMode="decimal"
-                    value={field.value}
-                    onChange={(e) => { field.onChange(e.target.value); setReviewing(false); }}
-                    placeholder="0.0"
-                    aria-invalid={field.short || undefined}
-                    aria-describedby={`${field.id}-usd`}
-                  />
-                  <span id={`${field.id}-usd`}
-                    className="pointer-events-none absolute top-1/2 right-5 -translate-y-1/2 text-[.95rem] text-ink-muted tabular-nums">
-                    ≈ {formatCurrency(field.usd)}
-                  </span>
-                </div>
-                {wallet && field.isToken && onBuyToken && rawBalance0 !== undefined && BigInt(rawBalance0) === 0n ? (
-                  <button type="button" onClick={onBuyToken}
-                    className="min-h-11 rounded-full bg-accent px-5 text-[.98rem] font-semibold text-on-accent hover:bg-accent-hover">
-                    Buy {field.symbol}
-                  </button>
-                ) : wallet ? (
-                  <div className="grid grid-cols-4 gap-2" role="group" aria-label={`Use part of your ${field.symbol} balance`}>
-                    {AMOUNT_PERCENTS.map((percent) => {
-                      const value = percentOfBalance(field.side, percent);
-                      return (
-                        <button key={percent} type="button" disabled={!value}
-                          className="min-h-11 rounded-full border border-line text-[.95rem] font-medium text-ink enabled:hover:bg-tint disabled:cursor-not-allowed disabled:opacity-45"
-                          onClick={() => { field.onChange(value); setReviewing(false); }}>
-                          {percent === 100 ? "Max" : `${percent}%`}
-                        </button>
-                      );
-                    })}
+            <motion.section layout aria-labelledby="amounts-heading" style={{ borderRadius: 28 }}
+              className={`flex min-w-0 flex-none flex-col gap-5 border border-line bg-card px-[clamp(20px,3.2vw,40px)] py-8 max-[1040px]:w-full ${summaryOpen ? "w-[400px]" : "w-[420px]"}`}>
+              <motion.div layout="position" className="flex flex-col gap-2">
+                <h2 id="amounts-heading" className="text-[2rem] font-semibold">How much to add</h2>
+                <p className="text-[1.05rem] text-ink-muted">Type one amount; the other fills in.</p>
+              </motion.div>
+              <form id="deposit-form" onSubmit={handleReview} className="flex flex-col gap-5">
+                {[
+                  { id: "token0-amount", side: "token0" as const, isToken: true, symbol: token0.symbol, value: amount0, onChange: handleAmount0Change,
+                    balance: balance0, short: short0, usd: (Number.parseFloat(amount0.trim().replace(",", ".")) || 0) * spotPrice },
+                  { id: "token1-amount", side: "token1" as const, isToken: false, symbol: token1.symbol, value: amount1, onChange: handleAmount1Change,
+                    balance: balance1, short: short1, usd: Number.parseFloat(amount1.trim().replace(",", ".")) || 0 },
+                ].map((field) => (
+                  <div className="flex min-w-0 flex-col gap-2.5" key={field.id}>
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <label htmlFor={field.id} className="flex min-w-0 items-center gap-2.5 text-[1.05rem] font-semibold">
+                        <TokenMark symbol={field.symbol} className={`${MARK_REGULAR} ${MARK_DEFAULT}`} />
+                        <span className="overflow-hidden text-ellipsis">{field.symbol}</span>
+                      </label>
+                      {wallet ? <span className="overflow-hidden text-[.95rem] text-ellipsis whitespace-nowrap text-ink-muted tabular-nums">You have {field.balance}</span> : null}
+                    </div>
+                    {/* The dollar value sits inside the field so the card stays compact. */}
+                    <div className="relative">
+                      <input
+                        id={field.id}
+                        name={field.id}
+                        autoComplete="off"
+                        className="min-h-16 w-full min-w-0 rounded-[18px] border border-line bg-field pr-28 pl-5 text-[1.5rem] text-ink tabular-nums aria-invalid:border-rest-line aria-invalid:text-rest"
+                        type="text"
+                        inputMode="decimal"
+                        value={field.value}
+                        onChange={(e) => { field.onChange(e.target.value); setReviewing(false); }}
+                        placeholder="0.0"
+                        aria-invalid={field.short || undefined}
+                        aria-describedby={`${field.id}-usd`}
+                      />
+                      <span id={`${field.id}-usd`}
+                        className="pointer-events-none absolute top-1/2 right-5 -translate-y-1/2 text-[.95rem] text-ink-muted tabular-nums">
+                        ≈ {formatCurrency(field.usd)}
+                      </span>
+                    </div>
+                    {wallet && field.isToken && onBuyToken && rawBalance0 !== undefined && BigInt(rawBalance0) === 0n ? (
+                      <button type="button" onClick={onBuyToken}
+                        className="min-h-11 rounded-full bg-accent px-5 text-[.98rem] font-semibold text-on-accent hover:bg-accent-hover">
+                        Buy {field.symbol}
+                      </button>
+                    ) : wallet ? (
+                      <div className="grid grid-cols-4 gap-2" role="group" aria-label={`Use part of your ${field.symbol} balance`}>
+                        {AMOUNT_PERCENTS.map((percent) => {
+                          const value = percentOfBalance(field.side, percent);
+                          return (
+                            <button key={percent} type="button" disabled={!value}
+                              className="min-h-11 rounded-full border border-line text-[.95rem] font-medium text-ink enabled:hover:bg-tint disabled:cursor-not-allowed disabled:opacity-45"
+                              onClick={() => { field.onChange(value); setReviewing(false); }}>
+                              {percent === 100 ? "Max" : `${percent}%`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {field.short ? (
+                      <p className="text-[.95rem] leading-relaxed text-rest" role="alert">
+                        Not enough {field.symbol} in your Stillwater wallet.
+                        {field.isToken ? "" : " Add USDC to your Stillwater wallet first."}
+                      </p>
+                    ) : null}
                   </div>
-                ) : null}
-                {field.short ? (
-                  <p className="text-[.95rem] leading-relaxed text-rest" role="alert">
-                    Not enough {field.symbol} in your Stillwater wallet.
-                    {field.isToken ? "" : " Add USDC to your Stillwater wallet first."}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </form>
-          {/* The CTA for the amounts; the step-by-step review opens in the summary below. */}
-          {!wallet ? (
-            <button type="button" className={PRIMARY_ACTION} onClick={() => { if (onOpenAuth) onOpenAuth(); else open(); }}>
-              <IconWallet size={18} />
-              <span>Sign in to add liquidity</span>
-            </button>
-          ) : (
-            <button type="submit" form="deposit-form" className={PRIMARY_ACTION}
-              disabled={reviewing || !hasAmounts || !!short0 || !!short1 || (!v4Pool && !isCanonical && !activeCustomPool)}>
-              {reviewing ? "Review below" : "Review pond"}
-            </button>
-          )}
-        </section>
+                ))}
+              </form>
+              {/* The CTA for the amounts; the step-by-step review opens in "Your new pond". */}
+              {!wallet ? (
+                <button type="button" className={PRIMARY_ACTION} onClick={() => { if (onOpenAuth) onOpenAuth(); else open(); }}>
+                  <IconWallet size={18} />
+                  <span>Sign in to add liquidity</span>
+                </button>
+              ) : (
+                <button type="submit" form="deposit-form" className={PRIMARY_ACTION}
+                  disabled={reviewing || !hasAmounts || !!short0 || !!short1 || (!v4Pool && !isCanonical && !activeCustomPool)}>
+                  {reviewing ? "Reviewing" : "Review pond"}
+                </button>
+              )}
+            </motion.section>
 
-        {/* The summary spans both columns under the band and the amounts. */}
-        <aside aria-labelledby="new-pond-heading" className="col-span-full flex flex-col gap-6 rounded-[28px] border border-line bg-card p-[clamp(20px,2.6vw,32px)]">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <h2 id="new-pond-heading" className="text-[1.85rem] font-semibold">Your new pond</h2>
-            {poolAddress ? (
-              <a className="inline-flex min-h-11 items-center gap-2 text-[.95rem] font-medium text-link"
-                href={`https://explorer.arc.io/address/${poolAddress}`} target="_blank" rel="noreferrer">
-                View on explorer <IconExternalLink size={14} />
-              </a>
-            ) : null}
+            <AnimatePresence mode="popLayout">
+              {summaryOpen ? (
+                <motion.aside key="new-pond" ref={summaryRef} layout aria-labelledby="new-pond-heading"
+                  initial={{ opacity: 0, transform: SUMMARY_OFFSET() }} animate={{ opacity: 1, transform: "none", transition: SUMMARY_ENTER() }}
+                  exit={{ opacity: 0, transform: SUMMARY_OFFSET() }}
+                  style={{ borderRadius: 28 }}
+                  className="flex min-w-0 flex-1 flex-col gap-5 border border-line bg-card p-[clamp(20px,2.6vw,32px)] max-[1040px]:w-full">
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <h2 id="new-pond-heading" className="text-[1.85rem] font-semibold">Your new pond</h2>
+                    {poolAddress ? (
+                      <a className="inline-flex min-h-11 items-center gap-2 text-[.95rem] font-medium text-link"
+                        href={`https://explorer.arc.io/address/${poolAddress}`} target="_blank" rel="noreferrer">
+                        View on explorer <IconExternalLink size={14} />
+                      </a>
+                    ) : null}
+                  </div>
+                  <dl className="flex flex-col">
+                    {[
+                      { label: "You add", value: `≈ ${formatCurrency((Number.parseFloat(amount0) || 0) * spotPrice + (Number.parseFloat(amount1) || 0))}` },
+                      { label: `Earns while ${token0.symbol} is`, value: `$${formatPoolPrice(minPrice)} – $${formatPoolPrice(maxPrice)}` },
+                      { label: "Band width", value: rangeWidth },
+                      { label: "Pool fee", value: poolFee === 0x800000 ? "Varies per trade" : feeTier },
+                      { label: `${token0.symbol} now`, value: `$${formatPoolPrice(spotPrice)}` },
+                    ].map((row) => (
+                      <div key={row.label} className="flex justify-between gap-4 border-t border-line py-3 text-[1.02rem]">
+                        <dt className="text-ink-muted">{row.label}</dt>
+                        <dd className="text-right font-medium tabular-nums">{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {!reviewing ? (
+                    <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater checks each step again before sending it. Nothing is sent until you confirm.</p>
+                  ) : null}
+                  {wallet && reviewing ? (
+                    <PositionReview
+                      tokenSymbol={token0.symbol}
+                      amountToken={amount0}
+                      amountUsdc={amount1}
+                      maxTransactions={approvals.length * (v4Pool ? 2 : 1) + 1}
+                      progress={progress}
+                      busy={executing}
+                      onConfirm={handleConfirm}
+                      onEdit={() => setReviewing(false)}
+                    />
+                  ) : null}
+                </motion.aside>
+              ) : null}
+            </AnimatePresence>
           </div>
-          <dl className="grid grid-cols-5 gap-x-6 gap-y-4 max-[1040px]:grid-cols-3 max-[640px]:grid-cols-2">
-            {[
-              { label: "You add", value: `≈ ${formatCurrency((Number.parseFloat(amount0) || 0) * spotPrice + (Number.parseFloat(amount1) || 0))}` },
-              { label: `Earns while ${token0.symbol} is`, value: `$${formatPoolPrice(minPrice)} – $${formatPoolPrice(maxPrice)}` },
-              { label: "Band width", value: rangeWidth },
-              { label: "Pool fee", value: poolFee === 0x800000 ? "Varies per trade" : feeTier },
-              { label: `${token0.symbol} now`, value: `$${formatPoolPrice(spotPrice)}` },
-            ].map((row) => (
-              <div key={row.label} className="flex min-w-0 flex-col gap-1 border-t border-line pt-3.5">
-                <dt className="text-[.95rem] text-ink-muted">{row.label}</dt>
-                <dd className="text-[1.1rem] font-medium tabular-nums">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-          {!wallet || !reviewing ? (
-            <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater checks each step again before sending it. Nothing is sent until you confirm.</p>
-          ) : null}
-          {wallet && reviewing ? (
-            <PositionReview
-              tokenSymbol={token0.symbol}
-              amountToken={amount0}
-              amountUsdc={amount1}
-              valueUsd={(Number.parseFloat(amount0) || 0) * spotPrice + (Number.parseFloat(amount1) || 0)}
-              minPrice={minPrice}
-              maxPrice={maxPrice}
-              feeLabel={feeTier}
-              steps={[
-                ...approvals.map(({ symbol }) => v4Pool
-                  ? `Allow Uniswap to use your ${symbol} (skipped if already allowed)`
-                  : `Allow Uniswap to use your ${symbol}`),
-                "Open the pond",
-              ]}
-              maxTransactions={approvals.length * (v4Pool ? 2 : 1) + 1}
-              progress={progress}
-              busy={executing}
-              onConfirm={handleConfirm}
-              onEdit={() => setReviewing(false)}
-            />
-          ) : null}
-        </aside>
-      </div>
+        </LayoutGroup>
+      </MotionConfig>
     </div>
   );
 };
