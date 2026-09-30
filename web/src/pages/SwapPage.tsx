@@ -17,6 +17,7 @@ import {
 } from './ExplorePage'
 import { BalancePresets, useTokenBalance } from '../components/BalancePresets'
 import { usePendingAttempt } from '../lib/attempts'
+import { Underline } from '../components/Underline'
 import {
   executePoolSwap,
   POOL_UNUSABLE_ERRORS,
@@ -32,7 +33,7 @@ const NOTE_TEXT = 'text-[1rem] text-ink-muted'
 const FIELD_INPUT =
   'min-h-14 w-full rounded-[18px] border border-line bg-field px-5 text-[1.1rem] text-ink'
 const TAB_BUTTON =
-  'min-h-11 border-b-2 border-transparent pb-3 text-[1.15rem] text-ink-muted aria-selected:border-ink aria-selected:font-semibold aria-selected:text-ink'
+  'relative min-h-11 pb-3 text-[1.15rem] text-ink-muted aria-selected:font-semibold aria-selected:text-ink'
 const DETAIL_ROW = 'flex justify-between gap-3 py-2.5 text-[1rem]'
 const DETAIL_VALUE = 'text-ink tabular-nums'
 const PRIMARY_BUTTON =
@@ -352,6 +353,7 @@ export function SwapPage({
               }}
             >
               Buy {pool?.token.symbol ?? 'token'}
+              {direction === 'buy' ? <Underline id="swap-tab" /> : null}
             </button>
             <button
               type="button"
@@ -364,6 +366,7 @@ export function SwapPage({
               }}
             >
               Sell {pool?.token.symbol ?? 'token'}
+              {direction === 'sell' ? <Underline id="swap-tab" /> : null}
             </button>
           </div>
           <label className="flex flex-col gap-2.5 text-[1.05rem] text-ink-muted">

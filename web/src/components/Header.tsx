@@ -3,6 +3,7 @@ import { useAccount } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import type { AuthUser } from "../lib/api-client";
 import { IconRipple } from "./Icons";
+import { Underline } from "./Underline";
 
 export type PageRoute = "pond" | "positions" | "explore" | "pool" | "swap";
 
@@ -47,9 +48,10 @@ export const Header: React.FC<Props> = ({
             const active = activePage === item.key || (activePage === "pool" && item.key === "explore");
             return (
               <button key={item.key} type="button" onClick={() => onNavigate(item.key)} aria-current={active ? "page" : undefined}
-                className={`min-h-11 border-b-2 text-[1.05rem] transition-colors max-[760px]:flex-1 ${active
-                  ? "border-ink text-ink" : "border-transparent text-ink-muted hover:text-ink"}`}>
+                className={`relative min-h-11 text-[1.05rem] transition-colors max-[760px]:flex-1 ${active
+                  ? "text-ink" : "text-ink-muted hover:text-ink"}`}>
                 {item.label}
+                {active ? <Underline id="nav-underline" /> : null}
               </button>
             );
           })}

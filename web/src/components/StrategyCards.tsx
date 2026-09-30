@@ -38,17 +38,20 @@ export const StrategyCards: React.FC<Props> = ({ selected, spotPrice, onSelect, 
             {...(collapsed
               ? { "aria-label": `${strategy.name} ${strategy.label}, change band`, disabled: !onExpand, onClick: onExpand }
               : { role: "radio", "aria-checked": isSelected, onClick: () => onSelect(strategy.key) })}
-            className={`flex min-w-0 flex-col gap-2 px-5 py-4 text-left text-ink transition-colors ${isSelected
-              ? "border-2 border-ink bg-card" : "border border-band hover:bg-card/60"}`}>
-            <motion.span layout="position" className="flex items-center justify-between gap-2 text-[1.2rem] font-semibold">
+            className={`relative flex min-w-0 flex-col gap-2 border px-5 py-4 text-left text-ink transition-colors ${isSelected
+              ? "border-transparent" : "border-band hover:bg-card/60"}`}>
+            {/* The selected outline glides to whichever band is picked. */}
+            {isSelected ? <motion.span layoutId="band-selected" aria-hidden="true" style={{ borderRadius: 20 }}
+              className="absolute -inset-px border-2 border-ink bg-card" /> : null}
+            <motion.span layout="position" className="relative flex items-center justify-between gap-2 text-[1.2rem] font-semibold">
               <span>{strategy.name}</span>
               <span className="tabular-nums">{strategy.label}</span>
             </motion.span>
-            <motion.span layout="position" className="text-[.98rem] leading-snug whitespace-normal text-ink-muted">{strategy.hint}</motion.span>
-            <motion.span layout="position" className="text-[.9rem] whitespace-normal text-ink-faint tabular-nums">
+            <motion.span layout="position" className="relative text-[.98rem] leading-snug whitespace-normal text-ink-muted">{strategy.hint}</motion.span>
+            <motion.span layout="position" className="relative text-[.9rem] whitespace-normal text-ink-faint tabular-nums">
               ${formatPoolPrice(floor)} – ${formatPoolPrice(ceiling)}
             </motion.span>
-            {collapsed ? <span className="text-[.95rem] font-semibold text-link">Change band</span> : null}
+            {collapsed ? <span className="relative text-[.95rem] font-semibold text-link">Change band</span> : null}
           </motion.button>
         );
       })}

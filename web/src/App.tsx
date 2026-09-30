@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { SPRING, fade, lift } from './lib/motion'
 import { Header, type PageRoute } from './components/Header'
 import { AuthScreen } from './components/AuthScreen'
 import { ExplorePage } from './pages/ExplorePage'
@@ -206,7 +208,8 @@ export const App: React.FC = () => {
   }
 
   return (
-    <>
+    // One place for motion: calm defaults, and none of it for people who ask for reduced motion.
+    <MotionConfig reducedMotion="user" transition={SPRING}>
       <a
         href="#main"
         className="sr-only z-[90] rounded-full bg-accent px-5 py-3 font-semibold text-on-accent focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
@@ -302,9 +305,14 @@ export const App: React.FC = () => {
       />
 
       {/* SIWE Auth Modal Overlay */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-[560px]">
+      <AnimatePresence>
+        {showAuthModal && (
+          <motion.div
+            key="sign-in"
+            {...fade}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 backdrop-blur-sm"
+          >
+            <motion.div {...lift} className="relative w-full max-w-[560px]">
             <AuthScreen
               onAuthSuccess={(newUser) => {
                 setUser(newUser)
@@ -313,9 +321,10 @@ export const App: React.FC = () => {
               onError={(msg) => addToast('error', 'Sign-in failed', msg)}
               onClose={() => setShowAuthModal(false)}
             />
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <IntentActionModal
         modal={modal}
@@ -327,6 +336,6 @@ export const App: React.FC = () => {
       />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-    </>
+    </MotionConfig>
   )
 }

@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { fade, reveal } from "../../lib/motion";
 import { Tomo } from "../Icons";
 import type { TomoNote } from "../../lib/ponds";
 
@@ -45,13 +47,21 @@ export function TomoCard({ notes, onOpenPond }: Props) {
           <span className="text-[1.05rem] text-ink-muted">a quiet note from your guide</span>
         </div>
       </div>
-      <p aria-live="polite" className="text-[1.4rem] leading-snug font-medium">{note.message}</p>
-      <p className="text-[1.1rem] leading-relaxed text-ink-muted">{note.advice}</p>
-      {walking && note.steps.length > 0 ? (
-        <ol className="flex list-decimal flex-col gap-2 pl-6 text-[1.05rem] leading-relaxed text-ink">
-          {note.steps.map((step) => <li key={step}>{step}</li>)}
-        </ol>
-      ) : null}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div key={note.id} {...fade} className="flex flex-col gap-5">
+          <p aria-live="polite" className="text-[1.4rem] leading-snug font-medium">{note.message}</p>
+          <p className="text-[1.1rem] leading-relaxed text-ink-muted">{note.advice}</p>
+        </motion.div>
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {walking && note.steps.length > 0 ? (
+          <motion.div key="steps" {...reveal} className="overflow-hidden">
+            <ol className="flex list-decimal flex-col gap-2 pl-6 text-[1.05rem] leading-relaxed text-ink">
+              {note.steps.map((step) => <li key={step}>{step}</li>)}
+            </ol>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <div className="flex flex-wrap gap-3">
         {note.steps.length > 0 ? (
           walking && note.pond && onOpenPond ? (

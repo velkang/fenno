@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion } from "motion/react";
+import { SPRING } from "../lib/motion";
 import { formatUnits, getAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import {
   ALPHA_POOL,
@@ -60,9 +61,6 @@ function formatCurrency(value: number): string {
 
 const AMOUNT_PERCENTS = [25, 50, 75, 100];
 
-// One spring for every part of the review layout, so the band shrinking and "Your new pond"
-// sliding in move together. No overshoot: this is money.
-const SPRING = { type: "spring", bounce: 0, visualDuration: 0.4 } as const;
 const STACKED_QUERY = "(max-width: 1040px)";
 const isStacked = () => typeof window !== "undefined" && window.matchMedia(STACKED_QUERY).matches;
 // Side by side the summary slides in from the right; stacked, it rises from below.
@@ -526,8 +524,7 @@ export const DepositPage: React.FC<Props> = ({
 
       {/* Band and amounts sit side by side. The first Review click slides "Your new pond" in as a third
           column while the band shrinks to the selected card; choosing the band again reverses it. */}
-      <MotionConfig reducedMotion="user" transition={SPRING}>
-        <LayoutGroup>
+      <LayoutGroup>
           <div className={`relative flex gap-[clamp(24px,3vw,40px)] max-[1040px]:flex-col ${summaryOpen ? "items-start max-[1040px]:items-stretch" : "items-stretch"}`}>
             <motion.section layout aria-label={summaryOpen ? "Your band" : undefined} aria-labelledby={summaryOpen ? undefined : "band-heading"}
               style={{ borderRadius: 32 }}
@@ -699,8 +696,7 @@ export const DepositPage: React.FC<Props> = ({
               ) : null}
             </AnimatePresence>
           </div>
-        </LayoutGroup>
-      </MotionConfig>
+      </LayoutGroup>
     </div>
   );
 };

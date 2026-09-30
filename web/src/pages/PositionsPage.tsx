@@ -11,6 +11,8 @@ import {
 import { PondList, type PondAction } from '../components/pond/PondList'
 import { useV4Ponds } from '../components/pond/useV4Ponds'
 import { Loading, Skeleton } from '../components/Skeleton'
+import { motion } from 'motion/react'
+import { fade } from '../lib/motion'
 
 type Props = {
   user: AuthUser | null
@@ -133,13 +135,16 @@ export function PositionsPage({
           )}
         </section>
       ) : (
-        <PondList
-          ponds={ponds}
-          busy={busy}
-          collectAllUsd={collectAllUsd}
-          onCollectAll={() => void collectAll()}
-          onAction={(pond, action) => void act(pond, action)}
-        />
+        // Fades in where the skeleton was.
+        <motion.div {...fade}>
+          <PondList
+            ponds={ponds}
+            busy={busy}
+            collectAllUsd={collectAllUsd}
+            onCollectAll={() => void collectAll()}
+            onAction={(pond, action) => void act(pond, action)}
+          />
+        </motion.div>
       )}
       {v4.loading && !empty ? <PositionRowsSkeleton rows={2} /> : null}
 

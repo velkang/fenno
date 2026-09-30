@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { Koi } from "../Icons";
 import { formatPoolPrice } from "../../pages/ExplorePage";
 
@@ -32,15 +33,21 @@ export function KoiBand({ min, max, price, labels, size = "large" }: Props) {
         role="img" aria-label={`Price ${formatPoolPrice(price)}, ${where} of ${formatPoolPrice(min)} to ${formatPoolPrice(max)}`}>
         <div className="absolute inset-y-[6%] rounded-full border-2 border-dashed border-band bg-band-fill"
           style={{ left: `${BAND_LEFT}%`, right: `${BAND_LEFT}%` }} />
-        <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ left: `${left}%` }}>
+        {/* layout: when the price moves, the koi glides to its new spot instead of jumping. */}
+        <motion.div layout className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ left: `${left}%` }}>
           {inside ? (
             <div className={`flex items-center justify-center rounded-full border border-water ${large ? "size-[200px]" : "size-[128px]"}`}>
               <div className={`flex items-center justify-center rounded-full border-2 border-water bg-band-fill ${large ? "size-[132px]" : "size-[88px]"}`}>
-                <Koi size={large ? 110 : 72} />
+                {/* Inside the band the koi sways a little, as if swimming in place. */}
+                <motion.div
+                  animate={{ transform: ["translateX(-3px) rotate(-2deg)", "translateX(3px) rotate(2deg)"] }}
+                  transition={{ duration: 4, ease: "easeInOut", repeat: Infinity, repeatType: "mirror" }}>
+                  <Koi size={large ? 110 : 72} />
+                </motion.div>
               </div>
             </div>
           ) : <Koi size={large ? 96 : 64} className="opacity-90" />}
-        </div>
+        </motion.div>
       </div>
       <div className="relative h-6 text-[1.05rem] font-medium tabular-nums text-ink max-[520px]:text-[.9rem]">
         <span className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${BAND_LEFT}%` }}>{labels?.min ?? `$${formatPoolPrice(min)}`}</span>

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { tokenWaters, type AlphaWalletSummary, type Waters } from "@stillwater/chain";
 import { WaterMark } from "../components/Icons";
 import { useTokenBalance } from "../components/BalancePresets";
 import { Loading, Skeleton } from "../components/Skeleton";
+import { fade, slideFromRight } from "../lib/motion";
 import { api, type ManagedWalletRecord, type PublicPool } from "../lib/api-client";
 import { DepositPage } from "./DepositPage";
 import { SwapPage } from "./SwapPage";
@@ -59,7 +61,8 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
   // 0x800000 marks a v4 pool whose fee changes trade by trade.
   const fee = pool.fee === 0x800000 ? "a varying share" : `${(pool.fee / 10_000).toFixed(2)}%`;
 
-  return <div className="mx-auto w-full max-w-[1280px] text-ink">
+  // Fades in where the skeleton was.
+  return <motion.div {...fade} className="mx-auto w-full max-w-[1280px] text-ink">
     <div className="mb-7 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-6 max-[900px]:grid-cols-1">
       <div className="flex flex-col gap-3">
         {onBack ? <button type="button" onClick={onBack} className="min-h-10 self-start text-[1.05rem] text-link">← All pools</button> : null}
@@ -79,12 +82,14 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
     <DepositPage initialPoolAddress={address} initialTokenAddress={pool.token.address} pool={pool}
       balancesKey={swaps} onBuyToken={() => setBuying(true)} wallet={wallet} summary={summary} onRefresh={onRefresh}
       onNotify={onNotify} onOpenAuth={onOpenAuth} />
-    {buying ? <BuyDrawer symbol={pool.token.symbol} onClose={() => setBuying(false)}>
-      <SwapPage initialPoolAddress={address} wallet={wallet} summary={summary}
-        onRefresh={onRefresh} onOpenAuth={onOpenAuth} onNotify={onNotify}
-        onSwapComplete={() => { setSwaps((count) => count + 1); setBuying(false); }} />
-    </BuyDrawer> : null}
-  </div>;
+    <AnimatePresence>
+      {buying ? <BuyDrawer key="buy-drawer" symbol={pool.token.symbol} onClose={() => setBuying(false)}>
+        <SwapPage initialPoolAddress={address} wallet={wallet} summary={summary}
+          onRefresh={onRefresh} onOpenAuth={onOpenAuth} onNotify={onNotify}
+          onSwapComplete={() => { setSwaps((count) => count + 1); setBuying(false); }} />
+      </BuyDrawer> : null}
+    </AnimatePresence>
+  </motion.div>;
 }
 
 /** A side sheet for buying the pool's token without leaving the Add liquidity form. */
@@ -99,9 +104,9 @@ function BuyDrawer({ symbol, onClose, children }: { symbol: string; onClose: () 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-  return <div className="fixed inset-0 z-70 flex justify-end bg-scrim text-ink"
+  return <motion.div {...fade} className="fixed inset-0 z-70 flex justify-end bg-scrim text-ink"
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-labelledby="buy-drawer-title"
+    <motion.section {...slideFromRight} role="dialog" aria-modal="true" aria-labelledby="buy-drawer-title"
       className="flex h-full w-[min(560px,100%)] flex-col gap-6 overflow-auto overscroll-contain rounded-l-[28px] bg-paper p-8 shadow-2xl max-[520px]:rounded-none max-[520px]:p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1.5">
@@ -112,8 +117,8 @@ function BuyDrawer({ symbol, onClose, children }: { symbol: string; onClose: () 
           className="min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint">Close</button>
       </div>
       {children}
-    </section>
-  </div>;
+    </motion.section>
+  </motion.div>;
 }
 
 function PoolSkeleton() {

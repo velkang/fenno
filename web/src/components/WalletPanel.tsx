@@ -9,6 +9,9 @@ import {
 } from '@stillwater/chain'
 import { api, ApiError, type ManagedWalletRecord } from '../lib/api-client'
 import { usePendingAttempt } from '../lib/attempts'
+import { AnimatePresence, motion } from 'motion/react'
+import { fade, slideFromRight } from '../lib/motion'
+import { Underline } from './Underline'
 
 const MUTED_TEXT = 'text-[1rem] leading-relaxed text-ink-muted'
 const LABEL_TEXT = 'text-[.95rem] text-ink-muted'
@@ -18,7 +21,7 @@ const OUTLINE_BUTTON =
 const PRIMARY_BUTTON =
   'min-h-14 rounded-full bg-accent px-6 text-[1.05rem] font-semibold text-on-accent enabled:hover:bg-accent-hover'
 const TAB_BUTTON =
-  'min-h-12 border-b-2 border-transparent text-[1.05rem] text-ink-muted aria-selected:border-ink aria-selected:font-semibold aria-selected:text-ink'
+  'relative min-h-12 text-[1.05rem] text-ink-muted aria-selected:font-semibold aria-selected:text-ink'
 const FIELD_LABEL = 'grid gap-2 text-[.98rem] text-ink-muted'
 const FIELD_INPUT =
   'min-h-[52px] w-full rounded-[14px] border border-line bg-field px-4 text-[1.05rem] text-ink'
@@ -157,8 +160,6 @@ export function WalletPanel({
     }
   }, [open, wallet, summary])
 
-  if (!open) return null
-
   const withdraw = async () => {
     if (
       !wallet ||
@@ -220,14 +221,20 @@ export function WalletPanel({
     }
   }
 
+  // Kept mounted so closing can slide out; the scrim fades while the panel slides.
   return (
-    <div
+    <AnimatePresence>
+    {open ? (
+    <motion.div
+      key="wallet-panel"
+      {...fade}
       className="fixed inset-0 z-70 flex justify-end bg-scrim text-ink"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <section
+      <motion.section
+        {...slideFromRight}
         className="h-full w-[min(460px,100%)] overflow-auto overscroll-contain rounded-l-[28px] bg-card p-8 shadow-2xl max-[520px]:rounded-none max-[520px]:p-5"
         role="dialog"
         aria-modal="true"
@@ -319,6 +326,7 @@ export function WalletPanel({
                 }}
               >
                 Deposit
+                {tab === 'deposit' ? <Underline id="wallet-tab" /> : null}
               </button>
               <button
                 type="button"
@@ -328,6 +336,7 @@ export function WalletPanel({
                 onClick={() => setTab('withdraw')}
               >
                 Withdraw
+                {tab === 'withdraw' ? <Underline id="wallet-tab" /> : null}
               </button>
             </div>
             {tab === 'deposit' ? (
@@ -473,7 +482,9 @@ export function WalletPanel({
             </button>
           </div>
         ) : null}
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
+    ) : null}
+    </AnimatePresence>
   )
 }

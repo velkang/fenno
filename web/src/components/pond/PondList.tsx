@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { reveal } from "../../lib/motion";
 import { formatUsd, type Pond } from "../../lib/ponds";
 
 export type PondAction = "collect" | "close" | "add" | "remove";
@@ -54,7 +56,9 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction }:
                 {expanded ? "Done" : "Manage"}
               </button>
             </div>
+            <AnimatePresence initial={false}>
             {expanded ? (
+              <motion.div key="actions" {...reveal} className="overflow-hidden">
               <div className="flex flex-wrap gap-3 pb-6">
                 {ACTIONS.filter((action) => !action.v3Only || pond.v3).map((action) => (
                   <button key={action.id} type="button" disabled={busy} onClick={() => onAction(pond, action.id)}
@@ -65,7 +69,9 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction }:
                   </button>
                 ))}
               </div>
+              </motion.div>
             ) : null}
+            </AnimatePresence>
           </div>
         );
       })}

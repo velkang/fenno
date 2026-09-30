@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
+import { FADE } from "../lib/motion";
 import { formatUnits, zeroAddress } from "viem";
 import { api, type PublicPool } from "../lib/api-client";
 import { ARC_TOKENS, tokenWaters, type Waters } from "@stillwater/chain";
@@ -121,9 +123,12 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
         {WATER_CHIPS.map((chip) => {
           const pressed = waters === chip.id;
           return <button key={chip.label} type="button" aria-pressed={pressed} onClick={() => onWatersChange(chip.id)}
-            className={`min-h-12 rounded-full border px-5 text-[1.02rem] transition-colors ${pressed
-              ? "border-accent bg-accent font-semibold text-on-accent" : "border-line bg-tint font-medium text-ink hover:bg-card"}`}>
-            {chip.label}
+            className={`relative min-h-12 rounded-full border px-5 text-[1.02rem] transition-colors ${pressed
+              ? "border-accent font-semibold text-on-accent" : "border-line bg-tint font-medium text-ink hover:bg-card"}`}>
+            {/* The filled pill glides to the chosen chip. */}
+            {pressed ? <motion.span layoutId="waters-chip" aria-hidden="true" style={{ borderRadius: 999 }}
+              className="absolute -inset-px bg-accent" /> : null}
+            <span className="relative">{chip.label}</span>
           </button>;
         })}
       </div>
@@ -137,9 +142,12 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
           : pools.length === 0 ? <p className={STATE_TEXT}>{settledQuery
             ? "No pool found. Check the token address or try another name."
             : waters ? "No pools in these waters yet." : "No pools listed yet. Paste a token address to look it up directly."}</p>
-            : pools.map((pool) => {
+            : pools.map((pool, index) => {
               const tier = TIER_TAG[tokenWaters(pool.token.address)];
-              return <button type="button" key={pool.address}
+              // New rows fade up once as a list arrives; the stagger stops after ten rows.
+              return <motion.button type="button" key={pool.address}
+                initial={{ opacity: 0, transform: "translateY(6px)" }} animate={{ opacity: 1, transform: "none" }}
+                transition={{ ...FADE, delay: Math.min(index, 10) * 0.03 }}
                 className={`${TABLE_GRID} min-h-[92px] w-full border-b border-line bg-transparent text-left text-[1.15rem] text-ink transition-colors last:border-b-0 hover:bg-tint/60`}
                 onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC pool`}>
                 <span className="flex min-w-0 items-center gap-4 max-[800px]:col-span-full">
@@ -158,7 +166,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
                   `$${Number(formatUnits(BigInt(pool.usdcReserve), ARC_TOKENS.USDC.decimals)).toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</span>
                 <span className="tabular-nums"><small className={CELL_LABEL}>You earn per trade</small>{formatFeeTier(pool.fee)}</span>
                 <span className="text-[1.02rem] font-semibold whitespace-nowrap text-link max-[800px]:justify-self-end">Add liquidity <span aria-hidden="true">→</span></span>
-              </button>;
+              </motion.button>;
             })}
     </div>
     {offset > 0 || nextOffset !== null ? <div className="flex items-center justify-center gap-5 text-[1rem] text-ink-muted">
