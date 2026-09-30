@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { formatUnits, zeroAddress } from "viem";
 import { api, type PublicPool } from "../lib/api-client";
-import { ARC_TOKENS } from "@stillwater/chain";
+import { ARC_TOKENS, tokenWaters, type Waters } from "@stillwater/chain";
+import { IconSearch } from "../components/Icons";
 import { usdcDecimals as poolUsdcDecimals } from "../lib/swap-actions";
 
-export const PAGE_TITLE = "text-[2rem] leading-[1.2] font-bold tracking-[-.03em]";
-export const PAGE_INTRO = "mt-2 text-[.94rem] text-[#b6c1d1]";
-const OUTLINE_BUTTON = "rounded-lg border border-[#344256] px-[11px] py-[7px] text-[#a8dac9]";
-const TABLE_GRID = "grid grid-cols-[minmax(220px,2.2fr)_minmax(120px,1fr)_minmax(120px,1fr)_85px_110px] items-center gap-4 px-5 py-4 max-[800px]:grid-cols-2 max-[800px]:gap-3 max-[800px]:p-[18px]";
-const STATE_TEXT = "px-6 py-14 text-center text-[#b6c1d1]";
-const CELL_LABEL = "hidden max-[800px]:mb-1 max-[800px]:block max-[800px]:text-[.72rem] max-[800px]:text-[#8fa0b5]";
+export const PAGE_TITLE = "text-[clamp(2.2rem,4.5vw,3.5rem)] leading-[1.1] font-semibold tracking-[-.02em]";
+export const PAGE_INTRO = "mt-2 max-w-[760px] text-[1.2rem] leading-relaxed text-ink-muted";
+const OUTLINE_BUTTON = "min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint";
+const TABLE_GRID = "grid grid-cols-[minmax(240px,2.2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(90px,.8fr)_150px] items-center gap-4 px-8 py-5 max-[800px]:grid-cols-2 max-[800px]:gap-3 max-[800px]:px-5";
+const STATE_TEXT = "px-6 py-16 text-center text-[1.1rem] text-ink-muted";
+const CELL_LABEL = "hidden max-[800px]:mb-1 max-[800px]:block max-[800px]:text-[.8rem] max-[800px]:text-ink-faint";
 
 export function poolSpotPrice(pool: PublicPool): number {
   const ratio = (Number(pool.sqrtPriceX96) / 2 ** 96) ** 2;
@@ -45,9 +46,26 @@ export function formatFeeTier(fee: number | undefined): string {
   return `${(fee / 10_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
 }
 
-type Props = { onSelectPool: (address: string) => void };
+const WATER_CHIPS: { id: Waters | ""; label: string }[] = [
+  { id: "", label: "All waters" },
+  { id: "still", label: "Still water" },
+  { id: "gentle", label: "Gentle stream" },
+  { id: "rapids", label: "Rapids" },
+];
 
-export function ExplorePage({ onSelectPool }: Props) {
+const TIER_TAG: Record<Waters, { label: string; tone: string }> = {
+  still: { label: "Still water", tone: "border-feed-line text-feed" },
+  gentle: { label: "Gentle stream", tone: "border-rest-line text-rest" },
+  rapids: { label: "Rapids", tone: "border-danger-line text-danger" },
+};
+
+type Props = {
+  waters: Waters | "";
+  onWatersChange: (waters: Waters | "") => void;
+  onSelectPool: (address: string) => void;
+};
+
+export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
   const [query, setQuery] = useState("");
   const [settledQuery, setSettledQuery] = useState("");
   const [pools, setPools] = useState<PublicPool[]>([]);
@@ -65,9 +83,12 @@ export function ExplorePage({ onSelectPool }: Props) {
     return () => window.clearTimeout(timer);
   }, [query]);
 
+  useEffect(() => { setOffset(0); }, [waters]);
+
   useEffect(() => {
     let current = true;
-    api.listPools(settledQuery, offset).then((result) => {
+    setLoading(true);
+    api.listPools(settledQuery, offset, waters).then((result) => {
       if (!current) return;
       setPools(result.pools);
       setNextOffset(result.nextOffset);
@@ -77,51 +98,73 @@ export function ExplorePage({ onSelectPool }: Props) {
       setError(reason instanceof Error ? reason.message : "Could not load Arc pools.");
     }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [settledQuery, offset, retry]);
+  }, [settledQuery, offset, waters, retry]);
 
-  return <section className="m-auto max-w-[1500px] text-[#f3f4f6]" aria-labelledby="explore-title">
-    <div className="mt-2 mb-7 flex items-end justify-between gap-6 max-[520px]:block">
-      <div>
-        <h1 id="explore-title" className={PAGE_TITLE}>Explore pools</h1>
-        <p className={PAGE_INTRO}>Each pool pairs a token with USDC. Add both to a pool and earn a share of the fees traders pay.</p>
-      </div>
-      <span className="text-[.8rem] whitespace-nowrap text-[#b6c1d1] max-[520px]:mt-3.5 max-[520px]:block">Arc Mainnet</span>
+  return <section className="mx-auto flex w-full max-w-[1280px] flex-col gap-7 pt-2 text-ink" aria-labelledby="explore-title">
+    <div className="flex flex-col gap-2.5">
+      <h1 id="explore-title" className={PAGE_TITLE}>Explore pools</h1>
+      <p className={PAGE_INTRO}>Every token paired with USDC on Arc, newest first. A pool created a minute ago is already here.</p>
     </div>
-    <label className="mb-6 flex items-center gap-3 rounded-xl border border-[#344256] bg-[#151e2b] px-4 focus-within:border-[#10b981]">
-      <span className="sr-only">Search pools</span>
-      <input className="h-14 w-full flex-1 rounded-none border-0 bg-transparent p-0 text-base text-[#f3f4f6] shadow-none placeholder:text-[#9cabc0] focus:border-0 focus:shadow-none"
-        value={query} onChange={(event) => { setLoading(true); setQuery(event.target.value); }}
-        placeholder="Search by token name or paste its address" autoComplete="off" />
-      {query ? <button type="button" className={OUTLINE_BUTTON} onClick={() => { setQuery(""); setLoading(true); }}
-        aria-label="Clear search">Clear</button> : null}
-    </label>
-    <div className="overflow-hidden rounded-[14px] border border-[#29364a] bg-[#111827]" role="region" aria-label="Arc liquidity pools">
-      <div className={`${TABLE_GRID} border-b border-[#29364a] text-[.75rem] font-[650] tracking-[.03em] text-[#92a1b5] uppercase max-[800px]:hidden`} aria-hidden="true">
-        <span>Pool</span><span>Token price</span><span>USDC in pool</span><span>You earn per trade</span><span />
+    <div className="flex flex-wrap items-center gap-4">
+      <label className="flex min-h-[60px] min-w-[min(100%,420px)] flex-1 items-center gap-3 rounded-full border border-line bg-card px-5 focus-within:border-band">
+        <IconSearch size={20} className="text-ink-muted" />
+        <span className="sr-only">Search pools</span>
+        <input className="h-14 w-full flex-1 rounded-none border-0 bg-transparent p-0 text-[1.1rem] text-ink shadow-none focus:border-0 focus:shadow-none"
+          value={query} onChange={(event) => { setLoading(true); setQuery(event.target.value); }}
+          name="pool-search" type="search" spellCheck={false}
+          placeholder="Search a token name, or paste a contract address…" autoComplete="off" />
+        {query ? <button type="button" className="min-h-10 rounded-full px-3 text-[.95rem] text-ink-muted hover:text-ink"
+          onClick={() => { setQuery(""); setLoading(true); }} aria-label="Clear search">Clear</button> : null}
+      </label>
+      <div role="group" aria-label="Waters" className="flex flex-wrap gap-2.5">
+        {WATER_CHIPS.map((chip) => {
+          const pressed = waters === chip.id;
+          return <button key={chip.label} type="button" aria-pressed={pressed} onClick={() => onWatersChange(chip.id)}
+            className={`min-h-12 rounded-full border px-5 text-[1.02rem] transition-colors ${pressed
+              ? "border-accent bg-accent font-semibold text-on-accent" : "border-line bg-tint font-medium text-ink hover:bg-card"}`}>
+            {chip.label}
+          </button>;
+        })}
       </div>
-      {loading ? <p className={STATE_TEXT} role="status">Loading pools…</p>
-        : error ? <p className={`${STATE_TEXT} text-[#fda4af]`} role="alert">{error} <button className="ml-2.5 text-[#6ee7b7] underline" onClick={() => { setError(null); setLoading(true); setRetry((value) => value + 1); }}>Try again</button></p>
+    </div>
+    <div className="overflow-hidden rounded-[28px] border border-line bg-card" role="region" aria-label="Arc liquidity pools">
+      <div className={`${TABLE_GRID} border-b border-line text-[.85rem] font-semibold tracking-[.06em] text-ink-muted uppercase max-[800px]:hidden`} aria-hidden="true">
+        <span>Pool</span><span>Token price</span><span>USDC in pool</span><span>You earn</span><span />
+      </div>
+      {loading ? <p className={STATE_TEXT} role="status">Looking through the pools…</p>
+        : error ? <p className={`${STATE_TEXT} text-danger`} role="alert">{error} <button type="button" className="ml-2.5 text-link underline" onClick={() => { setError(null); setLoading(true); setRetry((value) => value + 1); }}>Try again</button></p>
           : pools.length === 0 ? <p className={STATE_TEXT}>{settledQuery
             ? "No pool found. Check the token address or try another name."
-            : "No pools listed yet. Paste a token address to look it up directly."}</p>
-            : pools.map((pool) => <button type="button" key={pool.address}
-              className={`${TABLE_GRID} min-h-[88px] w-full border-b border-[#29364a] bg-transparent text-left text-[.92rem] text-[#e9eef5] transition-[background] duration-160 ease-[ease] last:border-b-0 hover:bg-[#182333] focus-visible:bg-[#182333]`}
-              onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC pool`}>
-              <span className="flex min-w-0 items-center gap-[13px] max-[800px]:col-span-full"><span className="grid size-[38px] flex-none place-items-center rounded-full border border-[#3c5e59] bg-[#123b35] text-[.75rem] font-bold text-[#62ddae]" aria-hidden="true">{pool.token.symbol.slice(0, 2).toUpperCase()}</span>
-                <span><strong className="block overflow-hidden text-base text-ellipsis whitespace-nowrap">{pool.token.symbol} / USDC</strong><small className="mt-1 block font-mono text-[.72rem] text-[#a4b0c0]">Token {pool.token.address.slice(0, 6)}…{pool.token.address.slice(-4)}
-                  {pool.hooks && pool.hooks.toLowerCase() !== zeroAddress ? " · Has extra pool rules" : ""}</small></span></span>
-              <span className="tabular-nums"><small className={CELL_LABEL}>Token price</small>${formatPoolPrice(poolSpotPrice(pool))}</span>
-              <span className="tabular-nums"><small className={CELL_LABEL}>USDC in pool</small>{pool.usdcReserve === null ? "—" :
-                Number(formatUnits(BigInt(pool.usdcReserve), ARC_TOKENS.USDC.decimals)).toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
-              <span className="tabular-nums"><small className={CELL_LABEL}>You earn per trade</small>{formatFeeTier(pool.fee)}</span>
-              <span className="text-[.8rem] whitespace-nowrap text-[#39d7a1] max-[800px]:justify-self-end">Add liquidity <span aria-hidden="true">→</span></span>
-            </button>)}
+            : waters ? "No pools in these waters yet." : "No pools listed yet. Paste a token address to look it up directly."}</p>
+            : pools.map((pool) => {
+              const tier = TIER_TAG[tokenWaters(pool.token.address)];
+              return <button type="button" key={pool.address}
+                className={`${TABLE_GRID} min-h-[92px] w-full border-b border-line bg-transparent text-left text-[1.15rem] text-ink transition-colors last:border-b-0 hover:bg-tint/60`}
+                onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC pool`}>
+                <span className="flex min-w-0 items-center gap-4 max-[800px]:col-span-full">
+                  <span className="grid size-12 flex-none place-items-center rounded-full bg-sage text-[.9rem] font-semibold text-hand" aria-hidden="true">{pool.token.symbol.slice(0, 2).toUpperCase()}</span>
+                  <span className="flex min-w-0 flex-col gap-1">
+                    <span className="flex flex-wrap items-center gap-2.5">
+                      <strong className="overflow-hidden font-semibold text-ellipsis whitespace-nowrap">{pool.token.symbol} / USDC</strong>
+                      <span className={`rounded-full border px-2.5 py-0.5 text-[.78rem] font-semibold whitespace-nowrap ${tier.tone}`}>{tier.label}</span>
+                    </span>
+                    <small className="font-mono text-[.85rem] text-ink-muted">Token {pool.token.address.slice(0, 6)}…{pool.token.address.slice(-4)}
+                      {pool.hooks && pool.hooks.toLowerCase() !== zeroAddress ? " · Has extra pool rules" : ""}</small>
+                  </span>
+                </span>
+                <span className="tabular-nums"><small className={CELL_LABEL}>Token price</small>${formatPoolPrice(poolSpotPrice(pool))}</span>
+                <span className="text-ink-muted tabular-nums"><small className={CELL_LABEL}>USDC in pool</small>{pool.usdcReserve === null ? "—" :
+                  `$${Number(formatUnits(BigInt(pool.usdcReserve), ARC_TOKENS.USDC.decimals)).toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</span>
+                <span className="tabular-nums"><small className={CELL_LABEL}>You earn per trade</small>{formatFeeTier(pool.fee)}</span>
+                <span className="text-[1.02rem] font-semibold whitespace-nowrap text-link max-[800px]:justify-self-end">Add liquidity <span aria-hidden="true">→</span></span>
+              </button>;
+            })}
     </div>
-    {offset > 0 || nextOffset !== null ? <div className="mt-5 flex items-center justify-center gap-4 text-[.85rem] text-[#b6c1d1]">
-      <button className={`${OUTLINE_BUTTON} disabled:cursor-not-allowed disabled:opacity-40`} disabled={offset === 0} onClick={() => { setLoading(true); setOffset(Math.max(0, offset - 25)); }}>Previous</button>
+    {offset > 0 || nextOffset !== null ? <div className="flex items-center justify-center gap-5 text-[1rem] text-ink-muted">
+      <button type="button" className={`${OUTLINE_BUTTON} disabled:cursor-not-allowed disabled:opacity-40`} disabled={offset === 0} onClick={() => { setLoading(true); setOffset(Math.max(0, offset - 25)); }}>Previous</button>
       <span>Page {Math.floor(offset / 25) + 1}</span>
-      <button className={`${OUTLINE_BUTTON} disabled:cursor-not-allowed disabled:opacity-40`} disabled={nextOffset === null} onClick={() => { setLoading(true); setOffset(nextOffset ?? offset); }}>Next</button>
+      <button type="button" className={`${OUTLINE_BUTTON} disabled:cursor-not-allowed disabled:opacity-40`} disabled={nextOffset === null} onClick={() => { setLoading(true); setOffset(nextOffset ?? offset); }}>Next</button>
     </div> : null}
-    <p className="mt-[18px] text-[.75rem] leading-normal text-[#96a5b8]">Stillwater lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
+    <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
   </section>;
 }

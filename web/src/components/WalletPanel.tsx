@@ -4,14 +4,14 @@ import { useAccount, useChainId, useSignTypedData } from "wagmi";
 import { ARC_CHAIN_ID, withdrawalDomain, withdrawalTypes, type AlphaWalletSummary } from "@stillwater/chain";
 import { api, ApiError, type ManagedWalletRecord } from "../lib/api-client";
 
-const MUTED_TEXT = "text-[.83rem] leading-[1.55] text-[#b6c1d1]";
-const LABEL_TEXT = "text-[.77rem] text-[#a6b4c6]";
-const WARNING_TEXT = "text-[.83rem] leading-[1.55] text-[#fbbf24]";
-const OUTLINE_BUTTON = "rounded-lg border border-[#43536a] px-2.5 py-[7px] text-[.78rem] text-[#d7e5ef]";
-const PRIMARY_BUTTON = "min-h-11 rounded-lg bg-[#059669] px-3.5 py-[9px] font-semibold text-white";
-const TAB_BUTTON = "border-b-2 border-transparent px-0.5 py-[15px] text-[#a8b5c7] aria-selected:border-[#10b981] aria-selected:text-[#49dfaa]";
-const FIELD_LABEL = "grid gap-2 text-[.83rem] text-[#d9e3ed]";
-const FIELD_INPUT = "h-[45px] w-full rounded-lg border border-[#43536a] bg-[#151e2b] text-[#f3f4f6] focus:border-[#10b981] focus:shadow-[0_0_0_2px_#10b98140]";
+const MUTED_TEXT = "text-[1rem] leading-relaxed text-ink-muted";
+const LABEL_TEXT = "text-[.95rem] text-ink-muted";
+const WARNING_TEXT = "text-[1rem] leading-relaxed text-rest";
+const OUTLINE_BUTTON = "min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint";
+const PRIMARY_BUTTON = "min-h-14 rounded-full bg-accent px-6 text-[1.05rem] font-semibold text-on-accent enabled:hover:bg-accent-hover";
+const TAB_BUTTON = "min-h-12 border-b-2 border-transparent text-[1.05rem] text-ink-muted aria-selected:border-ink aria-selected:font-semibold aria-selected:text-ink";
+const FIELD_LABEL = "grid gap-2 text-[.98rem] text-ink-muted";
+const FIELD_INPUT = "min-h-[52px] w-full rounded-[14px] border border-line bg-field px-4 text-[1.05rem] text-ink";
 
 type Props = {
   open: boolean;
@@ -143,39 +143,39 @@ export function WalletPanel({ open, wallet, canProvision, ownerAddress, summary,
     }
   };
 
-  return <div className="fixed inset-0 z-70 flex justify-end bg-[#05080ec7] text-[#f3f4f6]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="h-full w-[min(440px,100%)] overflow-auto border-l border-[#344256] bg-[#111827] p-7 shadow-[-20px_0_50px_#0006] max-[520px]:p-5" role="dialog" aria-modal="true" aria-labelledby="wallet-panel-title">
-      <div className="flex items-start justify-between border-b border-[#29364a] pb-[22px]"><div><h2 id="wallet-panel-title" className="text-[1.35rem] font-bold">Wallet</h2><p className={MUTED_TEXT}>Your Stillwater wallet on Arc</p></div>
+  return <div className="fixed inset-0 z-70 flex justify-end bg-scrim text-ink" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="h-full w-[min(460px,100%)] overflow-auto overscroll-contain rounded-l-[28px] bg-card p-8 shadow-2xl max-[520px]:rounded-none max-[520px]:p-5" role="dialog" aria-modal="true" aria-labelledby="wallet-panel-title">
+      <div className="flex items-start justify-between border-b border-line pb-[22px]"><div><h2 id="wallet-panel-title" className="text-[2rem] font-semibold">Wallet</h2><p className={MUTED_TEXT}>Your Stillwater wallet on Arc</p></div>
         <button ref={closeRef} type="button" onClick={onClose} aria-label="Close wallet" className={OUTLINE_BUTTON}>Close</button></div>
       {!wallet ? <div className="grid gap-4 py-[30px]"><p>{canProvision ? "Create your Stillwater wallet to receive Arc USDC." : "Sign in to create your Stillwater wallet."}</p>
         {!canProvision ? <button type="button" onClick={onOpenAuth} className={PRIMARY_BUTTON}>Sign in</button> : null}
         {canProvision ? <button type="button" onClick={onProvision} className={PRIMARY_BUTTON}>Create wallet</button> : null}</div>
         : <>
-          <div className="grid gap-2 border-b border-[#29364a] py-[26px]"><span className={LABEL_TEXT}>USDC balance</span><strong className="text-[1.7rem] font-bold tabular-nums">{displayBalance} USDC</strong><small className={MUTED_TEXT}>One balance for transactions and Arc network fees</small></div>
-          <div className="grid gap-2.5 border-b border-[#29364a] py-[23px]"><span className={LABEL_TEXT}>Stillwater address</span><code className="text-[.76rem] leading-normal wrap-anywhere text-[#e6edf5]">{wallet.address}</code>
+          <div className="mt-6 grid gap-2 rounded-[22px] bg-sage px-6 py-5"><span className={LABEL_TEXT}>USDC</span><strong className="text-[2.4rem] leading-tight font-semibold tabular-nums">{displayBalance}</strong><small className={MUTED_TEXT}>One balance for transactions and Arc network fees</small></div>
+          <div className="grid gap-2.5 border-b border-line py-6"><span className={LABEL_TEXT}>Stillwater address</span><code className="font-mono text-[.9rem] leading-normal wrap-anywhere text-ink">{wallet.address}</code>
             <button type="button" className={`${OUTLINE_BUTTON} justify-self-start`} onClick={async () => { await navigator.clipboard.writeText(wallet.address); onNotify("info", "Address copied"); }}>Copy address</button></div>
-          <div className="mt-2 flex gap-5 border-b border-[#29364a]" role="tablist" aria-label="Wallet actions">
-            <button role="tab" className={TAB_BUTTON} aria-selected={tab === "deposit"} onClick={() => { setTab("deposit"); setReview(false); }}>Deposit</button>
-            <button role="tab" className={TAB_BUTTON} aria-selected={tab === "withdraw"} onClick={() => setTab("withdraw")}>Withdraw</button>
+          <div className="mt-2 flex gap-8 border-b border-line" role="tablist" aria-label="Wallet actions">
+            <button type="button" role="tab" className={TAB_BUTTON} aria-selected={tab === "deposit"} onClick={() => { setTab("deposit"); setReview(false); }}>Deposit</button>
+            <button type="button" role="tab" className={TAB_BUTTON} aria-selected={tab === "withdraw"} onClick={() => setTab("withdraw")}>Withdraw</button>
           </div>
           {tab === "deposit" ? <div className="grid gap-4 py-[22px]"><p className={MUTED_TEXT}>Send Arc USDC to the Stillwater address above from your wallet or exchange. This same USDC pays network fees and funds positions.</p>
-            <a className="text-[.85rem] text-[#59dbad] underline underline-offset-3" href={`https://explorer.arc.io/address/${wallet.address}`} target="_blank" rel="noreferrer">View address on Arc Explorer</a></div>
+            <a className="text-[1rem] font-medium text-link underline underline-offset-4" href={`https://explorer.arc.io/address/${wallet.address}`} target="_blank" rel="noreferrer">View address on Arc Explorer</a></div>
             : <form className="grid gap-4 py-[22px]" onSubmit={(event) => { event.preventDefault(); if (review) void withdraw(); else setReview(true); }}>
-              <label className={FIELD_LABEL}>Recipient address<input className={FIELD_INPUT} value={recipient} onChange={(event) => { setRecipient(event.target.value); setMaximum(null); setFeeReserve(null); setReview(false); }} placeholder="0x…" autoComplete="off" /></label>
-              <label className={FIELD_LABEL}>Amount in USDC<input className={FIELD_INPUT} value={amount} onChange={(event) => { setAmount(event.target.value); setReview(false); }} inputMode="decimal" placeholder="0.00" /></label>
-              <button type="button" className="justify-self-start text-[.77rem] text-[#65dfb4]" disabled={maximum === null}
-                onClick={() => { setAmount(formatUnits(maximum ?? 0n, 6)); setReview(false); }}>Use available after fee reserve</button>
-              {review && validRecipient && validAmount ? <p className={`${MUTED_TEXT} rounded-lg border border-[#43536a] p-3 wrap-anywhere`}>Send {amount} USDC to <code className="text-[#e5edf5]">{getAddress(recipient)}</code>. Your connected wallet will sign this exact withdrawal before Stillwater broadcasts it.</p> : null}
-              {pendingAttempt ? <button type="button" onClick={() => void checkPending()}>Check pending withdrawal</button> : null}
+              <label className={FIELD_LABEL}>Recipient address<input className={FIELD_INPUT} name="withdraw-recipient" spellCheck={false} value={recipient} onChange={(event) => { setRecipient(event.target.value); setMaximum(null); setFeeReserve(null); setReview(false); }} placeholder="0x…" autoComplete="off" /></label>
+              <label className={FIELD_LABEL}>Amount in USDC<input className={FIELD_INPUT} name="withdraw-amount" autoComplete="off" value={amount} onChange={(event) => { setAmount(event.target.value); setReview(false); }} inputMode="decimal" placeholder="0.00" /></label>
+              <button type="button" className="min-h-11 justify-self-start text-[1rem] font-semibold text-link disabled:opacity-50" disabled={maximum === null}
+                onClick={() => { setAmount(formatUnits(maximum ?? 0n, 6)); setReview(false); }}>Use all after the network fee</button>
+              {review && validRecipient && validAmount ? <p className={`${MUTED_TEXT} rounded-[18px] bg-sage p-4 wrap-anywhere`}>Send {amount} USDC to <code className="text-ink">{getAddress(recipient)}</code>. Your connected wallet will sign this exact withdrawal before Stillwater broadcasts it.</p> : null}
+              {pendingAttempt ? <button type="button" className="min-h-11 justify-self-start text-[1rem] font-semibold text-rest" onClick={() => void checkPending()}>Check my last withdrawal</button> : null}
               <button className={`${PRIMARY_BUTTON} disabled:cursor-not-allowed disabled:opacity-45`} disabled={!validRecipient || !validAmount || busy || pendingAttempt !== null || !connectedOwner || chainId !== ARC_CHAIN_ID} type="submit">
-                {busy ? "Processing withdrawal…" : review ? "Authorize withdrawal" : "Review withdrawal"}
+                {busy ? "Sending…" : review ? "Sign and send" : "Review withdrawal"}
               </button>
               {chainId !== ARC_CHAIN_ID ? <p className={WARNING_TEXT}>Switch the connected wallet to Arc Mainnet to withdraw.</p> : null}
               {!connectedOwner ? <p className={WARNING_TEXT}>Connect the wallet that signed in to authorize a withdrawal.</p> : null}
               <p className={MUTED_TEXT}>{feeReserve === null ? "Enter a recipient to estimate the network-fee reserve." :
                 `Estimated fee reserve: ${formatUnits(feeReserve, 18)} USDC. The amount is checked again before signing.`}</p>
             </form>}
-          {((summary && summary.balances.cirBtc.raw !== "0") || assets.length > 0) ? <div className="flex justify-between border-t border-[#29364a] pt-[18px] tabular-nums">
+          {((summary && summary.balances.cirBtc.raw !== "0") || assets.length > 0) ? <div className="mt-2 flex flex-wrap justify-between gap-3 border-t border-line pt-5 text-[1.05rem] tabular-nums">
             <span className={LABEL_TEXT}>Other assets</span>
             {summary && summary.balances.cirBtc.raw !== "0" ? <strong>{summary.balances.cirBtc.formatted} cirBTC</strong> : null}
             {assets.map((asset) => <strong key={asset.address} title={asset.address}>

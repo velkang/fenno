@@ -16,37 +16,36 @@ type Props = {
   onEdit: () => void;
 };
 
-export const PRIMARY_ACTION = "flex min-h-[58px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-[9px] border border-[#10b981] bg-[#059669] px-3.5 py-2.5 text-[.95rem] font-semibold text-white transition-[background-color,border-color] duration-140 ease-[ease] enabled:hover:border-[#34d399] enabled:hover:bg-[#047857] disabled:cursor-not-allowed disabled:border-[#33544c] disabled:bg-[#24463e] disabled:text-[#a3b8b2] max-[680px]:min-h-[54px]";
-const FACT_TERM = "text-[.72rem] font-semibold tracking-[.04em] text-[#8190a5] uppercase";
-const FACT_TEXT = "mt-0.5 mb-0 text-[.84rem] leading-normal text-[#b6c1d1]";
+export const PRIMARY_ACTION = "flex min-h-[60px] w-full items-center justify-center gap-2.5 rounded-full bg-accent px-6 text-[1.1rem] font-semibold text-on-accent transition-colors enabled:hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-tint disabled:text-ink-faint";
+const FACT_TERM = "text-[.85rem] font-semibold tracking-[.04em] text-ink-faint uppercase";
+const FACT_TEXT = "mt-1 text-[1rem] leading-relaxed text-ink-muted";
 
 const usd = (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 export function PositionReview({ tokenSymbol, amountToken, amountUsdc, valueUsd, minPrice, maxPrice,
   feeLabel, steps, maxTransactions, progress, busy, onConfirm, onEdit }: Props) {
   return (
-    <div className="mt-3.5 rounded-xl border border-[#29364a] bg-[#151e2b] p-4" role="region" aria-labelledby="deposit-review-title">
-      <h3 id="deposit-review-title" className="mt-0 mb-3 text-base font-semibold text-[#f3f4f6]">Review your position</h3>
-      <dl className="m-0 grid gap-2.5">
+    <div className="flex flex-col gap-4 rounded-[22px] bg-sage p-5" role="region" aria-labelledby="deposit-review-title">
+      <h3 id="deposit-review-title" className="text-[1.3rem] font-semibold text-ink">Check your pond</h3>
+      <dl className="grid gap-3">
         <div><dt className={FACT_TERM}>You add</dt>
-          <dd className={FACT_TEXT}>{amountToken || "0"} {tokenSymbol} + {amountUsdc || "0"} USDC <span className="text-[#8190a5]">≈ {usd(valueUsd)}</span></dd></div>
+          <dd className={FACT_TEXT}>{amountToken || "0"} {tokenSymbol} + {amountUsdc || "0"} USDC <span className="text-ink-faint">≈ {usd(valueUsd)}</span></dd></div>
         <div><dt className={FACT_TERM}>You earn</dt>
           <dd className={FACT_TEXT}>{feeLabel} of each trade that uses your liquidity, while {tokenSymbol} trades between
             ${formatPoolPrice(minPrice)} and ${formatPoolPrice(maxPrice)}.</dd></div>
-        <div><dt className={FACT_TERM}>If the price leaves your range</dt>
-          <dd className={FACT_TEXT}>You stop earning until it comes back. Below ${formatPoolPrice(minPrice)} your position is
-            all {tokenSymbol}; above ${formatPoolPrice(maxPrice)} it is all USDC.</dd></div>
-        <div><dt className={FACT_TERM}>Withdraw</dt><dd className={FACT_TEXT}>Any time from My Positions. Both tokens return to your Stillwater wallet.</dd></div>
+        <div><dt className={FACT_TERM}>If the price leaves your band</dt>
+          <dd className={FACT_TEXT}>The pond rests until the price comes back. Below ${formatPoolPrice(minPrice)} it holds only {tokenSymbol}; above ${formatPoolPrice(maxPrice)} it holds only USDC.</dd></div>
+        <div><dt className={FACT_TERM}>Close it</dt><dd className={FACT_TEXT}>Any time from your Pond. Both tokens and any fees return to your Stillwater wallet.</dd></div>
       </dl>
-      <p className="mt-3.5 mb-1.5 text-[.8rem] text-[#b6c1d1]">Confirming sends {maxTransactions === 1 ? "1 transaction" : `up to ${maxTransactions} transactions`} from your Stillwater wallet:</p>
-      <ol className="m-0 pl-5 text-[.8rem] leading-[1.6] text-[#b6c1d1]">
+      <p className="text-[.98rem] text-ink-muted">Confirming sends {maxTransactions === 1 ? "1 transaction" : `up to ${maxTransactions} transactions`} from your Stillwater wallet:</p>
+      <ol className="list-decimal pl-6 text-[.98rem] leading-relaxed text-ink-muted">
         {steps.map((step) => <li key={step}>{step}</li>)}
       </ol>
-      {progress ? <p className="mt-3 mb-0 text-[.8rem] text-[#f59e0b]" role="status">{progress}</p> : null}
-      <div className="mt-3.5 grid grid-cols-[auto_1fr] gap-2">
-        <button type="button" className="min-h-[58px] cursor-pointer rounded-[9px] border border-[#344256] bg-transparent px-[18px] text-[#dce5f2] disabled:cursor-not-allowed disabled:opacity-55" onClick={onEdit} disabled={busy}>Edit</button>
-        <button type="button" className={PRIMARY_ACTION} onClick={onConfirm} disabled={busy}>
-          {busy ? "Working…" : "Confirm and open position"}
+      {progress ? <p className="text-[.98rem] font-medium text-rest" role="status">{progress}</p> : null}
+      <div className="flex flex-wrap gap-3">
+        <button type="button" className="min-h-[60px] rounded-full border border-line-strong px-6 text-[1.05rem] font-medium text-ink hover:bg-card disabled:cursor-not-allowed disabled:opacity-55" onClick={onEdit} disabled={busy}>Edit</button>
+        <button type="button" className={`${PRIMARY_ACTION} w-auto flex-1`} onClick={onConfirm} disabled={busy}>
+          {busy ? "Working…" : "Confirm and open pond"}
         </button>
       </div>
     </div>

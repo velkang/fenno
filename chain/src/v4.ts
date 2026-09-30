@@ -27,6 +27,8 @@ export type ArcV4Pool = ArcV4PoolKey & {
 const stateViewAbi = parseAbi([
   "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)",
   "function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)",
+  "function getFeeGrowthInside(bytes32 poolId, int24 tickLower, int24 tickUpper) view returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128)",
+  "function getPositionInfo(bytes32 poolId, address owner, int24 tickLower, int24 tickUpper, bytes32 salt) view returns (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128)",
 ]);
 const quoterAbi = parseAbi([
   "function quoteExactInputSingle(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns (uint256 amountOut,uint256 gasEstimate)",
@@ -326,6 +328,41 @@ export async function readArcV4Pool(input: {
   if (!hasUsdc) return null;
   return { ...input.key, id, sqrtPriceX96: slot[0].toString(), tick: slot[1],
     lpFee: slot[3], liquidity: liquidity.toString() };
+}
+
+const Q128 = 1n << 128n;
+const U256 = 1n << 256n;
+
+/**
+ * Fees a PositionManager position has earned but not collected, in each
+ * currency's smallest unit: liquidity × fee growth inside the range since the
+ * position last settled. Growth counters wrap, so the difference is taken mod 2²⁵⁶.
+ */
+export async function readArcV4PositionFees(input: {
+  client: Pick<ChainReadClient, "readContract">;
+  poolId: Hex;
+  tokenId: bigint;
+  tickLower: number;
+  tickUpper: number;
+  blockNumber?: bigint;
+}): Promise<{ amount0: bigint; amount1: bigint }> {
+  const salt = `0x${input.tokenId.toString(16).padStart(64, "0")}` as Hex;
+  const [inside, info] = await Promise.all([
+    input.client.readContract({ address: UNISWAP_V4_ARC.stateView, abi: stateViewAbi,
+      functionName: "getFeeGrowthInside", args: [input.poolId, input.tickLower, input.tickUpper],
+      blockNumber: input.blockNumber }),
+    input.client.readContract({ address: UNISWAP_V4_ARC.stateView, abi: stateViewAbi,
+      functionName: "getPositionInfo", args: [input.poolId, UNISWAP_V4_ARC.positionManager, input.tickLower,
+        input.tickUpper, salt], blockNumber: input.blockNumber }),
+  ]);
+  const [growth0, growth1] = Array.isArray(inside) ? inside : [];
+  const [liquidity, last0, last1] = Array.isArray(info) ? info : [];
+  if (![growth0, growth1, liquidity, last0, last1].every((value) => typeof value === "bigint")) {
+    throw new Error("V4 fee growth unavailable");
+  }
+  const owed = (growth: bigint, last: bigint) =>
+    (((growth - last) % U256 + U256) % U256) * (liquidity as bigint) / Q128;
+  return { amount0: owed(growth0 as bigint, last0 as bigint), amount1: owed(growth1 as bigint, last1 as bigint) };
 }
 
 export async function quoteArcV4Swap(input: {

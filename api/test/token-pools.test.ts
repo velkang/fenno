@@ -2,6 +2,7 @@ import { ContractFunctionRevertedError, encodeEventTopics, getAddress, parseAbi,
 import { describe, expect, it, vi } from "vitest";
 import {
   ARC_TOKENS,
+  ARC_WATERS,
   UNISWAP_V3_ARC,
   canSpendArcUsdc,
   UNISWAP_V4_ARC,
@@ -98,6 +99,9 @@ describe("token pool discovery route", () => {
         if (functionName === "getPositionLiquidity") return 100_000n;
         if (functionName === "getSlot0") return [2n ** 96n, 0, 0, 3000];
         if (functionName === "getLiquidity") return 1_000_000n;
+        // Fee growth inside the range rose by 3 (×2¹²⁸) for currency0 since the position settled.
+        if (functionName === "getFeeGrowthInside") return [5n * 2n ** 128n, 3n * 2n ** 128n];
+        if (functionName === "getPositionInfo") return [100_000n, 2n * 2n ** 128n, 3n * 2n ** 128n];
         throw new Error("Unexpected read");
       },
     } as unknown as ChainReadClient;
@@ -109,6 +113,7 @@ describe("token pool discovery route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ positions: [{ tokenId: "7",
       tickLower: -60, tickUpper: 60, liquidity: "100000",
+      fees: { amount0: "300000", amount1: "0" },
       pool: { address: poolId, token: { symbol: "MEME" } } }] });
   });
 
@@ -279,7 +284,7 @@ describe("token pool discovery route", () => {
         blockNumber: 124 }],
       nextOffset: null,
     });
-    expect(statement.bind).toHaveBeenCalledWith("MEME", "%MEME%", 0);
+    expect(statement.bind).toHaveBeenCalledWith("MEME", "%MEME%", 0, "", "[]");
     expect(vi.mocked(env.DB.prepare).mock.calls[0]?.[0]).toContain("ORDER BY created_block IS NULL, created_block DESC");
   });
 
@@ -308,7 +313,27 @@ describe("token pool discovery route", () => {
     expect(await response.json()).toMatchObject({ pools: [{ protocol: "uniswap-v4",
       address: poolId, hooks: zeroAddress, usdcReserve: null, liquidity: "99",
       token: { address: token, symbol: "MEME" } }] });
-    expect(statement.bind).toHaveBeenCalledWith(token, `%${token}%`, 0);
+    expect(statement.bind).toHaveBeenCalledWith(token, `%${token}%`, 0, "", "[]");
+  });
+
+  it("filters the listing by waters using the fixed tier addresses", async () => {
+    const statement = { bind: vi.fn().mockReturnThis(), all: vi.fn().mockResolvedValue({ results: [] }) };
+    const env = {
+      DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
+      SIGNER: {} as Fetcher,
+      AUTH_URI: "http://localhost:8787",
+    } satisfies Bindings;
+    const app = createApp({ createChainClient: () => ({ multicall: async () => [] }) as unknown as ChainReadClient });
+    await app.request("/v1/pools?waters=gentle", {}, env);
+    await app.request("/v1/pools?waters=rapids", {}, env);
+    await app.request("/v1/pools?waters=anything", {}, env);
+    const [gentle, rapids, ignored] = statement.bind.mock.calls;
+    expect(gentle?.[3]).toBe("gentle");
+    expect(JSON.parse(gentle?.[4] as string)).toEqual(ARC_WATERS.gentle);
+    // Rapids is everything outside both calmer lists.
+    expect(rapids?.[3]).toBe("rapids");
+    expect(JSON.parse(rapids?.[4] as string)).toEqual([...ARC_WATERS.still, ...ARC_WATERS.gentle]);
+    expect(ignored?.[3]).toBe("");
   });
 
   it("looks up a pasted token the directory does not list yet through the indexer", async () => {

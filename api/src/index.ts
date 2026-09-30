@@ -5,6 +5,7 @@ import {
   ARC_CHAIN_ID,
   ALPHA_POOL,
   ARC_TOKENS,
+  ARC_WATERS,
   UNISWAP_V3_ARC,
   UNISWAP_V4_ARC,
   UNISWAP_SHARED_ARC,
@@ -42,6 +43,7 @@ import {
   quoteSwap,
   quoteArcV4Swap,
   readArcV4Pool,
+  readArcV4PositionFees,
   discoverArcTokenPools,
   positionActionPayloadHash,
   simulateAlphaApproval,
@@ -372,15 +374,20 @@ export function createApp(dependencies: AppDependencies = {}) {
           if (position.poolId.toLowerCase() !== row.minted_pool_id.toLowerCase()) return null;
           if (row.pool_id === null) return null;
           const { transaction_hash: _hash, minted_pool_id: _minted, ...pool } = row;
-          const live = await readArcV4Pool({ client, key: position.poolKey,
-            blockNumber });
+          const [live, fees] = await Promise.all([
+            readArcV4Pool({ client, key: position.poolKey, blockNumber }),
+            // Uncollected fees are shown, not acted on: a failed read shows as unknown.
+            readArcV4PositionFees({ client, poolId: position.poolId, tokenId, tickLower: position.tickLower,
+              tickUpper: position.tickUpper, blockNumber }).catch(() => null),
+          ]);
           if (!live) return null;
           return { tokenId: tokenId.toString(), pool: publicV4Pool({ ...pool,
             sqrt_price_x96: live.sqrtPriceX96, tick: live.tick,
             liquidity: live.liquidity, lp_fee: live.lpFee,
             block_number: Number(blockNumber), updated_at: now() }),
             tickLower: position.tickLower, tickUpper: position.tickUpper,
-            liquidity: position.liquidity.toString(), transactionHash: row.transaction_hash };
+            liquidity: position.liquidity.toString(), transactionHash: row.transaction_hash,
+            fees: fees ? { amount0: fees.amount0.toString(), amount1: fees.amount1.toString() } : null };
         } catch { return null; } // Burned or transferred NFTs are no longer wallet positions.
       }));
     }));
@@ -424,6 +431,11 @@ export function createApp(dependencies: AppDependencies = {}) {
     const query = (context.req.query("q") ?? "").trim().slice(0, 80);
     const offsetValue = Number(context.req.query("offset") ?? "0");
     const offset = Number.isSafeInteger(offsetValue) && offsetValue >= 0 ? Math.min(offsetValue, 10_000) : 0;
+    // "Waters" narrows the list by how calm a token's pools tend to be (ARC_WATERS).
+    const watersParam = context.req.query("waters");
+    const waters = watersParam === "still" || watersParam === "gentle" || watersParam === "rapids" ? watersParam : "";
+    const calmTokens = JSON.stringify(waters === "rapids" ? [...ARC_WATERS.still, ...ARC_WATERS.gentle]
+      : waters ? ARC_WATERS[waters] : []);
     const selectPools = () => context.env.DB.prepare(
       `WITH pools AS (
          SELECT 'uniswap-v3' AS protocol, pool_address AS address,
@@ -443,9 +455,10 @@ export function createApp(dependencies: AppDependencies = {}) {
        SELECT * FROM pools
        WHERE liquidity != '0' AND (?1 = '' OR token_symbol LIKE ?2 ESCAPE '\\'
          OR token_address = ?1 COLLATE NOCASE OR address = ?1 COLLATE NOCASE)
+         AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))
        ORDER BY created_block IS NULL, created_block DESC, token_symbol COLLATE NOCASE, fee, address
        LIMIT 26 OFFSET ?3`,
-    ).bind(query, `%${query.replace(/[\\%_]/g, "\\$&")}%`, offset)
+    ).bind(query, `%${query.replace(/[\\%_]/g, "\\$&")}%`, offset, waters, calmTokens)
       .all<CombinedPoolRow>();
     let rows = await selectPools();
     const client = (dependencies.createChainClient?.(context.env) ??

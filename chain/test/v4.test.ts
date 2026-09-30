@@ -1,11 +1,41 @@
 import { getAddress, keccak256, encodeAbiParameters, decodeAbiParameters, decodeFunctionData, parseAbi, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { ARC_TOKENS, UNISWAP_SHARED_ARC, UNISWAP_V4_ARC, buildArcV4Approval, buildArcV4Mint, buildArcV4PositionAction, buildArcV4Swap, quoteArcV4Swap, readArcV4Allowances, readArcV4Pool, readArcV4Position, v4PoolId } from "../src";
+import { ARC_TOKENS, UNISWAP_SHARED_ARC, UNISWAP_V4_ARC, buildArcV4Approval, buildArcV4Mint, buildArcV4PositionAction, buildArcV4Swap, quoteArcV4Swap, readArcV4Allowances, readArcV4Pool, readArcV4Position, readArcV4PositionFees, v4PoolId } from "../src";
 
 const token = getAddress("0x2222222222222222222222222222222222222222");
 const account = getAddress("0x1111111111111111111111111111111111111111");
 const hook = getAddress("0x3333333333333333333333333333333333333333");
 const key = { currency0: zeroAddress, currency1: token, fee: 3_000, tickSpacing: 60, hooks: hook };
+
+describe("Arc Uniswap v4 uncollected fees", () => {
+  const poolId = `0x${"ab".repeat(32)}` as const;
+  const Q128 = 2n ** 128n;
+  const fakeClient = (inside: [bigint, bigint], info: [bigint, bigint, bigint]) => ({
+    readContract: async ({ functionName, args }: { functionName: string; args: readonly unknown[] }) => {
+      if (functionName === "getFeeGrowthInside") return inside;
+      if (functionName === "getPositionInfo") {
+        // PositionManager positions are keyed by the manager as owner and the token id as salt.
+        expect(args[1]).toBe(UNISWAP_V4_ARC.positionManager);
+        expect(args[4]).toBe(`0x${(42n).toString(16).padStart(64, "0")}`);
+        return info;
+      }
+      throw new Error(`Unexpected read ${functionName}`);
+    },
+  });
+
+  it("is liquidity times the fee growth inside the range since the position settled", async () => {
+    const fees = await readArcV4PositionFees({ client: fakeClient([7n * Q128, 4n * Q128], [1_000n, 2n * Q128, 4n * Q128]) as never,
+      poolId, tokenId: 42n, tickLower: -60, tickUpper: 60 });
+    expect(fees).toEqual({ amount0: 5_000n, amount1: 0n });
+  });
+
+  it("handles fee growth counters that wrapped past 2^256", async () => {
+    const nearMax = 2n ** 256n - Q128; // last checkpoint just below the wrap
+    const fees = await readArcV4PositionFees({ client: fakeClient([Q128, 0n], [10n, nearMax, 0n]) as never,
+      poolId, tokenId: 42n, tickLower: -60, tickUpper: 60 });
+    expect(fees.amount0).toBe(20n);
+  });
+});
 
 describe("Arc Uniswap v4 pool identity and reads", () => {
   it("hashes the full PoolKey, including native USDC and hooks", () => {

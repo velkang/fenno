@@ -1,4 +1,4 @@
-import type { AlphaWalletSummary, DiscoveredPool, DiscoveredToken } from "@stillwater/chain";
+import type { AlphaWalletSummary, DiscoveredPool, DiscoveredToken, Waters } from "@stillwater/chain";
 
 export type AuthUser = {
   id: string;
@@ -51,6 +51,8 @@ export type V4Position = {
   tickUpper: number;
   liquidity: string;
   transactionHash: string;
+  // Fees earned but not collected, in currency0/currency1 smallest units; null when unreadable.
+  fees: { amount0: string; amount1: string } | null;
 };
 
 export class ApiError extends Error {
@@ -99,9 +101,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  async listPools(query = "", offset = 0) {
+  async listPools(query = "", offset = 0, waters: Waters | "" = "") {
     return request<{ pools: PublicPool[]; nextOffset: number | null }>(
-      `/v1/pools?q=${encodeURIComponent(query)}&offset=${offset}`,
+      `/v1/pools?q=${encodeURIComponent(query)}&offset=${offset}${waters ? `&waters=${waters}` : ""}`,
     );
   },
 

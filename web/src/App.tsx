@@ -1,40 +1,41 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useAccount } from "wagmi";
 import { Header, type PageRoute } from "./components/Header";
 import { AuthScreen } from "./components/AuthScreen";
 import { ExplorePage } from "./pages/ExplorePage";
 import { SwapPage } from "./pages/SwapPage";
 import { PoolPage } from "./pages/PoolPage";
-import { PositionsPage } from "./pages/PositionsPage";
+import { PondPage } from "./pages/PondPage";
 import { WalletPanel } from "./components/WalletPanel";
 import { IntentActionModal, type ModalType } from "./components/IntentActionModal";
 import { ToastContainer, type ToastMessage } from "./components/Toast";
 import { api, type AuthUser, type ManagedWalletRecord } from "./lib/api-client";
-import type { AlphaWalletSummary } from "@stillwater/chain";
+import type { AlphaWalletSummary, Waters } from "@stillwater/chain";
 
 const WALLET_POLL_INTERVAL_MS = 60_000;
 
 function getPageFromLocation(): PageRoute {
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
-  if (path === "/positions") return "positions";
+  if (path === "/explore") return "explore";
   if (path === "/swap") return "swap";
   if (/^\/pools\/0x(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(path)) return "pool";
+  // "/", the old "/positions" and anything unknown open the Pond.
+  return "pond";
+}
 
-  if (path === "/") {
-    const legacyHash = window.location.hash.toLowerCase();
-    if (legacyHash === "#/positions") return "positions";
-    if (legacyHash === "#/wallet") return "explore";
-  }
-  return "explore";
+const PAGE_PATH: Record<Exclude<PageRoute, "pool">, string> = { pond: "/", explore: "/explore", swap: "/swap" };
+
+function getWatersFromLocation(): Waters | "" {
+  const waters = new URLSearchParams(window.location.search).get("waters");
+  return waters === "still" || waters === "gentle" || waters === "rapids" ? waters : "";
 }
 
 export const App: React.FC = () => {
-  const { isConnected } = useAccount();
 
   // Navigation State (Page-based routing)
   const [activePage, setActivePage] = useState<PageRoute>(getPageFromLocation);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
+  const [waters, setWaters] = useState<Waters | "">(getWatersFromLocation);
   const [poolAddress, setPoolAddress] = useState<string | null>(() => {
     const match = window.location.pathname.match(/^\/pools\/(0x(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64}))\/?$/);
     return match?.[1] ?? null;
@@ -45,12 +46,13 @@ export const App: React.FC = () => {
     const syncPageFromLocation = () => {
       const page = getPageFromLocation();
       setActivePage(page);
+      setWaters(getWatersFromLocation());
       const match = window.location.pathname.match(/^\/pools\/(0x(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64}))\/?$/);
       setPoolAddress(match?.[1] ?? null);
 
-      const path = page === "pool" ? window.location.pathname : `/${page}`;
+      const path = page === "pool" ? window.location.pathname : PAGE_PATH[page];
       if (window.location.pathname !== path || window.location.hash) {
-        window.history.replaceState(null, "", path);
+        window.history.replaceState(null, "", `${path}${page === "explore" ? window.location.search : ""}`);
       }
     };
 
@@ -62,10 +64,19 @@ export const App: React.FC = () => {
   const handleNavigate = (page: PageRoute) => {
     if (page === "pool") return;
     setActivePage(page);
-    const path = `/${page}`;
-    if (window.location.pathname !== path || window.location.hash) {
+    if (page === "explore") setWaters("");
+    const path = PAGE_PATH[page];
+    if (window.location.pathname !== path || window.location.search || window.location.hash) {
       window.history.pushState(null, "", path);
     }
+  };
+
+  /** Explore, optionally narrowed to one kind of water (kept in the URL). */
+  const handleExplore = (next: Waters | "" = "") => {
+    setWaters(next);
+    setActivePage("explore");
+    const url = next ? `/explore?waters=${next}` : "/explore";
+    if (`${window.location.pathname}${window.location.search}` !== url) window.history.pushState(null, "", url);
   };
 
   const handleSelectPool = (address: string) => {
@@ -168,51 +179,30 @@ export const App: React.FC = () => {
 
   return (
     <>
+      <a href="#main" className="sr-only z-[90] rounded-full bg-accent px-5 py-3 font-semibold text-on-accent focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
+        Skip to content
+      </a>
       <Header
         user={user}
+        walletAddress={wallet?.address}
         activePage={activePage}
         onNavigate={handleNavigate}
-        activePositionsCount={summary?.positions?.length ?? 0}
         onLogout={handleLogout}
         onOpenAuthModal={() => setShowAuthModal(true)}
         onOpenWallet={() => setShowWallet(true)}
         walletOpen={showWallet}
       />
 
-      {/* Guest Mode Indicator Banner */}
-      {!user && (
-        <div className="border-b border-[#263243] bg-[#111827] px-4 py-2.5 text-center text-xs text-[#b6c1d1] max-[680px]:px-3.5 max-[680px]:py-2 max-[680px]:text-[.7rem] max-[680px]:leading-[1.45]">
-          <span className="font-semibold text-[#e7edf5]">Viewing Stillwater in Preview Mode.</span>{" "}
-          {activePage === "explore"
-            ? "Find an Arc token pool to review."
-            : "Review pools and positions, or swap with your Stillwater wallet."}{" "}
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="ml-1 font-semibold text-[#6ee7b7] underline hover:text-[#a7f3d0]"
-          >
-            {isConnected ? "Sign In (SIWE)" : "Connect Wallet to Sign In"}
-          </button>
-        </div>
-      )}
-
-      <main className="mx-auto w-full max-w-none flex-1 bg-[#0b0f19] px-[clamp(18px,3.2vw,52px)] pt-6 pb-[42px] text-[#f3f4f6] max-[680px]:px-4 max-[680px]:pt-4 max-[680px]:pb-[30px]">
-        {activePage === "explore" && <ExplorePage onSelectPool={handleSelectPool} />}
+      <main id="main" tabIndex={-1} className="w-full flex-1 bg-paper outline-none px-[clamp(16px,4vw,80px)] pt-8 pb-12 text-ink max-[680px]:pt-5">
+        {activePage === "pond" && <PondPage user={user} wallet={wallet} summary={summary} onRefresh={refreshData}
+          onNotify={addToast} onOpenModal={(next) => setModal(next)} onOpenAuth={() => setShowAuthModal(true)}
+          onExplore={(next) => handleExplore(next)} onOpenPool={handleSelectPool} />}
+        {activePage === "explore" && <ExplorePage waters={waters} onWatersChange={handleExplore} onSelectPool={handleSelectPool} />}
         {activePage === "pool" && poolAddress && <PoolPage
-          address={poolAddress} wallet={wallet} summary={summary} onRefresh={refreshData}
+          address={poolAddress} onBack={() => handleExplore(waters)} wallet={wallet} summary={summary} onRefresh={refreshData}
           onNotify={addToast} onOpenAuth={() => setShowAuthModal(true)} />}
         {activePage === "swap" && <SwapPage wallet={wallet} summary={summary}
           onRefresh={refreshData} onNotify={addToast} onOpenAuth={() => setShowAuthModal(true)} />}
-        {activePage === "positions" && (
-          <PositionsPage
-            summary={summary}
-            wallet={wallet}
-            onRefresh={refreshData}
-            onNotify={addToast}
-            onOpenModal={(m) => setModal(m)}
-          onNavigateDeposit={() => handleNavigate("explore")}
-          />
-        )}
-
       </main>
       <WalletPanel open={showWallet} wallet={wallet} canProvision={user !== null}
         ownerAddress={user?.ownerAddress ?? user?.address} summary={summary}
@@ -222,13 +212,13 @@ export const App: React.FC = () => {
 
       {/* SIWE Auth Modal Overlay */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#05080ec7] p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-[560px]">
             <AuthScreen
               onAuthSuccess={(newUser) => {
                 setUser(newUser);
                 setShowAuthModal(false);
-                addToast("success", "Welcome to Stillwater", "SIWE session established.");
+                addToast("success", "Welcome to Stillwater", "You're signed in.");
               }}
               onError={(msg) => addToast("error", "Authentication Error", msg)}
               onClose={() => setShowAuthModal(false)}

@@ -82,7 +82,7 @@ const PercentageButtons: React.FC<{
         key={pct}
         type="button"
         onClick={() => onSelect(pct)}
-        className="flex-1 rounded-lg border border-[#29364a] bg-[#151e2b] py-1 text-xs font-semibold text-[#e7edf5] hover:bg-[#1a2635] hover:border-[#53647a] transition-all active:scale-95"
+        className="flex-1 rounded-[14px] border border-line bg-field py-1 text-[.95rem] font-semibold text-ink hover:bg-tint hover:border-line-strong transition-all active:scale-95"
       >
         {pct === 100 ? "100% (Max)" : `${pct}%`}
       </button>
@@ -500,20 +500,20 @@ export const IntentActionModal: React.FC<Props> = ({
       <button
         type="button"
         onClick={onToggle}
-        className="group inline-flex items-center gap-2 rounded-full border border-[#29364a] bg-[#151e2b] px-3 py-1 text-xs font-semibold text-[#e7edf5] hover:border-[#145c47] hover:bg-[#092820] hover:text-[#6ee7b7] transition-all active:scale-95 shadow-sm"
+        className="group inline-flex items-center gap-2 rounded-full border border-line bg-field px-3 py-1 text-[.95rem] font-semibold text-ink hover:border-feed-line hover:bg-feed-soft hover:text-link transition-all active:scale-95 shadow-sm"
         title="Switch which amount you type in"
       >
-        <span className={current === "cirBTC" ? "font-bold text-[#6ee7b7]" : "text-[#aab6c8]"}>
+        <span className={current === "cirBTC" ? "font-bold text-link" : "text-ink-muted"}>
           cirBTC
         </span>
-        <span className="text-[#6ee7b7] group-hover:scale-125 transition-transform duration-150">
+        <span className="text-link group-hover:scale-125 transition-transform duration-150">
           <IconArrowLeftRight size={13} />
         </span>
-        <span className={current === "USDC" ? "font-bold text-[#6ee7b7]" : "text-[#aab6c8]"}>
+        <span className={current === "USDC" ? "font-bold text-link" : "text-ink-muted"}>
           USDC
         </span>
         {spotPrice > 0 ? (
-          <span className="border-l border-[#29364a] pl-2 text-[11px] text-[#aab6c8]">
+          <span className="border-l border-line pl-2 text-[.85rem] text-ink-muted">
             1 cirBTC ≈ ${spotPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>
         ) : null}
@@ -525,20 +525,20 @@ export const IntentActionModal: React.FC<Props> = ({
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <label className="block text-xs font-semibold text-[#e7edf5]">
+          <label className="block text-[.95rem] font-semibold text-ink">
             cirBTC to deposit
           </label>
           <span
-            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide ${
+            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[.8rem] font-semibold tracking-wide ${
               primaryToken === "cirBTC"
-                ? "border border-[#145c47] bg-[#092820] text-[#6ee7b7]"
-                : "border border-[#29364a] bg-[#151e2b] text-[#aab6c8]"
+                ? "border border-feed-line bg-feed-soft text-link"
+                : "border border-line bg-field text-ink-muted"
             }`}
           >
             {primaryToken === "cirBTC" ? "You enter" : "Auto-matched"}
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[#aab6c8]">
+        <span className="text-[.85rem] font-mono text-ink-muted">
           Available: {cirBtcBalFormatted} cirBTC
         </span>
       </div>
@@ -548,11 +548,11 @@ export const IntentActionModal: React.FC<Props> = ({
           inputMode="decimal"
           value={mintCirBtc}
           onChange={(e) => handleMintCirBtcChange(e.target.value)}
-          className="w-full rounded-xl border border-[#29364a] bg-[#151e2b] px-3.5 py-2.5 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all pr-20"
+          className="w-full rounded-[18px] border border-line bg-field px-3.5 py-2.5 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all pr-20"
           placeholder="e.g. 0.00002465"
           required
         />
-        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#aab6c8] pointer-events-none">
+        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-muted pointer-events-none">
           cirBTC
         </span>
       </div>
@@ -564,20 +564,20 @@ export const IntentActionModal: React.FC<Props> = ({
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <label className="block text-xs font-semibold text-[#e7edf5]">
+          <label className="block text-[.95rem] font-semibold text-ink">
             USDC to deposit
           </label>
           <span
-            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide ${
+            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[.8rem] font-semibold tracking-wide ${
               primaryToken === "USDC"
-                ? "border border-[#145c47] bg-[#092820] text-[#6ee7b7]"
-                : "border border-[#29364a] bg-[#151e2b] text-[#aab6c8]"
+                ? "border border-feed-line bg-feed-soft text-link"
+                : "border border-line bg-field text-ink-muted"
             }`}
           >
             {primaryToken === "USDC" ? "You enter" : "Auto-matched"}
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[#aab6c8]">
+        <span className="text-[.85rem] font-mono text-ink-muted">
           Available: {usdcBalFormatted} USDC
         </span>
       </div>
@@ -587,11 +587,11 @@ export const IntentActionModal: React.FC<Props> = ({
           inputMode="decimal"
           value={mintUsdc}
           onChange={(e) => handleMintUsdcChange(e.target.value)}
-          className="w-full rounded-xl border border-[#29364a] bg-[#151e2b] px-3.5 py-2.5 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all pr-16"
+          className="w-full rounded-[18px] border border-line bg-field px-3.5 py-2.5 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all pr-16"
           placeholder="e.g. 2.0"
           required
         />
-        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#aab6c8] pointer-events-none">
+        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-muted pointer-events-none">
           USDC
         </span>
       </div>
@@ -603,20 +603,20 @@ export const IntentActionModal: React.FC<Props> = ({
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <label className="block text-xs font-semibold text-[#e7edf5]">
+          <label className="block text-[.95rem] font-semibold text-ink">
             cirBTC to add
           </label>
           <span
-            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide ${
+            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[.8rem] font-semibold tracking-wide ${
               primaryToken === "cirBTC"
-                ? "border border-[#145c47] bg-[#092820] text-[#6ee7b7]"
-                : "border border-[#29364a] bg-[#151e2b] text-[#aab6c8]"
+                ? "border border-feed-line bg-feed-soft text-link"
+                : "border border-line bg-field text-ink-muted"
             }`}
           >
             {primaryToken === "cirBTC" ? "You enter" : "Auto-matched"}
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[#aab6c8]">
+        <span className="text-[.85rem] font-mono text-ink-muted">
           Available: {cirBtcBalFormatted} cirBTC
         </span>
       </div>
@@ -626,11 +626,11 @@ export const IntentActionModal: React.FC<Props> = ({
           inputMode="decimal"
           value={actionAmountCirBtc}
           onChange={(e) => handleIncreaseCirBtcChange(e.target.value)}
-          className="w-full rounded-xl border border-[#29364a] bg-[#151e2b] px-3.5 py-2.5 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all pr-20"
+          className="w-full rounded-[18px] border border-line bg-field px-3.5 py-2.5 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all pr-20"
           placeholder="e.g. 0.00002465"
           required
         />
-        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#aab6c8] pointer-events-none">
+        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-muted pointer-events-none">
           cirBTC
         </span>
       </div>
@@ -642,20 +642,20 @@ export const IntentActionModal: React.FC<Props> = ({
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <label className="block text-xs font-semibold text-[#e7edf5]">
+          <label className="block text-[.95rem] font-semibold text-ink">
             USDC to add
           </label>
           <span
-            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide ${
+            className={`inline-flex items-center rounded-full px-2 py-0.2 text-[.8rem] font-semibold tracking-wide ${
               primaryToken === "USDC"
-                ? "border border-[#145c47] bg-[#092820] text-[#6ee7b7]"
-                : "border border-[#29364a] bg-[#151e2b] text-[#aab6c8]"
+                ? "border border-feed-line bg-feed-soft text-link"
+                : "border border-line bg-field text-ink-muted"
             }`}
           >
             {primaryToken === "USDC" ? "You enter" : "Auto-matched"}
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[#aab6c8]">
+        <span className="text-[.85rem] font-mono text-ink-muted">
           Available: {usdcBalFormatted} USDC
         </span>
       </div>
@@ -665,11 +665,11 @@ export const IntentActionModal: React.FC<Props> = ({
           inputMode="decimal"
           value={actionAmountUsdc}
           onChange={(e) => handleIncreaseUsdcChange(e.target.value)}
-          className="w-full rounded-xl border border-[#29364a] bg-[#151e2b] px-3.5 py-2.5 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all pr-16"
+          className="w-full rounded-[18px] border border-line bg-field px-3.5 py-2.5 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all pr-16"
           placeholder="e.g. 2.0"
           required
         />
-        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#aab6c8] pointer-events-none">
+        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-muted pointer-events-none">
           USDC
         </span>
       </div>
@@ -678,15 +678,15 @@ export const IntentActionModal: React.FC<Props> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#05080ec7] p-4 text-[#f3f4f6] backdrop-blur-sm [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-offset-3 [&_button:focus-visible]:outline-[#6ee7b7]">
-      <div className="w-full max-w-lg rounded-2xl border border-[#29364a] bg-[#111827] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-4 border-b border-[#29364a] mb-4">
-          <h3 className="text-base font-bold tracking-tight text-[#e7edf5]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 text-ink backdrop-blur-sm [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-offset-3 [&_button:focus-visible]:outline-link">
+      <div className="w-full max-w-[600px] rounded-[28px] border border-line bg-card p-8 shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
+        <div className="flex items-center justify-between pb-4 border-b border-line mb-4">
+          <h3 className="text-[1.6rem] font-semibold text-ink">
             {modal.type === "action" ? MODAL_TITLES[modal.kind] : MODAL_TITLES[modal.type]}
           </h3>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-[#8fa0b5] hover:text-[#f3f4f6] hover:bg-[#1a2635] transition-colors"
+            className="rounded-[14px] p-1 text-ink-faint hover:text-ink hover:bg-tint transition-colors"
             aria-label="Close dialog"
           >
             <IconClose size={16} />
@@ -699,7 +699,7 @@ export const IntentActionModal: React.FC<Props> = ({
             {modal.type === "approve" ? (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-[#e7edf5]">
+                  <label className="block text-[.95rem] font-semibold text-ink">
                     Amount ({approveToken})
                   </label>
                   <button
@@ -713,7 +713,7 @@ export const IntentActionModal: React.FC<Props> = ({
                           : "2",
                       );
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#29364a] bg-[#151e2b] px-2.5 py-1 text-xs font-semibold text-[#6ee7b7] hover:bg-[#092820] hover:border-[#145c47] transition-all active:scale-95"
+                    className="inline-flex items-center gap-1.5 rounded-[14px] border border-line bg-field px-2.5 py-1 text-[.95rem] font-semibold text-link hover:bg-feed-soft hover:border-feed-line transition-all active:scale-95"
                     title="Switch token to approve"
                   >
                     <IconArrowLeftRight size={13} />
@@ -726,15 +726,15 @@ export const IntentActionModal: React.FC<Props> = ({
                     inputMode="decimal"
                     value={approveAmount}
                     onChange={(e) => setApproveAmount(e.target.value)}
-                    className="w-full rounded-xl border border-[#29364a] bg-[#151e2b] px-3.5 py-2.5 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all pr-16"
+                    className="w-full rounded-[18px] border border-line bg-field px-3.5 py-2.5 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all pr-16"
                     placeholder={approveToken === "USDC" ? "e.g. 2.0" : "e.g. 0.00002465"}
                     required
                   />
-                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#aab6c8] pointer-events-none">
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-muted pointer-events-none">
                     {approveToken}
                   </span>
                 </div>
-                <div className="mt-1.5 flex items-center justify-between text-[11px] text-[#aab6c8]">
+                <div className="mt-1.5 flex items-center justify-between text-[.85rem] text-ink-muted">
                   <span>
                     Available: {approveToken === "cirBTC" ? `${cirBtcBalFormatted} cirBTC` : `${usdcBalFormatted} USDC`}
                   </span>
@@ -752,22 +752,22 @@ export const IntentActionModal: React.FC<Props> = ({
             {modal.type === "mint" ? (
               <>
                 {/* Price Range Section */}
-                <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 flex flex-col gap-3">
+                <div className="rounded-[18px] border border-line bg-field p-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-bold text-[#e7edf5]">
+                      <div className="text-[.95rem] font-semibold text-ink">
                         Price Range (Min & Max Price)
                       </div>
-                      <div className="text-[11px] text-[#aab6c8] mt-0.5">
+                      <div className="text-[.85rem] text-ink-muted mt-0.5">
                         Your position earns fees while Bitcoin price is inside this range.
                       </div>
                     </div>
                     {currentTick !== undefined ? (
                       <div className="text-right">
-                        <div className="text-[10px] uppercase font-semibold text-[#aab6c8] tracking-wide">
+                        <div className="text-[.8rem] uppercase font-semibold text-ink-muted tracking-wide">
                           Current Price
                         </div>
-                        <div className="font-mono text-sm font-bold text-[#e7edf5]">
+                        <div className="font-mono text-[1rem] font-semibold text-ink">
                           ${tickToPrice(currentTick).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         </div>
                       </div>
@@ -777,7 +777,7 @@ export const IntentActionModal: React.FC<Props> = ({
                   {/* Preset Buttons */}
                   {currentTick !== undefined ? (
                     <div>
-                      <div className="text-[11px] text-[#aab6c8] mb-1.5 font-medium">Quick Range Presets:</div>
+                      <div className="text-[.85rem] text-ink-muted mb-1.5 font-medium">Quick Range Presets:</div>
                       <div className="flex gap-1.5">
                         {[
                           { label: "±1% (Narrow)", pct: 1 },
@@ -795,10 +795,10 @@ export const IntentActionModal: React.FC<Props> = ({
                               key={preset.label}
                               type="button"
                               onClick={() => handleSelectRangePreset(preset.pct)}
-                              className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-all active:scale-95 ${
+                              className={`flex-1 rounded-[14px] border py-1.5 text-[.95rem] font-semibold transition-all active:scale-95 ${
                                 isActive
-                                  ? "border-[#10b981] bg-[#092820] text-[#6ee7b7] shadow-sm"
-                                  : "border-[#29364a] bg-[#111827] text-[#e7edf5] hover:bg-[#1a2635]"
+                                  ? "border-accent bg-feed-soft text-link shadow-sm"
+                                  : "border-line bg-card text-ink hover:bg-tint"
                               }`}
                             >
                               {preset.label}
@@ -813,15 +813,15 @@ export const IntentActionModal: React.FC<Props> = ({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-[#e7edf5]">
+                        <label className="text-[.95rem] font-semibold text-ink">
                           Min Price (USD)
                         </label>
-                        <span className="text-[10px] font-mono text-[#8fa0b5]">
+                        <span className="text-[.8rem] font-mono text-ink-faint">
                           Tick: {mintTickLower}
                         </span>
                       </div>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#8fa0b5] pointer-events-none">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-faint pointer-events-none">
                           $
                         </span>
                         <input
@@ -829,7 +829,7 @@ export const IntentActionModal: React.FC<Props> = ({
                           inputMode="decimal"
                           value={minPrice}
                           onChange={(e) => handleMinPriceChange(e.target.value)}
-                          className="w-full rounded-xl border border-[#29364a] bg-[#111827] pl-6 pr-3 py-2 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all"
+                          className="w-full rounded-[18px] border border-line bg-card pl-6 pr-3 py-2 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all"
                           placeholder="e.g. 80000"
                           required
                         />
@@ -838,15 +838,15 @@ export const IntentActionModal: React.FC<Props> = ({
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-[#e7edf5]">
+                        <label className="text-[.95rem] font-semibold text-ink">
                           Max Price (USD)
                         </label>
-                        <span className="text-[10px] font-mono text-[#8fa0b5]">
+                        <span className="text-[.8rem] font-mono text-ink-faint">
                           Tick: {mintTickUpper}
                         </span>
                       </div>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#8fa0b5] pointer-events-none">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[.95rem] font-semibold text-ink-faint pointer-events-none">
                           $
                         </span>
                         <input
@@ -854,7 +854,7 @@ export const IntentActionModal: React.FC<Props> = ({
                           inputMode="decimal"
                           value={maxPrice}
                           onChange={(e) => handleMaxPriceChange(e.target.value)}
-                          className="w-full rounded-xl border border-[#29364a] bg-[#111827] pl-6 pr-3 py-2 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all"
+                          className="w-full rounded-[18px] border border-line bg-card pl-6 pr-3 py-2 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all"
                           placeholder="e.g. 82000"
                           required
                         />
@@ -863,7 +863,7 @@ export const IntentActionModal: React.FC<Props> = ({
                   </div>
 
                   {/* Range Status & Advanced Toggle */}
-                  <div className="flex items-center justify-between text-xs pt-1 border-t border-[#29364a]">
+                  <div className="flex items-center justify-between text-[.95rem] pt-1 border-t border-line">
                     {currentTick !== undefined &&
                     !isNaN(parseInt(mintTickLower, 10)) &&
                     !isNaN(parseInt(mintTickUpper, 10)) ? (
@@ -871,8 +871,8 @@ export const IntentActionModal: React.FC<Props> = ({
                         className={`font-semibold ${
                           currentTick >= parseInt(mintTickLower, 10) &&
                           currentTick <= parseInt(mintTickUpper, 10)
-                            ? "text-[#6ee7b7]"
-                            : "text-[#fcd34d]"
+                            ? "text-link"
+                            : "text-rest"
                         }`}
                       >
                         {currentTick >= parseInt(mintTickLower, 10) &&
@@ -893,7 +893,7 @@ export const IntentActionModal: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={() => setShowTechnical(!showTechnical)}
-                      className="text-[11px] text-[#aab6c8] hover:text-[#f3f4f6] underline"
+                      className="text-[.85rem] text-ink-muted hover:text-ink underline"
                     >
                       {showTechnical ? "Hide technical details" : "Technical details"}
                     </button>
@@ -901,28 +901,28 @@ export const IntentActionModal: React.FC<Props> = ({
 
                   {/* Optional Raw Tick inputs for power users */}
                   {showTechnical ? (
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#29364a]">
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-line">
                       <div>
-                        <label className="block text-[11px] font-semibold text-[#aab6c8] mb-1">
+                        <label className="block text-[.85rem] font-semibold text-ink-muted mb-1">
                           Lower Tick Index
                         </label>
                         <input
                           type="number"
                           value={mintTickLower}
                           onChange={(e) => handleLowerTickChange(e.target.value)}
-                          className="w-full rounded-xl border border-[#29364a] bg-[#111827] px-3 py-1.5 font-mono text-xs text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all"
+                          className="w-full rounded-[18px] border border-line bg-card px-3 py-1.5 font-mono text-[.95rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all"
                           required
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-[#aab6c8] mb-1">
+                        <label className="block text-[.85rem] font-semibold text-ink-muted mb-1">
                           Upper Tick Index
                         </label>
                         <input
                           type="number"
                           value={mintTickUpper}
                           onChange={(e) => handleUpperTickChange(e.target.value)}
-                          className="w-full rounded-xl border border-[#29364a] bg-[#111827] px-3 py-1.5 font-mono text-xs text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all"
+                          className="w-full rounded-[18px] border border-line bg-card px-3 py-1.5 font-mono text-[.95rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all"
                           required
                         />
                       </div>
@@ -949,7 +949,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
             {modal.type === "import" ? (
               <div>
-                <label className="block text-xs font-semibold text-[#e7edf5] mb-1.5">
+                <label className="block text-[.95rem] font-semibold text-ink mb-1.5">
                   Position number
                 </label>
                 <input
@@ -957,19 +957,19 @@ export const IntentActionModal: React.FC<Props> = ({
                   value={importTokenId}
                   onChange={(e) => setImportTokenId(e.target.value)}
                   placeholder="e.g. 12345"
-                  className="w-full rounded-xl border border-[#29364a] bg-[#151e2b] px-3.5 py-2 font-mono text-sm text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all"
+                  className="w-full rounded-[18px] border border-line bg-field px-3.5 py-2 font-mono text-[1rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all"
                   required
                 />
-                <span className="mt-1 block text-[11px] text-[#aab6c8]">
+                <span className="mt-1 block text-[.85rem] text-ink-muted">
                   The number Uniswap shows for the position. It must already belong to your Stillwater wallet and be in the cirBTC/USDC pool. Nothing is sent; we only check it.
                 </span>
               </div>
             ) : null}
 
             {modal.type === "action" && modal.kind === "collect" ? (
-              <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 text-xs text-[#e7edf5] leading-relaxed">
+              <div className="rounded-[18px] border border-line bg-field p-4 text-[.95rem] text-ink leading-relaxed">
                 Moves the fees this position has earned, about{" "}
-                <strong className="text-[#e7edf5]">
+                <strong className="text-ink">
                   {modal.position.claimable0.formatted} cirBTC and {modal.position.claimable1.formatted} USDC
                 </strong>
                 , into your Stillwater wallet. Anything you took out with Remove some comes along too. Your position stays open and keeps earning.
@@ -978,7 +978,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
             {modal.type === "action" && modal.kind === "increase" ? (
               <>
-                <p className="text-xs text-[#aab6c8] leading-relaxed">
+                <p className="text-[.95rem] text-ink-muted leading-relaxed">
                   Adds more money to this position, keeping its current price range. Enter one amount and we match the other so both go in at the right ratio.
                 </p>
                 {primaryToken === "cirBTC" ? (
@@ -999,7 +999,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
             {modal.type === "action" && modal.kind === "decrease" ? (
               <div>
-                <label className="block text-xs font-semibold text-[#e7edf5] mb-1.5">
+                <label className="block text-[.95rem] font-semibold text-ink mb-1.5">
                   How much do you want to take out?
                 </label>
                 <div className="flex gap-1.5">
@@ -1016,10 +1016,10 @@ export const IntentActionModal: React.FC<Props> = ({
                         key={btn.label}
                         type="button"
                         onClick={() => setActionLiquidity(val)}
-                        className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-all active:scale-95 ${
+                        className={`flex-1 rounded-[14px] border py-1.5 text-[.95rem] font-semibold transition-all active:scale-95 ${
                           isActive
-                            ? "border-[#10b981] bg-[#092820] text-[#6ee7b7]"
-                            : "border-[#29364a] bg-[#151e2b] text-[#e7edf5] hover:bg-[#1a2635]"
+                            ? "border-accent bg-feed-soft text-link"
+                            : "border-line bg-field text-ink hover:bg-tint"
                         }`}
                       >
                         {btn.label}
@@ -1027,7 +1027,7 @@ export const IntentActionModal: React.FC<Props> = ({
                     );
                   })}
                 </div>
-                <p className="mt-2 text-[11px] text-[#aab6c8] leading-relaxed">
+                <p className="mt-2 text-[.85rem] text-ink-muted leading-relaxed">
                   {removalPercent(actionLiquidity, modal.position.liquidity) !== null
                     ? `You'll take out about ${removalPercent(actionLiquidity, modal.position.liquidity)}% of this position. `
                     : "Pick how much to take out. "}
@@ -1036,20 +1036,20 @@ export const IntentActionModal: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => setShowTechnical(!showTechnical)}
-                  className="mt-2 text-[11px] text-[#aab6c8] hover:text-[#f3f4f6] underline"
+                  className="mt-2 text-[.85rem] text-ink-muted hover:text-ink underline"
                 >
                   {showTechnical ? "Hide technical details" : "Technical details"}
                 </button>
                 {showTechnical ? (
                   <div className="mt-2">
-                    <label className="block text-[11px] font-semibold text-[#aab6c8] mb-1">
+                    <label className="block text-[.85rem] font-semibold text-ink-muted mb-1">
                       Liquidity units to remove (of {BigInt(modal.position.liquidity).toLocaleString()})
                     </label>
                     <input
                       type="text"
                       value={actionLiquidity}
                       onChange={(e) => setActionLiquidity(e.target.value)}
-                      className="w-full rounded-xl border border-[#29364a] bg-[#111827] px-3 py-1.5 font-mono text-xs text-[#e7edf5] focus:border-[#10b981] focus:bg-[#151e2b] focus:shadow-[0_0_0_2px_#10b98140] placeholder:text-[#8fa0b5] outline-none transition-all"
+                      className="w-full rounded-[18px] border border-line bg-card px-3 py-1.5 font-mono text-[.95rem] text-ink focus:border-accent focus:bg-field focus:ring-2 focus:ring-band/30 placeholder:text-ink-faint outline-none transition-all"
                     />
                   </div>
                 ) : null}
@@ -1057,9 +1057,9 @@ export const IntentActionModal: React.FC<Props> = ({
             ) : null}
 
             {modal.type === "action" && modal.kind === "withdraw" ? (
-              <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 text-xs text-[#e7edf5] leading-relaxed">
+              <div className="rounded-[18px] border border-line bg-field p-4 text-[.95rem] text-ink leading-relaxed">
                 Takes everything out of this position, including your cirBTC, your USDC and any fees not yet collected, and moves it all into your Stillwater wallet. The position is then closed for good and stops earning.
-                <p className="mt-2 text-[11px] text-[#aab6c8]">
+                <p className="mt-2 text-[.85rem] text-ink-muted">
                   Technical details: one transaction that removes all liquidity, collects everything, and burns position #{modal.position.tokenId}.
                 </p>
               </div>
@@ -1071,7 +1071,7 @@ export const IntentActionModal: React.FC<Props> = ({
                 loading ||
                 (modal.type === "action" && modal.kind === "decrease" && !actionLiquidity.trim())
               }
-              className="mt-2 w-full rounded-xl bg-[#059669] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#047857] active:scale-95 disabled:opacity-50 transition-all"
+              className="mt-2 w-full rounded-full bg-accent min-h-14 px-6 text-[.95rem] font-semibold text-on-accent shadow-sm hover:bg-accent-hover disabled:opacity-50 transition-all"
             >
               {loading ? "Checking on Arc…" : modal.type === "import" ? "Check position" : "Review"}
             </button>
@@ -1080,8 +1080,8 @@ export const IntentActionModal: React.FC<Props> = ({
           /* Simulated Result Review & Execution */
           <div className="flex flex-col gap-4">
             {modal.type === "import" ? (
-              <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 text-xs leading-relaxed text-[#e7edf5]">
-                Position <strong className="text-[#e7edf5]">#{preparedIntent.simulationData?.tokenId}</strong> belongs to your Stillwater wallet. It will now show in your positions.
+              <div className="rounded-[18px] border border-line bg-field p-4 text-[.95rem] leading-relaxed text-ink">
+                Position <strong className="text-ink">#{preparedIntent.simulationData?.tokenId}</strong> belongs to your Stillwater wallet. It will now show in your positions.
               </div>
             ) : (
               <>
@@ -1097,18 +1097,18 @@ export const IntentActionModal: React.FC<Props> = ({
                         : kind === "decrease" ? "You'll take out about"
                           : "Your Stillwater wallet will receive about";
                   return (
-                    <div className="rounded-xl border border-[#29364a] bg-[#151e2b] p-4 flex flex-col gap-2">
-                      <div className="text-xs font-semibold text-[#e7edf5]">{heading}</div>
+                    <div className="rounded-[18px] border border-line bg-field p-4 flex flex-col gap-2">
+                      <div className="text-[.95rem] font-semibold text-ink">{heading}</div>
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-[#29364a] bg-[#111827] p-2.5 font-mono text-xs font-bold text-[#e7edf5]">
+                        <div className="rounded-[18px] border border-line bg-card p-2.5 font-mono text-[.95rem] font-semibold text-ink">
                           {formatUnits(BigInt(cirBtc), 8)} cirBTC
                         </div>
-                        <div className="rounded-xl border border-[#29364a] bg-[#111827] p-2.5 font-mono text-xs font-bold text-[#e7edf5]">
+                        <div className="rounded-[18px] border border-line bg-card p-2.5 font-mono text-[.95rem] font-semibold text-ink">
                           {formatUnits(BigInt(usdc), 6)} USDC
                         </div>
                       </div>
                       {kind === "decrease" ? (
-                        <div className="text-[11px] text-[#aab6c8]">
+                        <div className="text-[.85rem] text-ink-muted">
                           Held in the position until you press Collect fees.
                         </div>
                       ) : null}
@@ -1116,11 +1116,11 @@ export const IntentActionModal: React.FC<Props> = ({
                   );
                 })()}
 
-                <div className="rounded-xl border border-[#145c47] bg-[#092820] p-3.5 text-xs leading-relaxed text-[#e7edf5]">
-                  Confirming sends <strong className="text-[#e7edf5]">1 transaction</strong> from your Stillwater wallet on Arc Mainnet. Stillwater checks the exact transaction again before sending it.
+                <div className="rounded-[18px] border border-feed-line bg-feed-soft p-3.5 text-[.95rem] leading-relaxed text-ink">
+                  Confirming sends <strong className="text-ink">1 transaction</strong> from your Stillwater wallet on Arc Mainnet. Stillwater checks the exact transaction again before sending it.
                 </div>
 
-                <div className="text-[11px] text-[#aab6c8] break-all">
+                <div className="text-[.85rem] text-ink-muted break-all">
                   Technical details: request {preparedIntent.intentId}
                   {preparedIntent.gasEstimate ? `, estimated ${preparedIntent.gasEstimate} gas` : ""}
                 </div>
@@ -1131,7 +1131,7 @@ export const IntentActionModal: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setPreparedIntent(null)}
-                className="flex-1 rounded-xl border border-[#29364a] bg-[#111827] py-2.5 text-xs font-semibold text-[#e7edf5] hover:bg-[#1a2635] active:scale-95 shadow-sm"
+                className="flex-1 rounded-[18px] border border-line bg-card py-2.5 text-[.95rem] font-semibold text-ink hover:bg-tint active:scale-95 shadow-sm"
               >
                 Back
               </button>
@@ -1139,7 +1139,7 @@ export const IntentActionModal: React.FC<Props> = ({
                 type="button"
                 onClick={handleExecute}
                 disabled={loading}
-                className="flex-1 rounded-xl bg-[#059669] py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#047857] active:scale-95 disabled:opacity-50"
+                className="flex-1 rounded-full bg-accent py-2.5 text-[.95rem] font-semibold text-on-accent shadow-sm hover:bg-accent-hover disabled:opacity-50"
               >
                 {modal.type === "import" ? "Done" : loading ? "Sending…" : "Confirm and send"}
               </button>

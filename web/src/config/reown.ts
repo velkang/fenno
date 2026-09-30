@@ -16,6 +16,21 @@ export const wagmiAdapter = new WagmiAdapter({
   projectId,
 });
 
+// The wallet modal follows the system light/dark setting, like the rest of the app.
+const darkQuery = typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+function systemTheme(): "light" | "dark" {
+  return darkQuery?.matches ? "dark" : "light";
+}
+function themeVariables(mode: "light" | "dark") {
+  return {
+    "--w3m-accent": mode === "dark" ? "#dcebe3" : "#1f3531",
+    "--w3m-color-mix": mode === "dark" ? "#0e1614" : "#f4f0e6",
+    "--w3m-color-mix-strength": 30,
+    "--w3m-font-family": "Figtree, ui-sans-serif, system-ui, sans-serif",
+    "--w3m-border-radius-master": "4px",
+  };
+}
+
 export const modal = createAppKit({
   adapters: [wagmiAdapter],
   networks: [arc],
@@ -27,11 +42,11 @@ export const modal = createAppKit({
     url: typeof window !== "undefined" ? window.location.origin : "http://localhost:5173",
     icons: ["https://avatars.githubusercontent.com/u/179229932"],
   },
-  themeMode: "light",
-  themeVariables: {
-    "--w3m-accent": "#2563EB",
-    "--w3m-border-radius-master": "2px",
-    "--w3m-color-mix": "#F8FAFC",
-    "--w3m-color-mix-strength": 20,
-  },
+  themeMode: systemTheme(),
+  themeVariables: themeVariables(systemTheme()),
+});
+
+darkQuery?.addEventListener("change", () => {
+  modal.setThemeMode(systemTheme());
+  modal.setThemeVariables(themeVariables(systemTheme()));
 });

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import { api, type AuthUser, ApiError } from "../lib/api-client";
-import { IconShield, IconWallet } from "./Icons";
+import { IconWallet, Tomo } from "./Icons";
 
 type Props = {
   onAuthSuccess: (user: AuthUser) => void;
@@ -76,80 +76,39 @@ export const AuthScreen: React.FC<Props> = ({ onAuthSuccess, onError, onClose })
   };
 
   return (
-    <div className="mx-auto my-8 max-w-lg px-4">
-      <div className="rounded-2xl border border-[#29364a] bg-[#111827] p-8 text-[#f3f4f6] shadow-2xl">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[#10b981]/40 bg-[#10b981]/10 text-[#6ee7b7] mb-4">
-            <IconShield size={24} />
-          </div>
-          <h2 className="text-xl font-bold tracking-tight text-[#e7edf5] mb-2">
-            Sign In to Stillwater
-          </h2>
-          <p className="text-xs text-[#a8b5c7] leading-relaxed max-w-md mx-auto">
-            Connect your wallet and sign a message to sign in. Your Stillwater wallet is created for you on your first sign-in.
-          </p>
+    <div className="mx-auto max-w-[560px]">
+      <div role="dialog" aria-modal="true" aria-labelledby="signin-title"
+        className="flex flex-col items-center gap-5 rounded-[32px] bg-card px-[clamp(20px,5vw,44px)] py-10 text-center text-ink shadow-2xl">
+        <Tomo size={92} sleepy={false} />
+        <h2 id="signin-title" className="text-[2.1rem] leading-tight font-semibold">Sign in to Stillwater</h2>
+        <p className="max-w-[460px] text-[1.1rem] leading-relaxed text-ink-muted">
+          Connect your wallet and sign a message. Your Stillwater wallet is made for you on your first sign-in.
+        </p>
+        <div className="w-full rounded-[20px] bg-sage px-5 py-4 text-left text-[1rem] leading-relaxed text-ink">
+          <strong className="font-semibold">Your wallet stays in charge.</strong> It signs you in, and every withdrawal from your Stillwater wallet needs its signature. You choose where money goes.
         </div>
 
-        {/* Custody Architecture Notice */}
-        <div className="mb-6 rounded-xl border border-[#29364a] bg-[#151e2b] p-4 text-xs leading-relaxed text-[#b6c1d1] [&_strong]:text-[#e7edf5]">
-          <strong className="block font-bold mb-1">
-            Dual-Key Custody Safety
-          </strong>
-          Your connected wallet is your <strong>Owner Wallet</strong>. It signs you in, and <strong>every withdrawal</strong> from your Stillwater wallet needs its signature. You choose where each withdrawal goes.
-        </div>
-
-        {/* Auth Form */}
-        <form onSubmit={handleStartAuth} className="flex flex-col gap-4">
-          {/* Step 1: Connect Wallet */}
-          <div>
-            <label className="block text-xs font-semibold text-[#b6c1d1] mb-1.5">
-              Owner Wallet
-            </label>
-            {isConnected && address ? (
-              <div className="flex items-center justify-between rounded-xl border border-[#29364a] bg-[#0b0f19] px-3.5 py-2.5">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                  <span className="font-mono text-xs text-[#e5edf5] truncate">
-                    {address}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => open()}
-                  className="shrink-0 rounded-lg border border-[#43536a] px-2.5 py-1 text-xs font-semibold text-[#e5edf5] hover:bg-[#1f2937] active:scale-95"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => open()}
-                className="w-full rounded-xl border border-[#43536a] py-2.5 text-xs font-semibold text-[#e5edf5] hover:bg-[#1f2937] active:scale-95 flex items-center justify-center gap-2"
-              >
-                <IconWallet size={15} />
-                <span>Connect Wallet</span>
+        <form onSubmit={handleStartAuth} className="flex w-full flex-col gap-3">
+          {isConnected && address ? (
+            <div className="flex items-center justify-between gap-3 rounded-[18px] border border-line bg-field px-4 py-3 text-left">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span className="size-2.5 shrink-0 rounded-full bg-feed" aria-hidden="true" />
+                <span className="truncate font-mono text-[.95rem] text-ink" title={address}>{address}</span>
+              </span>
+              <button type="button" onClick={() => open()}
+                className="min-h-10 shrink-0 rounded-full border border-line px-4 text-[.95rem] font-medium hover:bg-tint">
+                Change
               </button>
-            )}
-          </div>
-
-          {/* Submit Action */}
-          <button
-            type="submit"
-            disabled={step !== null}
-            className="mt-2 w-full rounded-xl bg-[#059669] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#047857] active:scale-95 disabled:opacity-50"
-          >
-            {step === "signing" ? "Waiting for signature…" : step === "creating" ? "Creating your wallet…" : isConnected ? "Sign In with Ethereum" : "Connect Wallet & Sign In"}
+            </div>
+          ) : null}
+          <button type="submit" disabled={step !== null}
+            className="flex min-h-[60px] w-full items-center justify-center gap-2.5 rounded-full bg-accent px-6 text-[1.1rem] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60">
+            {!isConnected ? <IconWallet size={18} /> : null}
+            {step === "signing" ? "Waiting for your signature…" : step === "creating" ? "Making your wallet…" : isConnected ? "Sign in with your wallet" : "Connect your wallet"}
           </button>
-
           {onClose ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-1.5 text-xs font-medium text-[#a8b5c7] hover:text-[#e7edf5] text-center"
-            >
-              Continue exploring as guest
+            <button type="button" onClick={onClose} className="min-h-11 text-[1rem] font-medium text-ink-muted hover:text-ink">
+              Keep exploring as a guest
             </button>
           ) : null}
         </form>

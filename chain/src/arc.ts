@@ -88,6 +88,29 @@ export const ARC_TOKENS = {
   },
 } as const;
 
+/**
+ * "Waters": how calm a token's USDC pools tend to be. Fixed addresses (checked on
+ * chain), because a token's name proves nothing. Every other token is "rapids".
+ */
+export type Waters = "still" | "gentle" | "rapids";
+export const ARC_WATERS: Record<Exclude<Waters, "rapids">, readonly Address[]> = {
+  // Stablecoins paired with USDC: prices barely move.
+  still: [getAddress("0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1")], // EURC
+  // Established tokens: some movement, deeper pools.
+  gentle: [
+    ARC_TOKENS.cirBTC.address,
+    getAddress("0x128cC466B61f542da60c70e3aA11c10e19B84EDB"), // WETH
+    getAddress("0x30ed6a37665c50f799125923185B0FC171d36F0C"), // BTC
+  ],
+};
+
+export function tokenWaters(token: string): Waters {
+  const address = token.toLowerCase();
+  if (ARC_WATERS.still.some((entry) => entry.toLowerCase() === address)) return "still";
+  if (ARC_WATERS.gentle.some((entry) => entry.toLowerCase() === address)) return "gentle";
+  return "rapids";
+}
+
 export const UNISWAP_V3_ARC = {
   factory: {
     address: getAddress("0xf0db7b58379503491d857dB50AC9ece64c653918"),

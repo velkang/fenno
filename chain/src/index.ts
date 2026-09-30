@@ -2,6 +2,7 @@ export {
   ALPHA_POOL,
   ARC_CHAIN_ID,
   ARC_TOKENS,
+  ARC_WATERS,
   ERC20_INTERFACE_USDC_CODE,
   UNISWAP_SHARED_ARC,
   UNISWAP_V3_ARC,
@@ -11,10 +12,13 @@ export {
   arcRpcTransport,
   canSpendArcUsdc,
   maxArcUsdcAmount,
+  tokenWaters,
+  type Waters,
 } from "./arc";
 export {
   v4PoolId,
   readArcV4Pool,
+  readArcV4PositionFees,
   quoteArcV4Swap,
   buildArcV4Mint,
   arcV4MintPayloadHash,

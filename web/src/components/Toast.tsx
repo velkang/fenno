@@ -13,54 +13,26 @@ type Props = {
   onDismiss: (id: string) => void;
 };
 
+const DOT: Record<ToastMessage["type"], string> = { success: "bg-feed", error: "bg-danger", info: "bg-rest" };
+
 export const ToastContainer: React.FC<Props> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
-
   return (
-    <div className="fixed right-6 bottom-6 z-80 flex max-w-sm flex-col gap-2">
-      {toasts.map((toast) => {
-        const isSuccess = toast.type === "success";
-        const isError = toast.type === "error";
-
-        return (
-          <div
-            key={toast.id}
-            className={`flex items-start justify-between gap-3 rounded-xl border bg-white p-4 shadow-lg transition-all duration-150 ${
-              isSuccess
-                ? "border-emerald-200"
-                : isError
-                  ? "border-rose-200"
-                  : "border-blue-200"
-            }`}
-          >
-            <div>
-              <div
-                className={`text-xs font-bold ${
-                  isSuccess
-                    ? "text-emerald-700"
-                    : isError
-                      ? "text-rose-700"
-                      : "text-blue-700"
-                }`}
-              >
-                {toast.title}
-              </div>
-              {toast.message ? (
-                <div className="mt-1 text-xs text-slate-600 break-words leading-relaxed">
-                  {toast.message}
-                </div>
-              ) : null}
-            </div>
-            <button
-              onClick={() => onDismiss(toast.id)}
-              className="p-1 text-slate-400 transition-colors hover:text-slate-700"
-              aria-label="Dismiss"
-            >
-              <IconClose size={14} />
-            </button>
+    <div className="fixed right-6 bottom-6 z-80 flex w-[min(400px,calc(100vw-32px))] flex-col gap-3 max-[520px]:right-4 max-[520px]:bottom-4">
+      {toasts.map((toast) => (
+        <div key={toast.id} role={toast.type === "error" ? "alert" : "status"}
+          className="grid grid-cols-[12px_minmax(0,1fr)_auto] items-start gap-3.5 rounded-[22px] border border-line bg-card px-5 py-4 shadow-xl">
+          <span className={`mt-2 size-3 rounded-full ${DOT[toast.type]}`} aria-hidden="true" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <strong className="text-[1.05rem] font-semibold text-ink">{toast.title}</strong>
+            {toast.message ? <span className="text-[.98rem] leading-relaxed break-words text-ink-muted">{toast.message}</span> : null}
           </div>
-        );
-      })}
+          <button type="button" onClick={() => onDismiss(toast.id)} aria-label="Dismiss"
+            className="-mr-1 grid size-9 place-items-center rounded-full text-ink-faint hover:bg-tint hover:text-ink">
+            <IconClose size={16} />
+          </button>
+        </div>
+      ))}
     </div>
   );
 };
