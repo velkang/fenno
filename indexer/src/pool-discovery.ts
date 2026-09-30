@@ -63,7 +63,8 @@ const HISTORY_WINDOWS_PER_RUN = 150;
 const BACKFILL_CAP = 100; // new pools per backfill run
 const TOKEN_LOOKUP_CAP = 50;
 
-const checkpointName = (dir: ProtocolDirectory, pass: "created" | "backfill" | "origin") =>
+// "refresh" stores a rowid, not a block: where the next directory refresh slice starts.
+const checkpointName = (dir: ProtocolDirectory, pass: "created" | "backfill" | "origin" | "refresh") =>
   `${dir.name}_pools_${pass}`;
 
 const tokenAbi = parseAbi([
@@ -227,21 +228,39 @@ async function deployBlock(archive: DirectoryClient, address: Address, below: bi
   return low;
 }
 
-/** Re-reads the least recently updated rows so listings and liquidity filters stay current. */
+/**
+ * Re-reads a slice of the directory so listings and liquidity filters stay current. It walks the
+ * table in rowid order from a saved position, so each run reads only its slice (an ORDER BY on an
+ * unindexed column read the whole table), and it writes back only pools whose state changed:
+ * D1 bills every row read and written.
+ */
 export async function refreshDirectory(input: { db: D1Database; dir: ProtocolDirectory; client: DirectoryClient;
   limit: number; now?: () => number }): Promise<void> {
   const { db, dir, client } = input;
   const now = input.now ?? Date.now;
-  const rows = await db.prepare(`SELECT * FROM ${dir.table} ORDER BY updated_at ASC LIMIT ?1`)
-    .bind(input.limit).all<DirectoryRow>();
-  if (rows.results.length === 0) return;
+  const cursorName = checkpointName(dir, "refresh");
+  const slice = (after: bigint) => db.prepare(
+    `SELECT rowid AS refresh_rowid, * FROM ${dir.table} WHERE rowid > ?1 ORDER BY rowid LIMIT ?2`)
+    .bind(Number(after), input.limit).all<DirectoryRow>();
+  const after = await readCheckpoint(db, cursorName) ?? 0n;
+  let rows = (await slice(after)).results;
+  if (rows.length === 0 && after > 0n) rows = (await slice(0n)).results; // past the end: start over
+  if (rows.length === 0) return;
   const latest = await latestBlock(client);
   const updatedAt = now();
-  const states = await Promise.all(rows.results.map((row) => dir.readState(client, row, latest.number)));
-  // Every row read moves to the back of the queue, changed or not.
-  await upsertRows(db, dir.table, dir.keyColumn, dir.columns, dir.stateColumns,
-    rows.results.map((row, index) => ({ ...row, ...(states[index] ?? {}),
-      block_number: Number(latest.number), updated_at: updatedAt })));
+  const states = await Promise.all(rows.map((row) => dir.readState(client, row, latest.number)));
+  const tracked = dir.stateColumns.filter((column) => column !== "block_number" && column !== "updated_at");
+  const changed = rows.flatMap((row, index) => {
+    const state = states[index] as DirectoryRow | null;
+    if (!state || tracked.every((column) => String(state[column] ?? "") === String(row[column] ?? ""))) return [];
+    return [{ ...row, ...state, block_number: Number(latest.number), updated_at: updatedAt }];
+  });
+  if (changed.length > 0) {
+    await upsertRows(db, dir.table, dir.keyColumn, dir.columns, dir.stateColumns, changed);
+  }
+  // A short slice means the end of the table was reached: the next run starts from the top.
+  const last = rows[rows.length - 1].refresh_rowid;
+  await saveCheckpoint(db, cursorName, rows.length < input.limit ? 0n : BigInt(last ?? 0), null, updatedAt);
 }
 
 /** Finds and stores a token's USDC pools right away, for a pasted contract address. */

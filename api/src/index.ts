@@ -436,27 +436,30 @@ export function createApp(dependencies: AppDependencies = {}) {
     const waters = watersParam === "still" || watersParam === "gentle" || watersParam === "rapids" ? watersParam : "";
     const calmTokens = JSON.stringify(waters === "rapids" ? [...ARC_WATERS.still, ...ARC_WATERS.gentle]
       : waters ? ARC_WATERS[waters] : []);
+    // Each table is read through its created_block index and SQLite merges the two, so a page
+    // reads about as many rows as it returns. (A CTE over both tables scanned and sorted every
+    // pool on each request, and D1 bills every row read.) In DESC order NULL created_block sorts last.
     const selectPools = () => context.env.DB.prepare(
-      `WITH pools AS (
-         SELECT 'uniswap-v3' AS protocol, pool_address AS address,
-           token_address, token_symbol, token_decimals,
-           token0_address AS token0, token1_address AS token1,
-           fee, tick_spacing, sqrt_price_x96, tick, liquidity,
-           usdc_reserve, NULL AS hooks, NULL AS lp_fee, block_number, updated_at, created_block
-         FROM pool_directory
-         UNION ALL
-         SELECT 'uniswap-v4' AS protocol, pool_id AS address,
-           token_address, token_symbol, token_decimals,
-           currency0 AS token0, currency1 AS token1,
-           fee, tick_spacing, sqrt_price_x96, tick, liquidity,
-           NULL AS usdc_reserve, hooks, lp_fee, block_number, updated_at, created_block
-         FROM v4_pool_directory
-       )
-       SELECT * FROM pools
+      `SELECT 'uniswap-v3' AS protocol, pool_address AS address,
+         token_address, token_symbol, token_decimals,
+         token0_address AS token0, token1_address AS token1,
+         fee, tick_spacing, sqrt_price_x96, tick, liquidity,
+         usdc_reserve, NULL AS hooks, NULL AS lp_fee, block_number, updated_at, created_block
+       FROM pool_directory
        WHERE liquidity != '0' AND (?1 = '' OR token_symbol LIKE ?2 ESCAPE '\\'
-         OR token_address = ?1 COLLATE NOCASE OR address = ?1 COLLATE NOCASE)
-         AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))
-       ORDER BY created_block IS NULL, created_block DESC, token_symbol COLLATE NOCASE, fee, address
+           OR token_address = ?1 COLLATE NOCASE OR pool_address = ?1 COLLATE NOCASE)
+           AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))
+       UNION ALL
+       SELECT 'uniswap-v4' AS protocol, pool_id AS address,
+         token_address, token_symbol, token_decimals,
+         currency0 AS token0, currency1 AS token1,
+         fee, tick_spacing, sqrt_price_x96, tick, liquidity,
+         NULL AS usdc_reserve, hooks, lp_fee, block_number, updated_at, created_block
+       FROM v4_pool_directory
+       WHERE liquidity != '0' AND (?1 = '' OR token_symbol LIKE ?2 ESCAPE '\\'
+           OR token_address = ?1 COLLATE NOCASE OR pool_id = ?1 COLLATE NOCASE)
+           AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))
+       ORDER BY created_block DESC, token_symbol COLLATE NOCASE, fee, address
        LIMIT 26 OFFSET ?3`,
     ).bind(query, `%${query.replace(/[\\%_]/g, "\\$&")}%`, offset, waters, calmTokens)
       .all<CombinedPoolRow>();

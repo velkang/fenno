@@ -285,7 +285,7 @@ describe("token pool discovery route", () => {
       nextOffset: null,
     });
     expect(statement.bind).toHaveBeenCalledWith("MEME", "%MEME%", 0, "", "[]");
-    expect(vi.mocked(env.DB.prepare).mock.calls[0]?.[0]).toContain("ORDER BY created_block IS NULL, created_block DESC");
+    expect(vi.mocked(env.DB.prepare).mock.calls[0]?.[0]).toContain("ORDER BY created_block DESC");
   });
 
   it("lists indexed v4 pools by token address without inventing a reserve", async () => {

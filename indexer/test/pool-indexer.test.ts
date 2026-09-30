@@ -339,15 +339,25 @@ describe("v4 pool discovery from Initialize events", () => {
     expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ created_block: 1_999_500 })]);
   });
 
-  it("refreshes the oldest rows and moves every one read to the back of the queue", async () => {
-    const stored = { pool_id: v4PoolId(keyFor(3000)), currency0: zeroAddress, currency1: token, fee: 3000,
-      tick_spacing: 60, hooks: zeroAddress, token_address: token, token_symbol: "MEME", token_decimals: 18,
-      sqrt_price_x96: "1", tick: 0, liquidity: "1", lp_fee: 3000, block_number: 1, updated_at: 1, created_block: 5 };
-    const { db, upserts } = fakeDb({ rows: { v4_pool_directory: [stored] } });
+  it("refreshes a slice, writes back only pools whose state changed, and remembers where it stopped", async () => {
+    const base = { currency0: zeroAddress, currency1: token, tick_spacing: 60, hooks: zeroAddress,
+      token_address: token, token_symbol: "MEME", token_decimals: 18, block_number: 1, updated_at: 1, created_block: 5 };
+    const moved = { ...base, refresh_rowid: 7, pool_id: v4PoolId(keyFor(3000)), fee: 3000,
+      sqrt_price_x96: "1", tick: 0, liquidity: "1", lp_fee: 3000 };
+    // Already matches what the chain returns, so it is not rewritten.
+    const still = { ...base, refresh_rowid: 8, pool_id: v4PoolId(keyFor(10000)), fee: 10000,
+      sqrt_price_x96: (2n ** 96n).toString(), tick: -5, liquidity: "500", lp_fee: 3000 };
+    const { db, upserts, checkpoint } = fakeDb({ checkpoints: { v4_pools_refresh: 6 },
+      rows: { v4_pool_directory: [moved, still] } });
     const { client } = fakeRpc({ calls: stateCalls });
-    await refreshDirectory({ db, dir: v4Directory, client, limit: 10, now: () => 999 });
-    expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ pool_id: stored.pool_id,
+
+    await refreshDirectory({ db, dir: v4Directory, client, limit: 2, now: () => 999 });
+    expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ pool_id: moved.pool_id,
       liquidity: "500", tick: -5, updated_at: 999, block_number: Number(safeBlock) })]);
+    expect(checkpoint("v4_pools_refresh")).toBe(8); // a full slice: continue after the last row
+
+    await refreshDirectory({ db, dir: v4Directory, client, limit: 10, now: () => 1000 });
+    expect(checkpoint("v4_pools_refresh")).toBe(0); // a short slice reached the end: start over next time
   });
 });
 
