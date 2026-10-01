@@ -311,6 +311,10 @@ export const App: React.FC = () => {
             key="sign-in"
             {...fade}
             className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 backdrop-blur-sm"
+            // Clicking the dimmed area outside the card closes the modal.
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowAuthModal(false)
+            }}
           >
             <motion.div {...lift} className="relative w-full max-w-[560px]">
             <AuthScreen
