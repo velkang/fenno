@@ -4,6 +4,7 @@ import {
   useAppKit,
   useAppKitAccount,
   useAppKitState,
+  useDisconnect,
 } from '@reown/appkit/react'
 import { api, type AuthUser, ApiError } from '../lib/api-client'
 import { Tomo } from './Icons'
@@ -24,6 +25,19 @@ export const AuthScreen: React.FC<Props> = ({
   const { signMessageAsync } = useSignMessage()
   const { embeddedWalletInfo } = useAppKitAccount()
   const { open: signInOpen } = useAppKitState()
+  const { disconnect } = useDisconnect()
+
+  // "Change" signs the current account out, then asks for an email (or Google / X) again.
+  const changeAccount = async () => {
+    try {
+      await disconnect()
+    } catch (error) {
+      console.error('Disconnect failed', error)
+      onError("Couldn't switch accounts. Try again.")
+      return
+    }
+    open({ view: 'Connect' })
+  }
   const account =
     embeddedWalletInfo?.user?.email ??
     embeddedWalletInfo?.user?.username ??
@@ -137,8 +151,9 @@ export const AuthScreen: React.FC<Props> = ({
               </span>
               <button
                 type="button"
-                onClick={() => open()}
-                className="min-h-10 shrink-0 rounded-full border border-line px-4 text-[.95rem] font-medium hover:bg-tint"
+                onClick={() => void changeAccount()}
+                disabled={step !== null}
+                className="min-h-10 shrink-0 rounded-full border border-line px-4 text-[.95rem] font-medium hover:bg-tint disabled:opacity-50"
               >
                 Change
               </button>
