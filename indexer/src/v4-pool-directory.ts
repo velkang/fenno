@@ -89,6 +89,8 @@ export const v4Directory: ProtocolDirectory = {
     "token_symbol", "token_decimals", "sqrt_price_x96", "tick", "liquidity", "lp_fee", "block_number",
     "updated_at", "created_block"],
   stateColumns: ["sqrt_price_x96", "tick", "liquidity", "lp_fee", "block_number", "updated_at"],
+  usedBy: ["v4_mint_intents", "v4_approval_intents", "v4_swap_intents", "v4_position_action_intents"]
+    .map((table) => ({ table, column: "pool_id" })),
   emitter: UNISWAP_V4_ARC.poolManager,
   // USDC sorts first as native (0x0) and usually as the ERC-20, so both positions are filtered.
   creationTopics: (token) => token

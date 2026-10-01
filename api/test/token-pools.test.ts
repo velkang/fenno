@@ -284,8 +284,12 @@ describe("token pool discovery route", () => {
         blockNumber: 124 }],
       nextOffset: null,
     });
-    expect(statement.bind).toHaveBeenCalledWith("MEME", "%MEME%", 0, "", "[]");
-    expect(vi.mocked(env.DB.prepare).mock.calls[0]?.[0]).toContain("ORDER BY created_block DESC");
+    // A symbol is searched from its start, as a range the symbol index can serve.
+    expect(statement.bind).toHaveBeenCalledWith("MEME", "MEME\u{10FFFF}", 0, "", "[]");
+    const sql = vi.mocked(env.DB.prepare).mock.calls[0]?.[0];
+    expect(sql).toContain("ORDER BY created_block DESC");
+    expect(sql).toContain("token_symbol COLLATE NOCASE >= ?1 AND token_symbol COLLATE NOCASE < ?2");
+    expect(sql).not.toContain("LIKE");
   });
 
   it("lists indexed v4 pools by token address without inventing a reserve", async () => {
@@ -313,7 +317,9 @@ describe("token pool discovery route", () => {
     expect(await response.json()).toMatchObject({ pools: [{ protocol: "uniswap-v4",
       address: poolId, hooks: zeroAddress, usdcReserve: null, liquidity: "99",
       token: { address: token, symbol: "MEME" } }] });
-    expect(statement.bind).toHaveBeenCalledWith(token, `%${token}%`, 0, "", "[]");
+    expect(statement.bind).toHaveBeenCalledWith(token, `${token}\u{10FFFF}`, 0, "", "[]");
+    // An address is an equality lookup on the token index or the pool key.
+    expect(vi.mocked(env.DB.prepare).mock.calls[0]?.[0]).toContain("(token_address = ?1 OR pool_id = ?1)");
   });
 
   it("filters the listing by waters using the fixed tier addresses", async () => {

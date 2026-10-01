@@ -1,22 +1,20 @@
-import { arc, arcRpcTransport, type ChainReadClient } from "@stillwater/chain";
-import { createPublicClient, getAddress, isAddress } from "viem";
-import { D1PoolIndexerStore } from "./pool-store";
-import { indexAlphaPool, type IndexerChainClient } from "./pool-indexer";
-import { D1WalletIndexerStore } from "./wallet-store";
-import { D1IndexerRunStore } from "./run-store";
-import { runIndexer } from "./run";
-import { discoverToken, refreshDirectory, runBackfillPass } from "./pool-discovery";
-import { createDirectoryClient, DEFAULT_ARCHIVE_RPC_URL, DIRECTORIES, type IndexerEnv } from "./directories";
+import { getAddress, isAddress } from "viem";
+import { discoverToken, refreshDirectory } from "./pool-discovery";
+import { createDirectoryClient, DIRECTORIES, type IndexerEnv } from "./directories";
 import { PoolDiscovery } from "./pool-discovery-object";
-import { v3Directory } from "./pool-directory";
-import { v4Directory } from "./v4-pool-directory";
 
 // Each job runs on its own cron (see wrangler.jsonc) so it gets its own
 // per-invocation budget. Live pool discovery runs every ~10 s in PoolDiscovery.
-const DISCOVERY_CRON = "* * * * *"; // live loop check + v4 backfill
-const V3_BACKFILL_CRON = "1-59/2 * * * *";
+const DISCOVERY_CRON = "* * * * *"; // keeps the live loop running
 const REFRESH_CRON = "2-59/5 * * * *";
-const REFRESH_LIMITS = { v4: 200, v3: 150 };
+// Pools re-checked per run. Each v4 pool costs 2 chain calls and each v3 pool 3, and the RPC
+// transport paces calls at 20 per 1.1 s with a 10 s request timeout, so a run must stay near
+// 120 calls per protocol: larger slices time out and write nothing.
+const REFRESH_LIMITS = { v4: 60, v3: 40 };
+// At most how many of those may expire per run. A deleted pool costs about five row writes,
+// so these caps (7,200 pools a day) keep clearing a backlog inside the daily budget while
+// still outpacing the few thousand pools created each day.
+const EXPIRE_LIMITS = { v4: 20, v3: 5 };
 
 async function ensureLiveDiscovery(env: IndexerEnv) {
   const stub = env.DISCOVERY.get(env.DISCOVERY.idFromName("pools"));
@@ -49,22 +47,16 @@ export default {
     env: IndexerEnv,
     _context: ExecutionContext,
   ): Promise<void> {
-    if (controller.cron === DISCOVERY_CRON || controller.cron === V3_BACKFILL_CRON) {
-      if (controller.cron === DISCOVERY_CRON) await ensureLiveDiscovery(env);
-      const dir = controller.cron === DISCOVERY_CRON ? v4Directory : v3Directory;
-      try {
-        await runBackfillPass({ db: env.DB, dir, client: createDirectoryClient(env.ARC_RPC_URL),
-          archive: createDirectoryClient(env.ARC_ARCHIVE_RPC_URL ?? DEFAULT_ARCHIVE_RPC_URL) });
-      } catch (error) {
-        console.warn(`${dir.name} pool backfill will resume next run`, error);
-      }
+    if (controller.cron === DISCOVERY_CRON) {
+      await ensureLiveDiscovery(env);
       return;
     }
     if (controller.cron === REFRESH_CRON) {
       const client = createDirectoryClient(env.ARC_RPC_URL);
       for (const dir of DIRECTORIES) {
         try {
-          await refreshDirectory({ db: env.DB, dir, client, limit: REFRESH_LIMITS[dir.name] });
+          await refreshDirectory({ db: env.DB, dir, client, limit: REFRESH_LIMITS[dir.name],
+            expireLimit: EXPIRE_LIMITS[dir.name] });
         } catch (error) {
           console.warn(`${dir.name} pool refresh will resume next run`, error);
         }
@@ -72,31 +64,14 @@ export default {
       return;
     }
 
-    const client = createPublicClient({
-      chain: arc,
-      transport: arcRpcTransport(env.ARC_RPC_URL),
-      batch: { multicall: true },
-    }) as unknown as ChainReadClient & IndexerChainClient;
+    // Every 5 minutes: approved actions nobody confirmed in time stop being usable.
     const timestamp = Date.now();
     await env.DB.prepare(
       `UPDATE wallet_intents
        SET status = 'expired', failure_reason = 'INTENT_EXPIRED', updated_at = ?1
        WHERE status = 'pending' AND expires_at <= ?1`,
     ).bind(timestamp).run();
-    await runIndexer({
-      client,
-      poolStore: new D1PoolIndexerStore(env.DB),
-      walletStore: new D1WalletIndexerStore(env.DB),
-      runStore: new D1IndexerRunStore(env.DB),
-    });
   },
 };
 
-export {
-  PoolDiscovery,
-  D1PoolIndexerStore,
-  D1WalletIndexerStore,
-  D1IndexerRunStore,
-  indexAlphaPool,
-  runIndexer,
-};
+export { PoolDiscovery };

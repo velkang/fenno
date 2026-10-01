@@ -436,9 +436,18 @@ export function createApp(dependencies: AppDependencies = {}) {
     const waters = watersParam === "still" || watersParam === "gentle" || watersParam === "rapids" ? watersParam : "";
     const calmTokens = JSON.stringify(waters === "rapids" ? [...ARC_WATERS.still, ...ARC_WATERS.gentle]
       : waters ? ARC_WATERS[waters] : []);
-    // Each table is read through its created_block index and SQLite merges the two, so a page
-    // reads about as many rows as it returns. (A CTE over both tables scanned and sorted every
-    // pool on each request, and D1 bills every row read.) In DESC order NULL created_block sorts last.
+    // D1 bills every row read, so each kind of request reads through an index:
+    // - browsing walks each table's created_block index and SQLite merges the two, so a page
+    //   reads about as many rows as it returns (in DESC order NULL created_block sorts last);
+    // - a pasted token or pool address is an equality lookup;
+    // - a symbol matches from its start, as a range on the symbol index (a "contains" LIKE
+    //   read every pool).
+    const addressQuery = /^0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(query);
+    const match = (keyColumn: string) => query === "" ? ""
+      : addressQuery ? `AND (token_address = ?1 OR ${keyColumn} = ?1)`
+        : "AND token_symbol COLLATE NOCASE >= ?1 AND token_symbol COLLATE NOCASE < ?2";
+    const filters = (keyColumn: string) => `liquidity != '0' ${match(keyColumn)}
+         AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))`;
     const selectPools = () => context.env.DB.prepare(
       `SELECT 'uniswap-v3' AS protocol, pool_address AS address,
          token_address, token_symbol, token_decimals,
@@ -446,9 +455,7 @@ export function createApp(dependencies: AppDependencies = {}) {
          fee, tick_spacing, sqrt_price_x96, tick, liquidity,
          usdc_reserve, NULL AS hooks, NULL AS lp_fee, block_number, updated_at, created_block
        FROM pool_directory
-       WHERE liquidity != '0' AND (?1 = '' OR token_symbol LIKE ?2 ESCAPE '\\'
-           OR token_address = ?1 COLLATE NOCASE OR pool_address = ?1 COLLATE NOCASE)
-           AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))
+       WHERE ${filters("pool_address")}
        UNION ALL
        SELECT 'uniswap-v4' AS protocol, pool_id AS address,
          token_address, token_symbol, token_decimals,
@@ -456,12 +463,11 @@ export function createApp(dependencies: AppDependencies = {}) {
          fee, tick_spacing, sqrt_price_x96, tick, liquidity,
          NULL AS usdc_reserve, hooks, lp_fee, block_number, updated_at, created_block
        FROM v4_pool_directory
-       WHERE liquidity != '0' AND (?1 = '' OR token_symbol LIKE ?2 ESCAPE '\\'
-           OR token_address = ?1 COLLATE NOCASE OR pool_id = ?1 COLLATE NOCASE)
-           AND (?4 = '' OR (?4 = 'rapids') != (lower(token_address) IN (SELECT lower(value) FROM json_each(?5))))
+       WHERE ${filters("pool_id")}
        ORDER BY created_block DESC, token_symbol COLLATE NOCASE, fee, address
        LIMIT 26 OFFSET ?3`,
-    ).bind(query, `%${query.replace(/[\\%_]/g, "\\$&")}%`, offset, waters, calmTokens)
+      // ?2 is the end of the symbol range: the search text followed by the highest character.
+    ).bind(query, `${query}\u{10FFFF}`, offset, waters, calmTokens)
       .all<CombinedPoolRow>();
     let rows = await selectPools();
     const client = (dependencies.createChainClient?.(context.env) ??

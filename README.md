@@ -38,7 +38,7 @@ Signer Worker (private, no public route)
 | `web/` | React 19 + Vite app, styled with Tailwind CSS v4; wallet connection via Reown AppKit and wagmi |
 | `api/` | Hono API on Cloudflare Workers: sign-in, pools, intents, and the D1 migrations in `api/migrations/` |
 | `signer/` | Private Worker that holds the key-wrapping secret, enforces the mainnet policy, and signs. See [signer/README.md](./signer/README.md) |
-| `indexer/` | Worker that discovers Uniswap v3/v4 USDC pools as they are created (every ~10 s) and snapshots wallets and positions into D1 |
+| `indexer/` | Worker that discovers Uniswap v3/v4 USDC pools as they are created (every ~10 s) and keeps a rolling 7-day list of them in D1 |
 | `chain/` | Shared Arc and Uniswap addresses, reads, price math, and transaction builders |
 
 ## Running locally
@@ -82,14 +82,13 @@ Requires Node 22.13 or newer and pnpm 11.
 
    Open http://localhost:5173 and sign in with any wallet; the first sign-in creates your account. The web app proxies `/v1` and `/health` to the API. To use your own Reown project, set `VITE_REOWN_PROJECT_ID`.
 
-The indexer finds pools from their creation events (v3 `PoolCreated`, v4 `Initialize`), filtered to USDC pairs:
+The indexer finds pools from their creation events (v3 `PoolCreated`, v4 `Initialize`), filtered to USDC pairs. The database holds only a rolling list of recent pools, because the chain can't answer "list the newest pools" or "find by symbol". Prices, liquidity, balances and positions are read from the chain when shown:
 
-- **Live:** a Durable Object (`PoolDiscovery`) checks for new pools every ~10 s, so a new pool is listed within seconds.
-- **Backfill:** crons walk backwards through older pools (v4 every minute, v3 every other minute). They use the default RPC for the ~400k blocks it keeps, then `ARC_ARCHIVE_RPC_URL` (QuickNode's keyless full-history RPC by default) down to each contract's deploy block. A rate-limited run keeps what it found and continues on the next run.
-- **Refresh:** every 5 minutes (offset by 2), stored pool state is re-read, oldest first.
-- **Wallets:** a separate job every 5 minutes.
+- **Live:** a Durable Object (`PoolDiscovery`) checks for new pools every ~10 s, so a new pool is listed within seconds. It saves its position about once a minute.
+- **Refresh:** every 5 minutes (offset by 2), a slice of the list is re-checked. It records only when a pool's liquidity appears or disappears, and removes pools that have gone a week without that, unless someone has used them through Stillwater.
+- **Expired actions:** every 5 minutes, approved actions nobody confirmed in time are marked expired.
 
-A contract address pasted into search that is not listed yet is looked up on chain at once: the API asks the indexer through a service binding.
+Older pools are not stored. A contract address pasted into search that is not listed is looked up on chain at once (the API asks the indexer through a service binding) and listed again for a week. Search by symbol matches from the start of the symbol.
 
 Triggering the minute cron by hand also starts the live loop:
 
@@ -97,7 +96,7 @@ Triggering the minute cron by hand also starts the live loop:
 curl 'http://127.0.0.1:8788/__scheduled?cron=*+*+*+*+*'
 ```
 
-`GET /health/indexer` on the API reports whether indexing is running and recent. It includes how long ago each live discovery pass ran, and reports `stale` after 60 s.
+`GET /health/indexer` on the API reports how long ago each protocol's live discovery position was saved, and `stale` once that is more than 3 minutes.
 
 ## Configuration
 
@@ -114,7 +113,6 @@ All variables and secrets live outside the repository: in the Cloudflare dashboa
 | `AUTH_COOKIE_SECURE` | api | Local only: `false` allows the session cookie over plain `http`. Never set it in production |
 | `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
 | `ARC_RPC_URL` | api, signer, indexer | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
-| `ARC_ARCHIVE_RPC_URL` | indexer | Optional; a full-history RPC for the pool backfill beyond the last ~400k blocks. Defaults to `https://rpc.quicknode.mainnet.arc.io` |
 
 Mainnet transactions are allowed by default; there are no per-action value or fee limits.
 
@@ -157,7 +155,7 @@ There are four Workers:
 
 4. **Open the website and sign in.** Saving a variable in the dashboard applies it immediately, so setting `EMERGENCY_STOP` to `true` on the signer halts signing without a commit.
 
-In production, Explore lists pools newest first, with live on-chain prices. New pools appear within seconds. Older pools fill in as the backfill works through history, which takes a few hours after the first deploy.
+In production, Explore lists the last week's pools newest first, with live on-chain prices. New pools appear within seconds. An older token is found by pasting its contract address.
 
 ## Circle wallets
 

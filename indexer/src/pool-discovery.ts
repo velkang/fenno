@@ -13,13 +13,14 @@ import {
   type RpcLog,
 } from "./directory-scan";
 
-// Pools are discovered from their creation events, filtered to USDC pairs: about
-// two a minute on Arc, versus thousands of trade events. Three passes per protocol:
-// - live: checkpoint -> latest block, run every ~10 s by the PoolDiscovery Durable Object;
-// - backfill: walks backwards from where live started, through the primary RPC's
-//   retained history in wide windows, then the archive RPC in 10k-block windows,
-//   down to the contract's deploy block;
-// - refresh: re-reads stored pool state, oldest first, for listing and filtering.
+// The directory is a rolling list of recent USDC pools, kept only because the chain cannot
+// answer "list the newest pools" or "find by symbol". D1 bills every row read and written,
+// so nothing here runs on work the chain can answer directly:
+// - live: new pools from their creation events, every ~10 s (PoolDiscovery Durable Object);
+// - refresh: walks the list in slices, recording only when a pool's liquidity appears or
+//   disappears (prices are read live when listed) and expiring pools older than RETENTION_MS;
+// - token lookup: a pasted contract address is looked up on chain and listed again.
+// Older pools are not backfilled: they are reached by contract address.
 
 export type DirectoryRow = Record<string, string | number | null>;
 
@@ -43,6 +44,10 @@ export type ProtocolDirectory = {
   keyColumn: "pool_address" | "pool_id";
   columns: string[];
   stateColumns: string[];
+  /** Tables (with their pool column) whose rows mean a user acted on a pool: such pools never expire. */
+  usedBy: Array<{ table: string; column: string }>;
+  /** Pools that never expire regardless of use. */
+  pinned?: string[];
   emitter: Address;
   /** eth_getLogs topic filters for USDC pool creations, optionally of one token. */
   creationTopics(token?: Address): unknown[][];
@@ -56,15 +61,15 @@ const LIVE_WINDOW = 10_000n; // blocks per live tick, enough to catch up after a
 const LIVE_CAP = 100; // new pools per live tick (~2 are created per 10 s)
 const RECENT_RETENTION = 380_000n; // history the primary RPC keeps (Blockdaemon keeps ~400k blocks)
 const RECENT_WINDOW = 100_000n; // Blockdaemon's max eth_getLogs range
-const HISTORY_WINDOW = 10_000n; // QuickNode's max eth_getLogs range
-// Keyless archive RPCs allow only a few eth_getLogs per second, so a run scans windows
-// one at a time and stops at the first rate limit, keeping what it collected.
-const HISTORY_WINDOWS_PER_RUN = 150;
-const BACKFILL_CAP = 100; // new pools per backfill run
 const TOKEN_LOOKUP_CAP = 50;
+// The live position lives in memory between ticks and is saved to the database only this
+// often: pools appear on most ticks, so saving with each one would cost a write per tick.
+const POSITION_SAVE_MS = 60_000;
+/** How long a pool stays listed after it was added or its liquidity last appeared or disappeared. */
+export const RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 
 // "refresh" stores a rowid, not a block: where the next directory refresh slice starts.
-const checkpointName = (dir: ProtocolDirectory, pass: "created" | "backfill" | "origin" | "refresh") =>
+const checkpointName = (dir: ProtocolDirectory, pass: "created" | "refresh") =>
   `${dir.name}_pools_${pass}`;
 
 const tokenAbi = parseAbi([
@@ -146,96 +151,52 @@ async function fillCreatedBlocks(db: D1Database, dir: ProtocolDirectory, pools: 
   ).bind(JSON.stringify(entries)).run();
 }
 
-/** New pools from the live checkpoint up to the latest block. */
+/** Where the live pass has read up to, and when that was last saved to the database. */
+export type LivePosition = { block: bigint; savedAt: number };
+
+/**
+ * New pools from the live position up to the latest block. The caller keeps the returned
+ * position in memory; it is written to the database once POSITION_SAVE_MS has passed.
+ * After a restart the saved position is read back, and re-seeing up to a minute of blocks
+ * is harmless: pools already listed are skipped.
+ */
 export async function runLivePass(input: { db: D1Database; dir: ProtocolDirectory; client: DirectoryClient;
-  now?: () => number }): Promise<void> {
+  position?: LivePosition | null; now?: () => number }): Promise<LivePosition> {
   const { db, dir, client } = input;
   const now = input.now ?? Date.now;
+  const name = checkpointName(dir, "created");
   const latest = await latestBlock(client);
-  const checkpoint = await readCheckpoint(db, checkpointName(dir, "created"));
-  if (checkpoint === null) {
-    // Start at the chain head; the backfill covers everything before it.
-    await saveCheckpoint(db, checkpointName(dir, "backfill"), latest.number, latest.hash, now());
-    await saveCheckpoint(db, checkpointName(dir, "created"), latest.number, latest.hash, now());
-    return;
+  let position = input.position ?? null;
+  if (!position) {
+    const saved = await readCheckpoint(db, name);
+    if (saved === null) {
+      // First run: start at the chain head. Earlier pools are reached by contract address.
+      await saveCheckpoint(db, name, latest.number, latest.hash, now());
+      return { block: latest.number, savedAt: now() };
+    }
+    position = { block: saved, savedAt: 0 };
   }
-  if (checkpoint >= latest.number) return;
-  const to = checkpoint + LIVE_WINDOW < latest.number ? checkpoint + LIVE_WINDOW : latest.number;
-  const pools = await fetchCreated(dir, client, checkpoint + 1n, to);
+  if (position.block >= latest.number) return position;
+  const to = position.block + LIVE_WINDOW < latest.number ? position.block + LIVE_WINDOW : latest.number;
+  const pools = await fetchCreated(dir, client, position.block + 1n, to);
   const { next } = await storeCreated(db, dir, client, pools, LIVE_CAP, latest.number, now());
   const handledTo = next === null ? to : next - 1n;
-  await saveCheckpoint(db, checkpointName(dir, "created"), handledTo,
-    handledTo === latest.number ? latest.hash : null, now());
+  if (now() - position.savedAt < POSITION_SAVE_MS) return { block: handledTo, savedAt: position.savedAt };
+  await saveCheckpoint(db, name, handledTo, handledTo === latest.number ? latest.hash : null, now());
+  return { block: handledTo, savedAt: now() };
 }
 
 /**
- * Walks the backfill cursor down one run's worth: recent history first, then the
- * archive. Pools are collected across windows and stored once per run, so the
- * database work stays the same however many windows a run scans.
- */
-export async function runBackfillPass(input: { db: D1Database; dir: ProtocolDirectory; client: DirectoryClient;
-  archive: DirectoryClient; now?: () => number }): Promise<void> {
-  const { db, dir, client, archive } = input;
-  const now = input.now ?? Date.now;
-  const start = await readCheckpoint(db, checkpointName(dir, "backfill"));
-  if (start === null) return;
-  let origin = await readCheckpoint(db, checkpointName(dir, "origin"));
-  if (origin === null) {
-    origin = await deployBlock(archive, dir.emitter, start);
-    await saveCheckpoint(db, checkpointName(dir, "origin"), origin, null, now());
-  }
-  if (start < origin) return;
-  const latest = await latestBlock(client);
-  const recentFloor = latest.number > RECENT_RETENTION ? latest.number - RECENT_RETENTION : 0n;
-  const pools: CreatedPool[] = []; // newest first
-  let cursor = start; // highest block not scanned yet
-  let historyWindows = HISTORY_WINDOWS_PER_RUN;
-  let primaryUsable = true;
-  while (cursor >= origin && pools.length < BACKFILL_CAP && historyWindows > 0) {
-    // Recent history comes from the primary RPC in wide windows (~1.5k pools per 100k
-    // blocks); older history from the archive RPC.
-    const recent = primaryUsable && cursor >= recentFloor;
-    const size = recent ? RECENT_WINDOW : HISTORY_WINDOW;
-    const floor = recent ? (recentFloor > origin ? recentFloor : origin) : origin;
-    const from: bigint = cursor - size + 1n > floor ? cursor - size + 1n : floor;
-    try {
-      pools.push(...(await fetchCreated(dir, recent ? client : archive, from, cursor)).reverse());
-    } catch (error) {
-      // Rate limited: keep what this run collected and continue from here next run.
-      if (isRpcFailure(error)) break;
-      // A primary RPC that no longer keeps this range (or rejects its width) hands over to the archive.
-      if (!recent) throw error;
-      primaryUsable = false;
-      continue;
-    }
-    if (!recent) historyWindows -= 1;
-    cursor = from - 1n;
-  }
-  const { next } = await storeCreated(db, dir, client, pools, BACKFILL_CAP, latest.number, now());
-  // Pools past this run's cap are rescanned next run, from the first one left over.
-  await saveCheckpoint(db, checkpointName(dir, "backfill"), next ?? cursor, null, now());
-}
-
-/** First block at which `address` has code, by binary search on the archive RPC. */
-async function deployBlock(archive: DirectoryClient, address: Address, below: bigint): Promise<bigint> {
-  let low = 0n;
-  let high = below;
-  while (low < high) {
-    const middle = (low + high) / 2n;
-    const code = await archive.getCode({ address, blockNumber: middle });
-    if (code && code !== "0x") high = middle; else low = middle + 1n;
-  }
-  return low;
-}
-
-/**
- * Re-reads a slice of the directory so listings and liquidity filters stay current. It walks the
- * table in rowid order from a saved position, so each run reads only its slice (an ORDER BY on an
- * unindexed column read the whole table), and it writes back only pools whose state changed:
- * D1 bills every row read and written.
+ * Walks one slice of the directory, in rowid order from a saved position so a run reads only
+ * its slice. In that slice it:
+ * - expires pools last touched more than RETENTION_MS ago, unless a user has acted on them
+ *   (their row holds the pool key every later action needs), at most `expireLimit` per run
+ *   so a backlog clears gradually;
+ * - records when a remaining pool's liquidity appeared or disappeared. Prices and ticks are
+ *   not written: listings read them live from the chain.
  */
 export async function refreshDirectory(input: { db: D1Database; dir: ProtocolDirectory; client: DirectoryClient;
-  limit: number; now?: () => number }): Promise<void> {
+  limit: number; expireLimit: number; now?: () => number }): Promise<void> {
   const { db, dir, client } = input;
   const now = input.now ?? Date.now;
   const cursorName = checkpointName(dir, "refresh");
@@ -246,13 +207,15 @@ export async function refreshDirectory(input: { db: D1Database; dir: ProtocolDir
   let rows = (await slice(after)).results;
   if (rows.length === 0 && after > 0n) rows = (await slice(0n)).results; // past the end: start over
   if (rows.length === 0) return;
-  const latest = await latestBlock(client);
   const updatedAt = now();
-  const states = await Promise.all(rows.map((row) => dir.readState(client, row, latest.number)));
-  const tracked = dir.stateColumns.filter((column) => column !== "block_number" && column !== "updated_at");
-  const changed = rows.flatMap((row, index) => {
+  const expired = await expirePools(db, dir, rows, updatedAt - RETENTION_MS, input.expireLimit);
+  const kept = rows.filter((row) => !expired.has(String(row[dir.keyColumn]).toLowerCase()));
+  const latest = await latestBlock(client);
+  const states = await Promise.all(kept.map((row) => dir.readState(client, row, latest.number)));
+  const hasLiquidity = (value: unknown) => String(value ?? "0") !== "0";
+  const changed = kept.flatMap((row, index) => {
     const state = states[index] as DirectoryRow | null;
-    if (!state || tracked.every((column) => String(state[column] ?? "") === String(row[column] ?? ""))) return [];
+    if (!state || hasLiquidity(state.liquidity) === hasLiquidity(row.liquidity)) return [];
     return [{ ...row, ...state, block_number: Number(latest.number), updated_at: updatedAt }];
   });
   if (changed.length > 0) {
@@ -261,6 +224,28 @@ export async function refreshDirectory(input: { db: D1Database; dir: ProtocolDir
   // A short slice means the end of the table was reached: the next run starts from the top.
   const last = rows[rows.length - 1].refresh_rowid;
   await saveCheckpoint(db, cursorName, rows.length < input.limit ? 0n : BigInt(last ?? 0), null, updatedAt);
+}
+
+/** Deletes up to `limit` of the rows older than `cutoff` that no user has acted on; returns their keys, lowercased. */
+async function expirePools(db: D1Database, dir: ProtocolDirectory, rows: DirectoryRow[], cutoff: number,
+  limit: number): Promise<Set<string>> {
+  const pinned = new Set((dir.pinned ?? []).map((key) => key.toLowerCase()));
+  const old = rows.filter((row) => Number(row.updated_at) < cutoff).map((row) => String(row[dir.keyColumn]))
+    .filter((key) => !pinned.has(key.toLowerCase()));
+  if (old.length === 0 || limit <= 0) return new Set();
+  // NOCASE matches each intent table's pool-column index, so this reads only matching rows.
+  const used = await db.prepare(
+    dir.usedBy.map(({ table, column }) =>
+      `SELECT ${column} AS pool_key FROM ${table} WHERE ${column} COLLATE NOCASE IN (SELECT value FROM json_each(?1))`)
+      .join(" UNION "),
+  ).bind(JSON.stringify(old)).all<{ pool_key: string }>();
+  const usedKeys = new Set(used.results.map((row) => row.pool_key.toLowerCase()));
+  const expire = old.filter((key) => !usedKeys.has(key.toLowerCase())).slice(0, limit);
+  if (expire.length === 0) return new Set();
+  await db.prepare(
+    `DELETE FROM ${dir.table} WHERE ${dir.keyColumn} IN (SELECT value FROM json_each(?1))`,
+  ).bind(JSON.stringify(expire)).run();
+  return new Set(expire.map((key) => key.toLowerCase()));
 }
 
 /** Finds and stores a token's USDC pools right away, for a pasted contract address. */

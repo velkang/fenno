@@ -3,7 +3,6 @@ import {
   getIndexerHealth,
   type DiscoveryCheckpoint,
   type IndexerHealthStore,
-  type IndexerRun,
 } from "../src/indexer-health";
 
 const freshDiscovery = [
@@ -11,85 +10,38 @@ const freshDiscovery = [
   { name: "v3_pools_created", blockNumber: 500, updatedAt: 2_900 },
 ];
 
-function store(latest: IndexerRun | null, success: IndexerRun | null,
-  checkpoints: DiscoveryCheckpoint[] = freshDiscovery) {
-  return {
-    latestRun: async () => latest,
-    latestSuccessfulRun: async () => success,
-    discoveryCheckpoints: async () => checkpoints,
-  } satisfies IndexerHealthStore;
+function store(checkpoints: DiscoveryCheckpoint[] = freshDiscovery) {
+  return { discoveryCheckpoints: async () => checkpoints } satisfies IndexerHealthStore;
 }
 
-const successfulRun = {
-  status: "succeeded",
-  blockNumber: 100,
-  walletCount: 3,
-  reconciledWalletCount: 3,
-  failureCode: null,
-  startedAt: 1_000,
-  completedAt: 2_000,
-} satisfies IndexerRun;
-
 describe("indexer health", () => {
-  it("is healthy after a recent fully reconciled run", async () => {
-    const health = await getIndexerHealth(
-      store(successfulRun, successfulRun),
-      { now: () => 3_000, staleAfterMs: 5_000 },
-    );
+  it("is healthy while both discovery positions were saved recently", async () => {
+    const health = await getIndexerHealth(store(), { now: () => 3_000 });
 
     expect(health.httpStatus).toBe(200);
-    expect(health.body).toMatchObject({
+    expect(health.body).toEqual({
       status: "healthy",
-      latestSuccess: { blockNumber: 100, ageMs: 1_000 },
       discovery: { v4: { blockNumber: 500, ageMs: 100 }, v3: { blockNumber: 500, ageMs: 100 } },
     });
   });
 
-  it("is stale when live pool discovery falls behind, so new pools would be missing", async () => {
-    const health = await getIndexerHealth(
-      store(successfulRun, successfulRun, [freshDiscovery[0]]),
-      { now: () => 3_000, staleAfterMs: 5_000 },
-    );
-    expect(health.httpStatus).toBe(503);
-    expect(health.body).toMatchObject({ status: "stale", discovery: { v3: null } });
+  it("tolerates the minute between position saves", async () => {
+    const health = await getIndexerHealth(store(), { now: () => 2_900 + 90_000 });
+    expect(health.body.status).toBe("healthy");
+  });
 
-    const lagging = await getIndexerHealth(
-      store(successfulRun, successfulRun, freshDiscovery.map((entry) => ({ ...entry, updatedAt: 0 }))),
-      { now: () => 90_000, staleAfterMs: 100_000 },
-    );
+  it("is stale when live pool discovery falls behind, so new pools would be missing", async () => {
+    const missing = await getIndexerHealth(store([freshDiscovery[0]]), { now: () => 3_000 });
+    expect(missing.httpStatus).toBe(503);
+    expect(missing.body).toMatchObject({ status: "stale", discovery: { v3: null } });
+
+    const lagging = await getIndexerHealth(store(), { now: () => 2_900 + 4 * 60_000 });
+    expect(lagging.httpStatus).toBe(503);
     expect(lagging.body.status).toBe("stale");
   });
 
-  it("reports stale successful indexing", async () => {
-    const health = await getIndexerHealth(
-      store(successfulRun, successfulRun),
-      { now: () => 10_000, staleAfterMs: 5_000 },
-    );
-
-    expect(health.httpStatus).toBe(503);
-    expect(health.body.status).toBe("stale");
-  });
-
-  it("surfaces the latest stable failure code", async () => {
-    const failedRun = {
-      ...successfulRun,
-      status: "failed",
-      failureCode: "WALLET_INDEX_FAILED",
-      completedAt: 2_500,
-    } satisfies IndexerRun;
-    const health = await getIndexerHealth(store(failedRun, successfulRun), {
-      now: () => 3_000,
-    });
-
-    expect(health.httpStatus).toBe(503);
-    expect(health.body).toMatchObject({
-      status: "failed",
-      latestRun: { failureCode: "WALLET_INDEX_FAILED" },
-    });
-  });
-
   it("reports an indexer that has never run", async () => {
-    const health = await getIndexerHealth(store(null, null));
+    const health = await getIndexerHealth(store([]));
 
     expect(health).toEqual({
       httpStatus: 503,

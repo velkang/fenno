@@ -1,133 +1,11 @@
-import { createPublicClient, encodeAbiParameters, getAddress, http, pad, toEventSelector,
-  toFunctionSelector, zeroAddress, type Address, type Hex } from "viem";
+import { encodeAbiParameters, getAddress, pad, toEventSelector, toFunctionSelector, zeroAddress,
+  type Address, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
-import { ALPHA_POOL, ARC_TOKENS, UNISWAP_V3_ARC, UNISWAP_V4_ARC, arc, v4PoolId } from "@stillwater/chain";
+import { ALPHA_POOL, ARC_TOKENS, UNISWAP_V3_ARC, UNISWAP_V4_ARC, v4PoolId } from "@stillwater/chain";
 import { v3Directory } from "../src/pool-directory";
 import { v4Directory } from "../src/v4-pool-directory";
-import { discoverToken, refreshDirectory, runBackfillPass, runLivePass } from "../src/pool-discovery";
+import { discoverToken, refreshDirectory, RETENTION_MS, runLivePass } from "../src/pool-discovery";
 import { PoolDiscovery } from "../src/pool-discovery-object";
-import {
-  indexAlphaPool,
-  reconcilePoolSnapshot,
-  type IndexerChainClient,
-  type PoolIndexerStore,
-  type PoolSnapshot,
-  type Reconciliation,
-} from "../src/pool-indexer";
-
-const blockHash = `0x${"ab".repeat(32)}` as const;
-
-class MemoryStore implements PoolIndexerStore {
-  snapshots = new Map<string, PoolSnapshot>();
-  reconciliations: Reconciliation[] = [];
-  checkpoint = 0;
-
-  async saveSnapshotAndCheckpoint(snapshot: PoolSnapshot) {
-    const key = `${snapshot.chainId}:${snapshot.poolAddress}:${snapshot.blockNumber}`;
-    if (!this.snapshots.has(key)) this.snapshots.set(key, snapshot);
-    this.checkpoint = Math.max(this.checkpoint, snapshot.blockNumber);
-  }
-
-  async getSnapshot(input: {
-    chainId: number;
-    poolAddress: string;
-    blockNumber: number;
-  }) {
-    return (
-      this.snapshots.get(
-        `${input.chainId}:${input.poolAddress}:${input.blockNumber}`,
-      ) ?? null
-    );
-  }
-
-  async saveReconciliation(value: Reconciliation) {
-    this.reconciliations.push(value);
-  }
-}
-
-function fakeClient(seenBlocks: Array<bigint | undefined>): IndexerChainClient {
-  return {
-    async getBlock() {
-      return { number: 500n, hash: blockHash };
-    },
-    async getBalance() {
-      return 0n;
-    },
-    async simulateContract() {
-      return { result: [0n, 0n] };
-    },
-    async readContract(parameters) {
-      seenBlocks.push(parameters.blockNumber);
-      if (parameters.functionName === "slot0") {
-        return [1n << 96n, 0, 0, 0, 0, 0, true];
-      }
-      if (parameters.functionName === "liquidity") return 123n;
-      if (parameters.functionName === "token0") return ALPHA_POOL.token0.address;
-      if (parameters.functionName === "token1") return ALPHA_POOL.token1.address;
-      if (parameters.functionName === "fee") return ALPHA_POOL.fee;
-      if (parameters.functionName === "tickSpacing") return ALPHA_POOL.tickSpacing;
-      throw new Error(`Unexpected call ${parameters.functionName}`);
-    },
-  };
-}
-
-describe("pool indexer", () => {
-  it("idempotently snapshots and reconciles one safe Arc block", async () => {
-    const store = new MemoryStore();
-    const seenBlocks: Array<bigint | undefined> = [];
-    const client = fakeClient(seenBlocks);
-
-    const first = await indexAlphaPool({ client, store, now: () => 1_000 });
-    const second = await indexAlphaPool({ client, store, now: () => 2_000 });
-
-    expect(first.status).toBe("matched");
-    expect(second.status).toBe("matched");
-    expect(store.snapshots.size).toBe(1);
-    expect(store.checkpoint).toBe(500);
-    expect(store.reconciliations).toHaveLength(2);
-    expect(seenBlocks).toEqual(Array(12).fill(500n));
-  });
-
-  it("reports the exact immutable snapshot fields that disagree", () => {
-    const direct = {
-      chainId: 5_042,
-      poolAddress: ALPHA_POOL.address,
-      blockNumber: 500,
-      blockHash,
-      sqrtPriceX96: "1",
-      tick: 2,
-      liquidity: "3",
-      token1PerToken0: "4",
-      token0PerToken1: "5",
-      observedAt: 1_000,
-    } satisfies PoolSnapshot;
-
-    const result = reconcilePoolSnapshot(
-      { ...direct, tick: 9, liquidity: "10" },
-      direct,
-      2_000,
-    );
-
-    expect(result.status).toBe("mismatch");
-    expect(result.mismatchFields).toEqual(["tick", "liquidity"]);
-  });
-
-  it("fails closed when an existing snapshot conflicts", async () => {
-    const store = new MemoryStore();
-    const client = fakeClient([]);
-    await indexAlphaPool({ client, store, now: () => 1_000 });
-    const stored = [...store.snapshots.values()][0];
-    store.snapshots.set(
-      `${stored.chainId}:${stored.poolAddress}:${stored.blockNumber}`,
-      { ...stored, liquidity: "corrupt" },
-    );
-
-    await expect(
-      indexAlphaPool({ client, store, now: () => 2_000 }),
-    ).rejects.toThrow("Arc pool reconciliation mismatch: liquidity");
-    expect(store.reconciliations.at(-1)?.status).toBe("mismatch");
-  });
-});
 
 // Directory fakes: a D1 that keeps checkpoints and records statements, and an RPC
 // that answers eth_getLogs (matching topic filters like a node) and raw eth_calls.
@@ -141,7 +19,7 @@ const hex = (...words: string[]) => `0x${words.join("")}` as Hex;
 const safeBlock = 2_000_000n;
 
 function fakeDb(input: { checkpoints?: Record<string, number>; known?: Record<string, string[]>;
-  skipped?: string[]; rows?: Record<string, unknown[]> } = {}) {
+  skipped?: string[]; rows?: Record<string, unknown[]>; used?: string[] } = {}) {
   const statements: Statement[] = [];
   const checkpoints = new Map(Object.entries(input.checkpoints ?? {}));
   const db = { prepare(sql: string) {
@@ -158,6 +36,8 @@ function fakeDb(input: { checkpoints?: Record<string, number>; known?: Record<st
         if (sql.includes("pool_directory_skips")) {
           return { results: (input.skipped ?? []).map((pool_key) => ({ pool_key })) };
         }
+        // The "has a user acted on these pools" lookup reads the intent tables.
+        if (sql.includes("_intents")) return { results: (input.used ?? []).map((pool_key) => ({ pool_key })) };
         const table = sql.includes("v4_pool_directory") ? "v4_pool_directory" : "pool_directory";
         if (sql.includes("AS pool_key")) {
           return { results: (input.known?.[table] ?? []).map((pool_key) => ({ pool_key })) };
@@ -178,7 +58,11 @@ function fakeDb(input: { checkpoints?: Record<string, number>; known?: Record<st
     .flatMap(({ values }) => JSON.parse(values[0] as string) as string[]);
   const createdUpdates = () => statements.filter(({ sql }) => sql.startsWith("UPDATE "))
     .flatMap(({ values }) => JSON.parse(values[0] as string) as Array<{ k: string; b: number }>);
-  return { db, statements, upserts, skips, createdUpdates, checkpoint: (name: string) => checkpoints.get(name) };
+  const deletes = (table: string) => statements.filter(({ sql }) => sql.startsWith(`DELETE FROM ${table} `))
+    .flatMap(({ values }) => JSON.parse(values[0] as string) as string[]);
+  const positionSaves = () => statements.filter(({ sql }) => sql.includes("INTO chain_indexer_checkpoints")).length;
+  return { db, statements, upserts, skips, createdUpdates, deletes, positionSaves,
+    checkpoint: (name: string) => checkpoints.get(name) };
 }
 
 function topicMatches(filter: unknown, value: Hex | undefined) {
@@ -255,13 +139,39 @@ describe("v4 pool discovery from Initialize events", () => {
       [key.fee, key.tickSpacing, key.hooks, 2n ** 96n, 0]),
   });
 
-  it("starts at the chain head and seeds the backfill cursor there", async () => {
+  it("starts at the chain head, with no history to catch up on", async () => {
     const { db, checkpoint } = fakeDb();
     const { client, ranges } = fakeRpc({});
-    await runLivePass({ db, dir: v4Directory, client, now: () => 123 });
+    const position = await runLivePass({ db, dir: v4Directory, client, now: () => 123 });
+    expect(position).toEqual({ block: safeBlock, savedAt: 123 });
     expect(checkpoint("v4_pools_created")).toBe(Number(safeBlock));
-    expect(checkpoint("v4_pools_backfill")).toBe(Number(safeBlock));
     expect(ranges).toEqual([]);
+  });
+
+  it("keeps the position in memory on quiet ticks and saves it once a minute", async () => {
+    const { db, positionSaves, checkpoint } = fakeDb({ checkpoints: { v4_pools_created: 1_999_000 } });
+    const { client } = fakeRpc({});
+    // Ten seconds after the last save, nothing new: the position moves on without a write.
+    const quiet = await runLivePass({ db, dir: v4Directory, client, now: () => 70_000,
+      position: { block: 1_999_000n, savedAt: 60_000 } });
+    expect(quiet).toEqual({ block: safeBlock, savedAt: 60_000 });
+    expect(positionSaves()).toBe(0);
+    // A minute after the last save it is written, even with nothing new.
+    const due = await runLivePass({ db, dir: v4Directory, client, now: () => 120_000,
+      position: { block: 1_999_500n, savedAt: 60_000 } });
+    expect(due).toEqual({ block: safeBlock, savedAt: 120_000 });
+    expect(positionSaves()).toBe(1);
+    expect(checkpoint("v4_pools_created")).toBe(Number(safeBlock));
+  });
+
+  it("does not save the position early just because a tick added pools", async () => {
+    const { db, upserts, positionSaves } = fakeDb();
+    const { client } = fakeRpc({ calls: stateCalls, readContract: metadata, logs: [initLog(keyFor(3000), 1_999_100n)] });
+    const position = await runLivePass({ db, dir: v4Directory, client, now: () => 61_000,
+      position: { block: 1_999_000n, savedAt: 60_000 } });
+    expect(upserts("v4_pool_directory")).toHaveLength(1);
+    expect(position).toEqual({ block: safeBlock, savedAt: 60_000 });
+    expect(positionSaves()).toBe(0);
   });
 
   it("adds new USDC pools with their creation block and leaves known or skipped ones alone", async () => {
@@ -277,7 +187,8 @@ describe("v4 pool discovery from Initialize events", () => {
     const { client } = fakeRpc({ calls: stateCalls, readContract: metadata,
       logs: [initLog(fresh, 1_999_100n), initLog(known, 1_999_200n), initLog(skipped, 1_999_300n),
         initLog(unpaired as never, 1_999_400n)] });
-    await runLivePass({ db, dir: v4Directory, client, now: () => 123 });
+    // Read back from the database after a restart, the position is due for saving.
+    await runLivePass({ db, dir: v4Directory, client, now: () => 100_000 });
     expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({
       pool_id: v4PoolId(fresh).toLowerCase(), currency1: token, token_symbol: "MEME", token_decimals: 18,
       liquidity: "500", tick: -5, created_block: 1_999_100 })]);
@@ -290,74 +201,58 @@ describe("v4 pool discovery from Initialize events", () => {
     const { db, upserts, checkpoint } = fakeDb({ checkpoints: { v4_pools_created: 1_999_000 } });
     const { client } = fakeRpc({ calls: stateCalls, readContract: metadata,
       logs: keys.map((key, index) => initLog(key, 1_999_100n + BigInt(index))) });
-    await runLivePass({ db, dir: v4Directory, client, now: () => 123 });
+    // Read back from the database after a restart, the position is due for saving.
+    await runLivePass({ db, dir: v4Directory, client, now: () => 100_000 });
     expect(upserts("v4_pool_directory")).toHaveLength(100);
     // The 101st pool appeared at block 1_999_200, so the next tick resumes there.
     expect(checkpoint("v4_pools_created")).toBe(1_999_199);
   });
 
-  it("backfills recent history, then the archive down to the deploy block", async () => {
-    const recent = keyFor(3000);
-    const old = keyFor(500);
-    const deploy = 1_600_000n;
-    const { db, statements, upserts, checkpoint } = fakeDb({ checkpoints: { v4_pools_backfill: Number(safeBlock) } });
-    const primary = fakeRpc({ calls: stateCalls, readContract: metadata, logs: [initLog(recent, 1_900_000n)] });
-    const archive = fakeRpc({ logs: [initLog(old, 1_610_000n)],
-      getCode: (_target, blockNumber) => (blockNumber ?? safeBlock) >= deploy ? "0x60" : "0x" });
-    await runBackfillPass({ db, dir: v4Directory, client: primary.client, archive: archive.client, now: () => 123 });
-    expect(upserts("v4_pool_directory").map((row) => row.created_block)).toEqual([1_900_000, 1_610_000]);
-    expect(checkpoint("v4_pools_origin")).toBe(Number(deploy));
-    expect(checkpoint("v4_pools_backfill")).toBe(Number(deploy) - 1);
-    // The primary RPC only serves its retained ~380k blocks; the archive gets 10k-block windows.
-    expect(primary.ranges.every(([from]) => from >= safeBlock - 380_000n)).toBe(true);
-    expect(archive.ranges.every(([from, to]) => to - from < 10_000n)).toBe(true);
-    // 4 recent and 2 archive windows, yet one store: the database work does not grow with the windows.
-    expect(archive.ranges).toHaveLength(4);
-    expect(statements.filter(({ sql }) => sql.startsWith("INSERT INTO v4_pool_directory"))).toHaveLength(1);
-    expect(statements.length).toBeLessThanOrEqual(8);
-  });
+  const NOW = 2_000_000_000_000;
+  const row = (fee: number, rowid: number, overrides: Record<string, unknown> = {}) => ({
+    refresh_rowid: rowid, pool_id: v4PoolId(keyFor(fee)), currency0: zeroAddress, currency1: token, fee,
+    tick_spacing: 60, hooks: zeroAddress, token_address: token, token_symbol: "MEME", token_decimals: 18,
+    sqrt_price_x96: "1", tick: 0, liquidity: "1", lp_fee: 3000, block_number: 1, updated_at: NOW - 1_000,
+    created_block: 5, ...overrides });
 
-  it("stops at an archive rate limit and keeps what the run collected", async () => {
-    const key = keyFor(3000);
-    const { db, upserts, checkpoint } = fakeDb({ checkpoints: { v4_pools_backfill: 1_500_000, v4_pools_origin: 1_000_000 } });
-    const primary = fakeRpc({ calls: stateCalls, readContract: metadata });
-    const archive = fakeRpc({ logs: [initLog(key, 1_495_000n)],
-      failLogs: ({ toBlock }) => toBlock < 1_490_001n ? new Error("rate limit exceeded") : null });
-    await runBackfillPass({ db, dir: v4Directory, client: primary.client, archive: archive.client, now: () => 123 });
-    expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ created_block: 1_495_000 })]);
-    // The first window (1_490_001-1_500_000) completed; the next run resumes below it.
-    expect(checkpoint("v4_pools_backfill")).toBe(1_490_000);
-  });
-
-  it("hands a recent window the primary RPC no longer keeps to the archive", async () => {
-    const key = keyFor(3000);
-    const { db, upserts } = fakeDb({ checkpoints: { v4_pools_backfill: Number(safeBlock), v4_pools_origin: 1_999_000 } });
-    const primary = fakeRpc({ calls: stateCalls, readContract: metadata,
-      failLogs: () => new Error("pruned history unavailable") });
-    const archive = fakeRpc({ logs: [initLog(key, 1_999_500n)] });
-    await runBackfillPass({ db, dir: v4Directory, client: primary.client, archive: archive.client, now: () => 123 });
-    expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ created_block: 1_999_500 })]);
-  });
-
-  it("refreshes a slice, writes back only pools whose state changed, and remembers where it stopped", async () => {
-    const base = { currency0: zeroAddress, currency1: token, tick_spacing: 60, hooks: zeroAddress,
-      token_address: token, token_symbol: "MEME", token_decimals: 18, block_number: 1, updated_at: 1, created_block: 5 };
-    const moved = { ...base, refresh_rowid: 7, pool_id: v4PoolId(keyFor(3000)), fee: 3000,
-      sqrt_price_x96: "1", tick: 0, liquidity: "1", lp_fee: 3000 };
-    // Already matches what the chain returns, so it is not rewritten.
-    const still = { ...base, refresh_rowid: 8, pool_id: v4PoolId(keyFor(10000)), fee: 10000,
-      sqrt_price_x96: (2n ** 96n).toString(), tick: -5, liquidity: "500", lp_fee: 3000 };
+  it("refreshes a slice, recording only liquidity that appeared or disappeared", async () => {
+    // The chain reports liquidity 500 at a new price for every pool.
+    const drained = row(3000, 7, { liquidity: "0" }); // was empty, now has liquidity: written
+    const repriced = row(10000, 8); // still has liquidity, only the price moved: not written
     const { db, upserts, checkpoint } = fakeDb({ checkpoints: { v4_pools_refresh: 6 },
-      rows: { v4_pool_directory: [moved, still] } });
+      rows: { v4_pool_directory: [drained, repriced] } });
     const { client } = fakeRpc({ calls: stateCalls });
 
-    await refreshDirectory({ db, dir: v4Directory, client, limit: 2, now: () => 999 });
-    expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ pool_id: moved.pool_id,
-      liquidity: "500", tick: -5, updated_at: 999, block_number: Number(safeBlock) })]);
+    await refreshDirectory({ db, dir: v4Directory, client, limit: 2, expireLimit: 5, now: () => NOW });
+    expect(upserts("v4_pool_directory")).toEqual([expect.objectContaining({ pool_id: drained.pool_id,
+      liquidity: "500", tick: -5, updated_at: NOW, block_number: Number(safeBlock) })]);
     expect(checkpoint("v4_pools_refresh")).toBe(8); // a full slice: continue after the last row
 
-    await refreshDirectory({ db, dir: v4Directory, client, limit: 10, now: () => 1000 });
+    await refreshDirectory({ db, dir: v4Directory, client, limit: 10, expireLimit: 5, now: () => NOW });
     expect(checkpoint("v4_pools_refresh")).toBe(0); // a short slice reached the end: start over next time
+  });
+
+  it("expires pools untouched for a week, but never one a user has acted on", async () => {
+    const old = NOW - RETENTION_MS - 1;
+    const stale = row(3000, 1, { updated_at: old });
+    const usedByUser = row(500, 2, { updated_at: old });
+    const recent = row(100, 3);
+    const { db, deletes, upserts } = fakeDb({ rows: { v4_pool_directory: [stale, usedByUser, recent] },
+      used: [usedByUser.pool_id.toUpperCase()] }); // matched whatever the stored letter case
+    const { client } = fakeRpc({ calls: stateCalls });
+
+    await refreshDirectory({ db, dir: v4Directory, client, limit: 10, expireLimit: 5, now: () => NOW });
+    expect(deletes("v4_pool_directory")).toEqual([stale.pool_id]);
+    expect(upserts("v4_pool_directory")).toEqual([]); // the expired pool is not refreshed afterwards
+  });
+
+  it("expires at most the run's cap, leaving the rest for later runs", async () => {
+    const old = NOW - RETENTION_MS - 1;
+    const rows = [row(100, 1, { updated_at: old }), row(500, 2, { updated_at: old }), row(3000, 3, { updated_at: old })];
+    const { db, deletes } = fakeDb({ rows: { v4_pool_directory: rows } });
+    const { client } = fakeRpc({ calls: stateCalls });
+    await refreshDirectory({ db, dir: v4Directory, client, limit: 10, expireLimit: 2, now: () => NOW });
+    expect(deletes("v4_pool_directory")).toEqual([rows[0].pool_id, rows[1].pool_id]);
   });
 });
 
@@ -388,6 +283,18 @@ describe("v3 pool discovery from PoolCreated events", () => {
     expect(upserts("pool_directory")).toEqual([expect.objectContaining({ pool_address: pool,
       token_address: token, token_symbol: "MEME", fee: 500, tick_spacing: 10, liquidity: "900",
       usdc_reserve: "42", tick: 7, created_block: 1_999_100 })]);
+  });
+
+  it("never expires the pinned cirBTC pool", async () => {
+    const NOW = 2_000_000_000_000;
+    const pinned = { refresh_rowid: 1, pool_address: ALPHA_POOL.address, liquidity: "900",
+      updated_at: NOW - RETENTION_MS - 1 };
+    const { db, deletes } = fakeDb({ rows: { pool_directory: [pinned] } });
+    const { client } = fakeRpc({ calls: { ...stateCalls,
+      [`${ALPHA_POOL.address.toLowerCase()}:${toFunctionSelector("slot0()")}`]: stateCalls[`${pool.toLowerCase()}:${toFunctionSelector("slot0()")}`],
+      [`${ALPHA_POOL.address.toLowerCase()}:${toFunctionSelector("liquidity()")}`]: hex(uint(900)) } });
+    await refreshDirectory({ db, dir: v3Directory, client, limit: 10, expireLimit: 5, now: () => NOW });
+    expect(deletes("pool_directory")).toEqual([]);
   });
 
   it("finds a pasted token's pools at once: v4 by token topic, v3 through the factory", async () => {
@@ -451,21 +358,3 @@ describe("PoolDiscovery Durable Object", () => {
     expect(state.alarm).toBeGreaterThanOrEqual(before + 10_000);
   }, 20_000);
 });
-
-it.skipIf(process.env.LIVE_ARC_RPC !== "true")(
-  "indexes and reconciles a live Arc safe block in memory",
-  async () => {
-    const client = createPublicClient({
-      chain: arc,
-      transport: http(arc.rpcUrls.default.http[0]),
-    }) as unknown as IndexerChainClient;
-    const store = new MemoryStore();
-
-    const result = await indexAlphaPool({ client, store });
-
-    expect(result.status).toBe("matched");
-    expect(store.snapshots.size).toBe(1);
-    expect(store.checkpoint).toBeGreaterThan(0);
-  },
-  30_000,
-);
