@@ -495,7 +495,9 @@ export function createApp(dependencies: AppDependencies = {}) {
     }
     let pools = rows.results.slice(0, 25).map(publicCombinedPool);
     try {
-      pools = await withLiveState(client, pools);
+      // The stored liquidity flag is refreshed only about once a day, so a pool drained since
+      // then is dropped here from its live value: it cannot be traded, and a quote for it fails.
+      pools = (await withLiveState(client, pools)).filter((pool) => pool.liquidity !== "0");
     } catch (error) {
       console.warn("Live pool state unavailable; listing stored state", error);
     }

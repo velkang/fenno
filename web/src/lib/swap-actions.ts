@@ -81,6 +81,7 @@ export async function executePoolSwap(input: {
 }
 
 const SWAP_ERRORS: Record<string, string> = {
+  POOL_NOT_AVAILABLE: "This pool has no liquidity to trade right now.",
   POOL_QUOTE_UNAVAILABLE: "No quote for this amount. Try a smaller one.",
   V4_QUOTE_TOO_SMALL: "No quote for this amount. Try a smaller one.",
   V4_SWAP_SIMULATION_FAILED: "This pool can't swap right now. Nothing was sent.",
@@ -90,7 +91,8 @@ const SWAP_ERRORS: Record<string, string> = {
 };
 
 // Codes where another pool for the same token might work.
-export const POOL_UNUSABLE_ERRORS = new Set(["POOL_QUOTE_UNAVAILABLE", "V4_QUOTE_TOO_SMALL", "V4_SWAP_SIMULATION_FAILED"]);
+export const POOL_UNUSABLE_ERRORS = new Set(["POOL_NOT_AVAILABLE", "POOL_QUOTE_UNAVAILABLE", "V4_QUOTE_TOO_SMALL",
+  "V4_SWAP_SIMULATION_FAILED"]);
 
 export function swapErrorMessage(code: string) {
   return SWAP_ERRORS[code] ?? code;

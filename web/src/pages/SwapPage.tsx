@@ -438,7 +438,8 @@ export function SwapPage({
               role="alert"
             >
               <p>{error}</p>
-              {poolQuoteUnavailable ? (
+              {/* In the buy drawer the pool is fixed, so there is no other pool to choose. */}
+              {poolQuoteUnavailable && !embedded ? (
                 <button
                   type="button"
                   className="mt-2 font-semibold text-ink underline underline-offset-4"

@@ -292,6 +292,35 @@ describe("token pool discovery route", () => {
     expect(sql).not.toContain("LIKE");
   });
 
+  it("leaves out a listed pool whose liquidity has since dropped to zero: it cannot be traded", async () => {
+    const drainedId = `0x${"cd".repeat(32)}`;
+    const liveId = `0x${"ab".repeat(32)}`;
+    const row = (address: string) => ({
+      protocol: "uniswap-v4", address, token_address: token, token_symbol: "MEME", token_decimals: 18,
+      token0: zeroAddress, token1: token, fee: 3000, tick_spacing: 60,
+      sqrt_price_x96: (2n ** 96n).toString(), tick: 0, liquidity: "99", // stored when it still had liquidity
+      usdc_reserve: null, hooks: zeroAddress, lp_fee: 3000, block_number: 124, updated_at: 457,
+    });
+    const statement = {
+      bind: vi.fn().mockReturnThis(),
+      all: vi.fn().mockResolvedValue({ results: [row(drainedId), row(liveId)] }),
+    };
+    const env = {
+      DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
+      SIGNER: {} as Fetcher,
+      AUTH_URI: "http://localhost:8787",
+    } satisfies Bindings;
+    const chainClient = { multicall: async () => [
+      { status: "success", result: [2n ** 96n, 9, 0, 3000] }, { status: "success", result: 0n },
+      { status: "success", result: [2n ** 96n, 9, 0, 3000] }, { status: "success", result: 888n },
+    ] } as unknown as ChainReadClient;
+    const response = await createApp({ createChainClient: () => chainClient }).request("/v1/pools", {}, env);
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { pools: Array<{ address: string }> };
+    expect(body.pools.map((entry) => entry.address)).toEqual([liveId]);
+  });
+
   it("lists indexed v4 pools by token address without inventing a reserve", async () => {
     const poolId = `0x${"ab".repeat(32)}`;
     const statement = {
