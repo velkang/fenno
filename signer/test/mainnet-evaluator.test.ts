@@ -122,6 +122,41 @@ describe("mainnet audit-only evaluator", () => {
       emergencyStop: false, now: () => now });
     expect(result.decision).toBe("allowed");
   });
+  it("holds an agent's swap to the mandate that allowed it", async () => {
+    const token = "0x2222222222222222222222222222222222222222" as const;
+    const key = { currency0: zeroAddress, currency1: token, fee: 3000,
+      tickSpacing: 60, hooks: zeroAddress };
+    const pool = { ...key, id: v4PoolId(key), sqrtPriceX96: (2n ** 96n).toString(),
+      tick: 0, liquidity: "1000000", lpFee: 3000 };
+    // 2 native USDC (18 decimals) into the pool.
+    const swap = buildArcV4Swap({ pool, tokenIn: zeroAddress,
+      amountIn: 2n * 10n ** 18n, amountOutMinimum: 990n,
+      deadline: BigInt(Math.floor(now / 1_000) + 600) });
+    const chain = {
+      getBlock: async () => ({ number: 100n, hash: blockHash }),
+      readContract: async ({ functionName }: { functionName: string }) =>
+        functionName === "getSlot0" ? [2n ** 96n, 0, 0, 3000] : 1_000_000n,
+      simulateContract: async () => ({ result: [1_000n, 100_000n] }),
+      call: async () => ({ data: "0x" }),
+    } as unknown as MainnetAuditClient;
+    const evaluate = (mandate: { status: string; maxPositionUsd: number }) =>
+      evaluateMainnetIntent({ intentId: "agent-swap-1", client: chain, emergencyStop: false,
+        now: () => now, store: new MemoryStore({
+          ...fixture(), intentId: "agent-swap-1", kind: "v4_single_pool_swap",
+          payloadHash: arcV4SwapPayloadHash(swap),
+          transaction: { chainId: ARC_CHAIN_ID, to: swap.to, data: swap.data, value: swap.value },
+          v4Swap: { pool, tokenIn: zeroAddress, amountIn: swap.amountIn,
+            amountOutMinimum: swap.amountOutMinimum, deadline: swap.deadline },
+          automation: { runId: "run-1", runStatus: "running", runsStartedToday: 1,
+            mandate: { ...mandate, poolId: pool.id, maxRunsPerDay: 3 } },
+        }) });
+
+    expect((await evaluate({ status: "active", maxPositionUsd: 5 })).reasonCode).toBe("POLICY_ALLOWED");
+    expect((await evaluate({ status: "active", maxPositionUsd: 1 })).reasonCode)
+      .toBe("MANDATE_VALUE_EXCEEDS_LIMIT");
+    expect((await evaluate({ status: "revoked", maxPositionUsd: 5 })).reasonCode)
+      .toBe("MANDATE_NOT_ACTIVE");
+  });
   it("re-quotes a v4 swap when ERC-20 USDC is currency1", async () => {
     const token = "0x2222222222222222222222222222222222222222" as const;
     const key = { currency0: token, currency1: ARC_TOKENS.USDC.address, fee: 10000,

@@ -71,6 +71,7 @@ import {
   type AuthStore,
   type AuthUser,
 } from "./auth";
+import { agentIdentity, registerAutomationRoutes, type AgentRun } from "./automation";
 import { D1AuthStore } from "./d1-auth-store";
 import { D1IndexerHealthStore, getIndexerHealth } from "./indexer-health";
 
@@ -87,15 +88,19 @@ export type Bindings = {
   ARC_RPC_URL?: string;
   // The indexer's private discovery endpoint; a pasted token address is looked up through it.
   INDEXER?: Fetcher;
+  // Shared with the automation Worker; its requests act for one wallet under a mandate.
+  AGENT_SECRET?: string;
 };
 
 type Variables = {
   authStore: AuthStore;
   user: AuthUser;
   sessionTokenHash: string;
+  // Set when the automation Worker makes the request (see automation.ts).
+  agentRun: AgentRun | undefined;
 };
 
-type AppEnvironment = { Bindings: Bindings; Variables: Variables };
+export type AppEnvironment = { Bindings: Bindings; Variables: Variables };
 type AppDependencies = {
   createAuthStore?: (env: Bindings) => AuthStore;
   createChainClient?: (env: Bindings) => ChainReadClient;
@@ -603,9 +608,12 @@ export function createApp(dependencies: AppDependencies = {}) {
     });
   });
 
+  app.use("/v1/*", agentIdentity());
   app.use("/v1/me", requireSession(now));
   app.use("/v1/auth/logout", requireSession(now));
   app.use("/v1/wallets/*", requireSession(now));
+  app.use("/v1/automation/*", requireSession(now));
+  registerAutomationRoutes(app, now);
 
   app.get("/v1/me", (context) => context.json({ user: context.get("user") }));
 
@@ -1220,10 +1228,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     await context.env.DB.batch([
       context.env.DB.prepare(
         `INSERT INTO wallet_intents (id, wallet_id, kind, payload_hash, status, expires_at,
-          created_at, updated_at, idempotency_key_hash)
-         VALUES (?1, ?2, 'v4_single_pool_swap', ?3, 'pending', ?4, ?5, ?5, ?6)`,
+          created_at, updated_at, idempotency_key_hash, automation_run_id)
+         VALUES (?1, ?2, 'v4_single_pool_swap', ?3, 'pending', ?4, ?5, ?5, ?6, ?7)`,
       ).bind(intentId, swap.wallet.id, arcV4SwapPayloadHash(built), Number(deadline) * 1_000,
-        timestamp, idempotencyKeyHash),
+        timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null),
       context.env.DB.prepare(
         `INSERT INTO v4_swap_intents (intent_id, pool_id, currency0, currency1, fee,
           tick_spacing, hooks, token_in, amount_in, amount_out_minimum, deadline,
@@ -1298,10 +1306,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     const intentId = `v4_approval_${crypto.randomUUID()}`;
     await context.env.DB.batch([context.env.DB.prepare(
       `INSERT INTO wallet_intents (id, wallet_id, kind, payload_hash, status, expires_at,
-        created_at, updated_at, idempotency_key_hash)
-       VALUES (?1, ?2, 'v4_approval', ?3, 'pending', ?4, ?5, ?5, ?6)`,
+        created_at, updated_at, idempotency_key_hash, automation_run_id)
+       VALUES (?1, ?2, 'v4_approval', ?3, 'pending', ?4, ?5, ?5, ?6, ?7)`,
     ).bind(intentId, wallet.id, arcV4ApprovalPayloadHash(approval), timestamp + 10 * 60 * 1_000,
-      timestamp, idempotencyKeyHash), context.env.DB.prepare(
+      timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null), context.env.DB.prepare(
       `INSERT INTO v4_approval_intents (intent_id, pool_id, currency0, currency1,
         fee, tick_spacing, hooks, token, token_decimals, stage, spender, amount, expiration,
         target, calldata, simulation_block, simulation_block_hash, gas_estimate, created_at)
@@ -1654,10 +1662,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     const timestamp = now();
     await context.env.DB.batch([context.env.DB.prepare(
       `INSERT INTO wallet_intents (id, wallet_id, kind, payload_hash, status, expires_at,
-        created_at, updated_at, idempotency_key_hash)
-       VALUES (?1, ?2, 'v4_position_mint', ?3, 'pending', ?4, ?5, ?5, ?6)`,
+        created_at, updated_at, idempotency_key_hash, automation_run_id)
+       VALUES (?1, ?2, 'v4_position_mint', ?3, 'pending', ?4, ?5, ?5, ?6, ?7)`,
     ).bind(intentId, wallet.id, arcV4MintPayloadHash(mint), Number(deadline) * 1_000,
-      timestamp, idempotencyKeyHash), context.env.DB.prepare(
+      timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null), context.env.DB.prepare(
       `INSERT INTO v4_mint_intents (intent_id, pool_id, currency0, currency1, fee,
         tick_spacing, hooks, token_decimals, sqrt_price_x96, tick, liquidity, lp_fee,
         recipient, tick_lower, tick_upper, amount0_desired, amount1_desired,
@@ -1748,10 +1756,11 @@ export function createApp(dependencies: AppDependencies = {}) {
     const timestamp = now();
     await context.env.DB.batch([context.env.DB.prepare(
       `INSERT INTO wallet_intents (id, wallet_id, kind, payload_hash, status, expires_at,
-        created_at, updated_at, idempotency_key_hash)
-       VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7)`,
+        created_at, updated_at, idempotency_key_hash, automation_run_id)
+       VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7, ?8)`,
     ).bind(intentId, wallet.id, kind, arcV4PositionActionPayloadHash(action),
-      Number(deadline) * 1000, timestamp, idempotencyKeyHash), context.env.DB.prepare(
+      Number(deadline) * 1000, timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null),
+      context.env.DB.prepare(
       `INSERT INTO v4_position_action_intents (intent_id, action, pool_id, token_id,
         tick_lower, tick_upper, liquidity, token_decimals, slippage_bps, deadline,
         recipient, calldata, simulation_block, simulation_block_hash, gas_estimate, created_at)
@@ -2380,12 +2389,14 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (!isIdentifier(intentId)) {
       return context.json({ error: "INVALID_REQUEST" }, 400);
     }
+    // The agent may only send what its own run prepared.
     const owned = await context.env.DB.prepare(
       `SELECT wi.id, mw.id AS wallet_id
        FROM wallet_intents wi
        JOIN managed_wallets mw ON mw.id = wi.wallet_id
-       WHERE wi.id = ?1 AND mw.user_id = ?2`,
-    ).bind(intentId, context.get("user").id).first<{ id: string; wallet_id: string }>();
+       WHERE wi.id = ?1 AND mw.user_id = ?2 AND (?3 IS NULL OR wi.automation_run_id = ?3)`,
+    ).bind(intentId, context.get("user").id, context.get("agentRun")?.id ?? null)
+      .first<{ id: string; wallet_id: string }>();
     if (!owned) return context.json({ error: "INTENT_NOT_FOUND" }, 404);
 
     // If wallet has a submitted attempt, reconcile it first before failing with WALLET_EXECUTION_BUSY!
@@ -2473,6 +2484,8 @@ function requireSession(now: () => number) {
     context: Context<AppEnvironment>,
     next: () => Promise<void>,
   ) => {
+    // agentIdentity already set the user for the automation Worker's requests.
+    if (context.get("agentRun")) return next();
     const token = getCookie(context, SESSION_COOKIE);
     if (!token) return context.json({ error: "UNAUTHENTICATED" }, 401);
 

@@ -27,6 +27,7 @@ import {
   type MainnetPolicyRequest,
 } from "./mainnet-policy";
 import type { WalletState } from "./policy";
+import { usdcValue, validateMandate, type AutomationContext } from "./mandate-policy";
 
 export type CustodyWallet = {
   walletId: string;
@@ -87,6 +88,8 @@ export type LoadedMainnetIntent = {
   swap?: { transaction: Swap; tokenAddress: Address; tokenDecimals: number };
   /** The Circle wallet that signs for this Stillwater wallet. */
   custody?: CustodyWallet;
+  /** Set when the automation agent made this request rather than the user. */
+  automation?: AutomationContext;
 };
 
 export type MainnetEvaluation = {
@@ -156,6 +159,8 @@ export async function evaluateLoadedMainnetIntent(input: {
   let v4Approval: MainnetPolicyRequest["v4Approval"];
   let v4Swap: MainnetPolicyRequest["v4Swap"];
   let v4PositionAction: MainnetPolicyRequest["v4PositionAction"];
+  // What an agent's mint or swap puts into the pool, at the price just read.
+  let depositValue: ReturnType<typeof usdcValue> | undefined;
   try {
     if (loaded.v4PositionAction) {
       const stored = loaded.v4PositionAction;
@@ -213,6 +218,9 @@ export async function evaluateLoadedMainnetIntent(input: {
         account: loaded.wallet.address, tokenIn: stored.tokenIn,
         amountIn: stored.amountIn, blockNumber: safeBlock.number });
       v4Swap = { transaction, freshAmountOut: quoted.amountOut };
+      depositValue = usdcValue({ pool: fresh,
+        amount0: stored.tokenIn.toLowerCase() === fresh.currency0.toLowerCase() ? stored.amountIn : 0n,
+        amount1: stored.tokenIn.toLowerCase() === fresh.currency1.toLowerCase() ? stored.amountIn : 0n });
     }
     if (loaded.v4Mint) {
       const stored = loaded.v4Mint;
@@ -229,6 +237,7 @@ export async function evaluateLoadedMainnetIntent(input: {
           outputs: [{ type: "uint8" }] }], functionName: "decimals", blockNumber: safeBlock.number });
       if (decimals !== stored.tokenDecimals) throw new Error("V4 token decimals changed");
       v4Mint = { transaction: buildArcV4Mint(stored) };
+      depositValue = usdcValue({ pool: fresh, amount0: stored.amount0Desired, amount1: stored.amount1Desired });
     }
     if (loaded.swap) {
       if (!input.client.getCode) throw new Error("Pool verification unavailable");
@@ -334,6 +343,28 @@ export async function evaluateLoadedMainnetIntent(input: {
     };
     await input.store.save(evaluation);
     return evaluation;
+  }
+
+  if (loaded.automation) {
+    const mandate = validateMandate({
+      automation: loaded.automation,
+      kind: loaded.kind,
+      walletState: loaded.wallet.state,
+      poolId: loaded.v4Mint?.pool.id ?? loaded.v4Approval?.pool.id ?? loaded.v4Swap?.pool.id ??
+        loaded.v4PositionAction?.poolId,
+      value: depositValue ?? undefined,
+    });
+    if (!mandate.allowed) {
+      const evaluation: MainnetEvaluation = {
+        intentId: loaded.intentId,
+        decision: "rejected",
+        reasonCode: mandate.reason,
+        blockNumber: Number(safeBlock.number),
+        createdAt: now(),
+      };
+      await input.store.save(evaluation);
+      return evaluation;
+    }
   }
 
   const decision = validateMainnetIntent({

@@ -1,0 +1,257 @@
+import type { Context, Hono } from "hono";
+import type { Address, Hex } from "viem";
+import { AuthError } from "./auth";
+import type { AppEnvironment } from "./index";
+
+// The automation Worker calls the API with this secret and the run it is working on.
+export const AGENT_SECRET_HEADER = "x-stillwater-agent";
+export const AGENT_RUN_HEADER = "x-stillwater-run";
+
+/** The run an agent request belongs to. Set only for requests from the automation Worker. */
+export type AgentRun = { id: string; mandateId: string; poolId: Hex; walletId: string };
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+// Everything the agent may call: reading and working a v4 position. Withdrawals, wallet
+// settings and mandates are deliberately absent; the signer checks every request again.
+const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
+  ["GET", /^\/v1\/wallets\/v4\/positions$/],
+  ["GET", /^\/v1\/wallets\/v4\/pools\/0x[0-9a-fA-F]{64}\/allowances$/],
+  ["POST", /^\/v1\/wallets\/v4\/swaps\/(quote|prepare)$/],
+  ["POST", /^\/v1\/wallets\/v4\/approvals\/prepare$/],
+  ["POST", /^\/v1\/wallets\/v4\/positions\/(mint|actions)\/prepare$/],
+  ["POST", /^\/v1\/wallets\/intents\/[A-Za-z0-9_-]+\/execute$/],
+  ["POST", /^\/v1\/wallets\/attempts\/[A-Za-z0-9_-]+\/reconcile$/],
+];
+
+async function sameSecret(given: string, expected: string): Promise<boolean> {
+  // Compare digests so the time taken says nothing about the secret.
+  const digest = async (value: string) =>
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  const [a, b] = await Promise.all([digest(given), digest(expected)]);
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) difference |= a[index]! ^ b[index]!;
+  return difference === 0;
+}
+
+/**
+ * Lets the automation Worker act for one wallet, as that wallet's user, on the routes
+ * above and only while its run is running under an active mandate. Requests without
+ * the agent header pass through to the normal session check.
+ */
+export function agentIdentity() {
+  return async (context: Context<AppEnvironment>, next: () => Promise<void>) => {
+    const secret = context.req.header(AGENT_SECRET_HEADER);
+    if (secret === undefined) return next();
+    const expected = context.env.AGENT_SECRET;
+    if (!expected || !(await sameSecret(secret, expected))) {
+      return context.json({ error: "UNAUTHENTICATED" }, 401);
+    }
+    const path = new URL(context.req.url).pathname;
+    if (!AGENT_ROUTES.some(([method, pattern]) => method === context.req.method && pattern.test(path))) {
+      return context.json({ error: "AGENT_ROUTE_NOT_ALLOWED" }, 403);
+    }
+    const runId = context.req.header(AGENT_RUN_HEADER) ?? "";
+    const run = await context.env.DB.prepare(
+      `SELECT ar.id, ar.status AS run_status, am.id AS mandate_id, am.status AS mandate_status,
+              am.pool_id, mw.id AS wallet_id, mw.user_id, u.owner_address
+       FROM automation_runs ar
+       JOIN automation_mandates am ON am.id = ar.mandate_id
+       JOIN managed_wallets mw ON mw.id = am.wallet_id
+       JOIN users u ON u.id = mw.user_id
+       WHERE ar.id = ?1`,
+    ).bind(runId).first<{ id: string; run_status: string; mandate_id: string; mandate_status: string;
+      pool_id: Hex; wallet_id: string; user_id: string; owner_address: Address }>();
+    if (!run || run.run_status !== "running" || run.mandate_status !== "active") {
+      return context.json({ error: "MANDATE_RUN_NOT_RUNNING" }, 403);
+    }
+    context.set("user", { id: run.user_id, ownerAddress: run.owner_address });
+    context.set("agentRun", { id: run.id, mandateId: run.mandate_id, poolId: run.pool_id, walletId: run.wallet_id });
+    await next();
+  };
+}
+
+type MandateRow = {
+  id: string;
+  pool_id: Hex;
+  mode: string;
+  status: string;
+  band: string;
+  max_position_usd: number;
+  max_runs_per_day: number;
+  created_at: number;
+  updated_at: number;
+};
+
+type RunRow = {
+  id: string;
+  mandate_id: string;
+  pool_id: Hex;
+  kind: string;
+  status: string;
+  band: string | null;
+  trigger: string;
+  reason: string | null;
+  provider: string | null;
+  model: string | null;
+  failure_reason: string | null;
+  created_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+};
+
+const publicMandate = (row: MandateRow) => ({
+  id: row.id, poolId: row.pool_id, mode: row.mode, status: row.status, band: row.band,
+  maxPositionUsd: row.max_position_usd, maxRunsPerDay: row.max_runs_per_day,
+  createdAt: row.created_at, updatedAt: row.updated_at,
+});
+
+const publicRun = (row: RunRow) => ({
+  id: row.id, mandateId: row.mandate_id, poolId: row.pool_id, kind: row.kind, status: row.status,
+  band: row.band, trigger: row.trigger, reason: row.reason, provider: row.provider, model: row.model,
+  failureReason: row.failure_reason, createdAt: row.created_at, startedAt: row.started_at,
+  finishedAt: row.finished_at,
+});
+
+const MANDATE_FIELDS = `id, pool_id, mode, status, band, max_position_usd, max_runs_per_day,
+  created_at, updated_at`;
+
+function parseMandate(body: Record<string, unknown>) {
+  const { poolId, mode, band, maxPositionUsd, maxRunsPerDay, status = "active" } = body;
+  const whole = (value: unknown, min: number, max: number) =>
+    typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+  if (
+    typeof poolId !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(poolId) ||
+    (mode !== "ask" && mode !== "autopilot") ||
+    (band !== "wide" && band !== "balanced" && band !== "narrow" && band !== "agent") ||
+    !whole(maxPositionUsd, 1, 1_000_000) || !whole(maxRunsPerDay, 1, 24) ||
+    (status !== "active" && status !== "paused")
+  ) throw new AuthError("INVALID_MANDATE", 400);
+  return { poolId: poolId.toLowerCase() as Hex, mode, band, maxPositionUsd: maxPositionUsd as number,
+    maxRunsPerDay: maxRunsPerDay as number, status };
+}
+
+/** The signed-in user's mandates and runs. Session only: the agent can't reach these. */
+export function registerAutomationRoutes(app: Hono<AppEnvironment>, now: () => number) {
+  const walletOf = async (context: Context<AppEnvironment>) => {
+    const wallet = await context.env.DB.prepare(
+      "SELECT id, state FROM managed_wallets WHERE user_id = ?1 AND state != 'closed'",
+    ).bind(context.get("user").id).first<{ id: string; state: string }>();
+    if (!wallet) throw new AuthError("WALLET_NOT_FOUND", 404);
+    return wallet;
+  };
+
+  app.get("/v1/automation/mandates", async (context) => {
+    const wallet = await walletOf(context);
+    const rows = await context.env.DB.prepare(
+      `SELECT ${MANDATE_FIELDS} FROM automation_mandates
+       WHERE wallet_id = ?1 AND status != 'revoked' ORDER BY created_at DESC`,
+    ).bind(wallet.id).all<MandateRow>();
+    return context.json({ mandates: (rows.results ?? []).map(publicMandate) });
+  });
+
+  // Creates the wallet's mandate for a pool, or changes the one it has.
+  app.put("/v1/automation/mandates", async (context) => {
+    const body = await context.req.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body || typeof body !== "object") throw new AuthError("INVALID_MANDATE", 400);
+    const mandate = parseMandate(body);
+    const wallet = await walletOf(context);
+    const pool = await context.env.DB.prepare(
+      "SELECT pool_id FROM v4_pool_directory WHERE pool_id = ?1",
+    ).bind(mandate.poolId).first<{ pool_id: string }>();
+    if (!pool) return context.json({ error: "POOL_NOT_FOUND" }, 404);
+    const timestamp = now();
+    await context.env.DB.prepare(
+      `INSERT INTO automation_mandates (id, wallet_id, pool_id, mode, status, band,
+         max_position_usd, max_runs_per_day, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+       ON CONFLICT (wallet_id, pool_id) WHERE status != 'revoked' DO UPDATE SET
+         mode = excluded.mode, status = excluded.status, band = excluded.band,
+         max_position_usd = excluded.max_position_usd,
+         max_runs_per_day = excluded.max_runs_per_day, updated_at = excluded.updated_at`,
+    ).bind(`mandate_${crypto.randomUUID()}`, wallet.id, mandate.poolId, mandate.mode, mandate.status,
+      mandate.band, mandate.maxPositionUsd, mandate.maxRunsPerDay, timestamp).run();
+    const saved = await context.env.DB.prepare(
+      `SELECT ${MANDATE_FIELDS} FROM automation_mandates
+       WHERE wallet_id = ?1 AND pool_id = ?2 AND status != 'revoked'`,
+    ).bind(wallet.id, mandate.poolId).first<MandateRow>();
+    if (!saved) throw new Error("Mandate was not saved");
+    return context.json({ mandate: publicMandate(saved) });
+  });
+
+  // Ends a mandate. A proposal waiting on it is declined; a run in progress is stopped by
+  // the signer, which refuses its next step.
+  app.delete("/v1/automation/mandates/:mandateId", async (context) => {
+    const wallet = await walletOf(context);
+    const mandateId = context.req.param("mandateId");
+    const timestamp = now();
+    await context.env.DB.batch([
+      context.env.DB.prepare(
+        `UPDATE automation_mandates SET status = 'revoked', updated_at = ?3
+         WHERE id = ?1 AND wallet_id = ?2 AND status != 'revoked'`,
+      ).bind(mandateId, wallet.id, timestamp),
+      context.env.DB.prepare(
+        `UPDATE automation_runs SET status = 'declined', finished_at = ?2, updated_at = ?2
+         WHERE mandate_id = ?1 AND status = 'proposed'`,
+      ).bind(mandateId, timestamp),
+    ]);
+    return context.json({ revoked: true });
+  });
+
+  app.get("/v1/automation/runs", async (context) => {
+    const wallet = await walletOf(context);
+    const rows = await context.env.DB.prepare(
+      `SELECT ar.id, ar.mandate_id, am.pool_id, ar.kind, ar.status, ar.band, ar.trigger, ar.reason,
+              ar.provider, ar.model, ar.failure_reason, ar.created_at, ar.started_at, ar.finished_at
+       FROM automation_runs ar JOIN automation_mandates am ON am.id = ar.mandate_id
+       WHERE am.wallet_id = ?1 ORDER BY ar.created_at DESC LIMIT 20`,
+    ).bind(wallet.id).all<RunRow>();
+    return context.json({ runs: (rows.results ?? []).map(publicRun) });
+  });
+
+  // The user says yes to something the agent proposed (ask-first mode).
+  app.post("/v1/automation/runs/:runId/approve", async (context) => {
+    const wallet = await walletOf(context);
+    const runId = context.req.param("runId");
+    const run = await context.env.DB.prepare(
+      `SELECT ar.id, ar.status, ar.created_at, am.id AS mandate_id, am.status AS mandate_status,
+              am.max_runs_per_day
+       FROM automation_runs ar JOIN automation_mandates am ON am.id = ar.mandate_id
+       WHERE ar.id = ?1 AND am.wallet_id = ?2`,
+    ).bind(runId, wallet.id).first<{ id: string; status: string; created_at: number; mandate_id: string;
+      mandate_status: string; max_runs_per_day: number }>();
+    if (!run) return context.json({ error: "RUN_NOT_FOUND" }, 404);
+    if (run.status !== "proposed") return context.json({ error: "RUN_NOT_PROPOSED" }, 409);
+    const timestamp = now();
+    if (run.created_at + DAY_MS < timestamp) {
+      await context.env.DB.prepare(
+        `UPDATE automation_runs SET status = 'expired', finished_at = ?2, updated_at = ?2
+         WHERE id = ?1 AND status = 'proposed'`,
+      ).bind(run.id, timestamp).run();
+      return context.json({ error: "RUN_EXPIRED" }, 409);
+    }
+    if (run.mandate_status !== "active") return context.json({ error: "MANDATE_NOT_ACTIVE" }, 409);
+    const started = await context.env.DB.prepare(
+      "SELECT COUNT(*) AS runs FROM automation_runs WHERE mandate_id = ?1 AND started_at >= ?2",
+    ).bind(run.mandate_id, timestamp - DAY_MS).first<{ runs: number }>();
+    if ((started?.runs ?? 0) >= run.max_runs_per_day) {
+      return context.json({ error: "MANDATE_DAILY_LIMIT_REACHED" }, 409);
+    }
+    await context.env.DB.prepare(
+      `UPDATE automation_runs SET status = 'running', started_at = ?2, updated_at = ?2
+       WHERE id = ?1 AND status = 'proposed'`,
+    ).bind(run.id, timestamp).run();
+    return context.json({ runId: run.id, status: "running" });
+  });
+
+  app.post("/v1/automation/runs/:runId/decline", async (context) => {
+    const wallet = await walletOf(context);
+    const timestamp = now();
+    await context.env.DB.prepare(
+      `UPDATE automation_runs SET status = 'declined', finished_at = ?3, updated_at = ?3
+       WHERE id = ?1 AND status = 'proposed'
+         AND mandate_id IN (SELECT id FROM automation_mandates WHERE wallet_id = ?2)`,
+    ).bind(context.req.param("runId"), wallet.id, timestamp).run();
+    return context.json({ runId: context.req.param("runId"), status: "declined" });
+  });
+}

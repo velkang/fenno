@@ -120,7 +120,20 @@ type Row = {
   constraints_json: string | null;
   wallet_id: string;
   circle_wallet_id: string | null;
+  automation_json: string;
 };
+
+type AutomationRow = {
+  run_id: string | null;
+  run_status: string | null;
+  mandate_id: string | null;
+  mandate_status: string | null;
+  mandate_pool_id: Hex | null;
+  mandate_max_position_usd: number | null;
+  mandate_max_runs_per_day: number | null;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
 
 const allowedKinds = new Set<string>([
   "erc20_approval",
@@ -216,7 +229,11 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
               si.recipient AS swap_recipient,
               si.amount_in AS swap_amount_in,
               si.amount_out_minimum AS swap_amount_out_minimum,
-              si.deadline AS swap_deadline
+              si.deadline AS swap_deadline,
+              json_object('run_id', wi.automation_run_id, 'run_status', ar.status,
+                'mandate_id', am.id, 'mandate_status', am.status, 'mandate_pool_id', am.pool_id,
+                'mandate_max_position_usd', am.max_position_usd,
+                'mandate_max_runs_per_day', am.max_runs_per_day) AS automation_json
        FROM wallet_intents wi
        JOIN managed_wallets mw ON mw.id = wi.wallet_id
        JOIN users u ON u.id = mw.user_id
@@ -229,6 +246,8 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
        LEFT JOIN position_action_intents pai ON pai.intent_id = wi.id
        LEFT JOIN usdc_withdrawal_intents uwi ON uwi.intent_id = wi.id
        LEFT JOIN swap_intents si ON si.intent_id = wi.id
+       LEFT JOIN automation_runs ar ON ar.id = wi.automation_run_id
+       LEFT JOIN automation_mandates am ON am.id = ar.mandate_id
        WHERE wi.id = ?1`,
     ).bind(intentId).first<Row>();
     if (!row || !allowedKinds.has(row.kind)) return null;
@@ -264,6 +283,7 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
           ...(row.approval_token_decimals === null ? {} : { tokenDecimals: row.approval_token_decimals }),
         }
       : undefined;
+    const automation = await this.loadAutomation(JSON.parse(row.automation_json) as AutomationRow);
     const mintPool = row.mint_pool_address && row.mint_token0_address && row.mint_token1_address &&
       row.mint_fee !== null && row.mint_tick_spacing !== null
       ? {
@@ -384,7 +404,22 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
             address: getAddress(row.wallet_address),
           }
         : undefined,
+      automation,
     };
+  }
+
+  /** The run and mandate behind an agent's request; undefined when the user made it. */
+  private async loadAutomation(row: AutomationRow): Promise<LoadedMainnetIntent["automation"]> {
+    if (row.run_id === null) return undefined;
+    const mandate = row.mandate_id !== null && row.mandate_status !== null && row.mandate_pool_id !== null &&
+      row.mandate_max_position_usd !== null && row.mandate_max_runs_per_day !== null
+      ? { status: row.mandate_status, poolId: row.mandate_pool_id,
+          maxPositionUsd: row.mandate_max_position_usd, maxRunsPerDay: row.mandate_max_runs_per_day }
+      : null;
+    const started = mandate === null ? null : await this.db.prepare(
+      "SELECT COUNT(*) AS runs FROM automation_runs WHERE mandate_id = ?1 AND started_at >= ?2",
+    ).bind(row.mandate_id, Date.now() - DAY_MS).first<{ runs: number }>();
+    return { runId: row.run_id, runStatus: row.run_status, mandate, runsStartedToday: started?.runs ?? 0 };
   }
 
   async save(value: MainnetEvaluation): Promise<void> {
