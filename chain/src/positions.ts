@@ -10,9 +10,10 @@ import {
 import {
   ALPHA_POOL,
   ARC_CHAIN_ID,
+  ARC_TOKENS,
   UNISWAP_V3_ARC,
 } from "./arc";
-import type { DiscoveredPool } from "./pool-discovery";
+import { SUPPORTED_UNISWAP_FEES, type DiscoveredPool } from "./pool-discovery";
 import type { ApprovalSimulationClient } from "./approvals";
 import type { ChainReadClient } from "./reads";
 
@@ -301,7 +302,8 @@ export async function simulateAlphaMint(input: {
   };
 }
 
-export async function verifyAlphaPositionImport(input: {
+/** A position Stillwater may act on: owned by the managed wallet, in a supported USDC pool. */
+export async function verifyV3Position(input: {
   client: ChainReadClient;
   owner: Address;
   tokenId: bigint;
@@ -332,11 +334,10 @@ export async function verifyAlphaPositionImport(input: {
   const token0 = typeof positionValue[2] === "string" ? getAddress(positionValue[2]) : null;
   const token1 = typeof positionValue[3] === "string" ? getAddress(positionValue[3]) : null;
   if (
-    token0 !== ALPHA_POOL.token0.address ||
-    token1 !== ALPHA_POOL.token1.address ||
-    positionValue[4] !== ALPHA_POOL.fee
+    (token0 !== ARC_TOKENS.USDC.address && token1 !== ARC_TOKENS.USDC.address) ||
+    !(SUPPORTED_UNISWAP_FEES as readonly unknown[]).includes(positionValue[4])
   ) {
-    throw new Error("Position is outside the alpha pool");
+    throw new Error("Position is not in a USDC pool");
   }
   return {
     tokenId: input.tokenId.toString(),

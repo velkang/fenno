@@ -1,6 +1,6 @@
 import { maxUint256, zeroAddress } from "viem";
 import { ARC_TOKENS } from "@stillwater/chain";
-import { api, type PublicPool } from "./api-client";
+import { api, type PricedPool, type PublicPool } from "./api-client";
 import { ensureV4Allowance } from "./v4-actions";
 
 // Swaps look the same for every pool; only the API calls differ between Uniswap v3 and v4.
@@ -10,12 +10,12 @@ export type SwapQuote = { amountIn: string; expectedAmountOut: string; minimumAm
 
 const SLIPPAGE_BPS = 100;
 
-const isV4 = (pool: PublicPool) => pool.protocol === "uniswap-v4";
-const usesNativeUsdc = (pool: PublicPool) =>
+const isV4 = (pool: Pick<PublicPool, "protocol">) => pool.protocol === "uniswap-v4";
+const usesNativeUsdc = (pool: PricedPool) =>
   isV4(pool) && [pool.token0, pool.token1].some((address) => address.toLowerCase() === zeroAddress);
 
 // A v4 pool can hold native USDC (18 decimals); every other USDC leg is the 6-decimal ERC-20.
-export function usdcDecimals(pool: PublicPool) {
+export function usdcDecimals(pool: PricedPool) {
   return usesNativeUsdc(pool) ? 18 : 6;
 }
 

@@ -68,7 +68,7 @@ export {
   positionManagerAbi,
   simulateMint,
   simulateAlphaMint,
-  verifyAlphaPositionImport,
+  verifyV3Position,
   type AlphaMint,
   type Mint,
   type MintPool,
@@ -86,13 +86,14 @@ export {
 } from "./position-actions";
 export {
   readAlphaPoolState,
-  readAlphaPositions,
   readAlphaWalletSummary,
+  readV3Positions,
   type AlphaPoolState,
-  type AlphaPosition,
   type AlphaWalletSummary,
   type ChainReadClient,
   type TokenAmount,
+  type V3PoolKey,
+  type V3Position,
 } from "./reads";
 export {
   discoverArcTokenPools,

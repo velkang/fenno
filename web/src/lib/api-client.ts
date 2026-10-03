@@ -43,6 +43,9 @@ export type PublicPool = {
   createdBlock?: number | null;
 };
 
+/** What working out a pool's token price needs. */
+export type PricedPool = Pick<PublicPool, "protocol" | "token" | "token0" | "token1" | "sqrtPriceX96">;
+
 export type V4Position = {
   tokenId: string;
   pool: PublicPool;
@@ -372,27 +375,11 @@ export const api = {
     });
   },
 
-  async importPosition(tokenId: string, idempotencyKey: string) {
-    return request<{
-      intentId: string;
-      status: string;
-      position: {
-        tokenId: string;
-        tickLower: number;
-        tickUpper: number;
-        liquidity: string;
-      };
-      existing?: boolean;
-    }>("/v1/wallets/positions/import", {
-      method: "POST",
-      body: JSON.stringify({ tokenId, idempotencyKey }),
-    });
-  },
-
   async preparePositionAction(params: {
     kind: "increase" | "decrease" | "collect" | "withdraw";
     action?: "increase" | "decrease" | "collect" | "withdraw";
     tokenId: string;
+    // The CirBtc/Usdc names predate other pools: these are the position's token0 and token1 amounts.
     amountCirBtc?: string;
     amountUsdc?: string;
     liquidity?: string;

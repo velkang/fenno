@@ -76,7 +76,7 @@ function asTuple(value: unknown, label: string): readonly unknown[] {
   return value;
 }
 
-async function readToken(
+export async function readToken(
   client: ChainReadClient,
   address: Address,
   owner?: Address,

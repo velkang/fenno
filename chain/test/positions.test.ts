@@ -8,7 +8,7 @@ import {
   buildMint,
   buildAlphaMint,
   simulateAlphaMint,
-  verifyAlphaPositionImport,
+  verifyV3Position,
   type ApprovalSimulationClient,
   type ChainReadClient,
 } from "../src";
@@ -109,23 +109,36 @@ describe("alpha position actions", () => {
     });
   });
 
-  it("imports only a pinned-pool position owned by the managed wallet", async () => {
-    const client = {
-      readContract: async ({ functionName }: { functionName: string }) =>
-        functionName === "ownerOf"
-          ? owner
-          : [0n, owner, ALPHA_POOL.token0.address, ALPHA_POOL.token1.address,
-              ALPHA_POOL.fee, -50, 50, 999n, 0n, 0n, 0n, 0n],
-    } as unknown as ChainReadClient;
+});
 
-    await expect(
-      verifyAlphaPositionImport({ client, owner, tokenId: 7n, blockNumber: 99n }),
-    ).resolves.toEqual({
-      tokenId: "7",
-      tickLower: -50,
-      tickUpper: 50,
-      liquidity: "999",
-      blockNumber: "99",
-    });
+describe("v3 position check", () => {
+  const meme = "0x2222222222222222222222222222222222222222" as const;
+  const other = "0x3333333333333333333333333333333333333333" as const;
+  const usdc = ARC_TOKENS.USDC.address;
+  const positionClient = (token0: string, token1: string, fee: number, holder: string = owner) => ({
+    readContract: async ({ functionName }: { functionName: string }) =>
+      functionName === "ownerOf"
+        ? holder
+        : [0n, owner, token0, token1, fee, -50, 50, 999n, 0n, 0n, 0n, 0n],
+  }) as unknown as ChainReadClient;
+  const verify = (client: ChainReadClient) =>
+    verifyV3Position({ client, owner, tokenId: 7n, blockNumber: 99n });
+
+  it("accepts a wallet-owned position in any USDC pool, in either token order", async () => {
+    const verified = { tokenId: "7", tickLower: -50, tickUpper: 50, liquidity: "999", blockNumber: "99" };
+
+    await expect(verify(positionClient(ALPHA_POOL.token0.address, usdc, ALPHA_POOL.fee)))
+      .resolves.toEqual(verified);
+    await expect(verify(positionClient(meme, usdc, 3_000))).resolves.toEqual(verified);
+    await expect(verify(positionClient(usdc, meme, 10_000))).resolves.toEqual(verified);
+  });
+
+  it("rejects a pair without USDC, an unsupported fee tier and another owner", async () => {
+    await expect(verify(positionClient(meme, other, 3_000)))
+      .rejects.toThrow("Position is not in a USDC pool");
+    await expect(verify(positionClient(meme, usdc, 250)))
+      .rejects.toThrow("Position is not in a USDC pool");
+    await expect(verify(positionClient(meme, usdc, 3_000, other)))
+      .rejects.toThrow("Position is not owned by the managed wallet");
   });
 });

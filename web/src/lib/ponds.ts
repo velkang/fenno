@@ -1,6 +1,6 @@
 import { zeroAddress } from "viem";
-import { ALPHA_POOL, type AlphaPosition, type AlphaWalletSummary } from "@stillwater/chain";
-import type { V4Position } from "./api-client";
+import type { AlphaWalletSummary, V3Position } from "@stillwater/chain";
+import type { PricedPool, V4Position } from "./api-client";
 import { tickToPrice } from "./range-math";
 import { poolSpotPrice } from "../pages/ExplorePage";
 
@@ -23,7 +23,7 @@ export type Pond = {
   valueUsd: number | null;
   gatheredUsd: number | null;
   v4?: V4Position;
-  v3?: AlphaPosition;
+  v3?: V3Position;
 };
 
 /** Raw token amounts a position holds at the current price (Uniswap's liquidity math). */
@@ -43,7 +43,14 @@ function describe(price: number, min: number, max: number): Pick<Pond, "state" |
   return { state: "feeding", nearEdge: position < 0.1 || position > 0.9 };
 }
 
-export function pondFromV4(position: V4Position): Pond {
+/** How a position is doing, from its pool's price. The same for v3 and v4. */
+function measure(position: {
+  pool: PricedPool;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: string;
+  fees: { amount0: string; amount1: string } | null;
+}): Pick<Pond, "symbol" | "pair" | "state" | "nearEdge" | "price" | "min" | "max" | "valueUsd" | "gatheredUsd"> {
   const { pool } = position;
   const usdcDecimals = [pool.token0, pool.token1].some((address) => address.toLowerCase() === zeroAddress) ? 18 : 6;
   const tokenIsZero = pool.token0.toLowerCase() === pool.token.address.toLowerCase();
@@ -60,30 +67,22 @@ export function pondFromV4(position: V4Position): Pond {
   const gatheredUsd = fees && Number.isFinite(price) ? toUsd(
     Number(tokenIsZero ? fees.amount0 : fees.amount1), Number(tokenIsZero ? fees.amount1 : fees.amount0)) : null;
   return {
-    key: `v4:${position.tokenId}`, tokenId: position.tokenId, symbol: pool.token.symbol,
-    pair: `${pool.token.symbol} / USDC`, ...describe(price, min, max), price, min, max,
-    valueUsd: Number.isFinite(price) ? toUsd(tokenRaw, usdcRaw) : null, gatheredUsd, v4: position,
+    symbol: pool.token.symbol, pair: `${pool.token.symbol} / USDC`, ...describe(price, min, max), price, min, max,
+    valueUsd: Number.isFinite(price) ? toUsd(tokenRaw, usdcRaw) : null, gatheredUsd,
   };
 }
 
-/** Positions in the pinned cirBTC/USDC v3 pool, from the wallet summary. */
+export function pondFromV4(position: V4Position): Pond {
+  return { key: `v4:${position.tokenId}`, tokenId: position.tokenId, ...measure(position), v4: position };
+}
+
+/** The wallet's v3 positions, from the wallet summary. */
 export function pondsFromSummary(summary: AlphaWalletSummary | null): Pond[] {
-  if (!summary) return [];
-  const { pool } = summary;
-  const [dec0, dec1] = [ALPHA_POOL.token0.decimals, ALPHA_POOL.token1.decimals];
-  const price = Number(pool.token1PerToken0);
-  return summary.positions.map((position) => {
-    const min = tickToPrice(position.tickLower, dec0, dec1);
-    const max = tickToPrice(position.tickUpper, dec0, dec1);
-    const amounts = positionAmounts(Number(position.liquidity), pool.sqrtPriceX96, position.tickLower, position.tickUpper);
-    return {
-      key: `v3:${position.tokenId}`, tokenId: position.tokenId, symbol: ALPHA_POOL.token0.symbol,
-      pair: `${ALPHA_POOL.token0.symbol} / USDC`, ...describe(price, min, max), price, min, max,
-      valueUsd: amounts.amount0 / 10 ** dec0 * price + amounts.amount1 / 10 ** dec1,
-      gatheredUsd: Number(position.claimable0.raw) / 10 ** dec0 * price + Number(position.claimable1.raw) / 10 ** dec1,
-      v3: position,
-    };
-  });
+  return (summary?.positions ?? []).map((position) => ({
+    key: `v3:${position.tokenId}`, tokenId: position.tokenId,
+    ...measure({ ...position, fees: { amount0: position.claimable0.raw, amount1: position.claimable1.raw } }),
+    v3: position,
+  }));
 }
 
 const NUMBER_WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];

@@ -13,7 +13,7 @@ import {
   withdrawalMessage,
   withdrawalTypes,
   type UsdcWithdrawal,
-  verifyAlphaPositionImport,
+  verifyV3Position,
   verifyArcPoolAddress,
   verifyArcSelectedPool,
   type ChainReadClient,
@@ -303,7 +303,7 @@ export async function evaluateLoadedMainnetIntent(input: {
       });
     }
     if (loaded.tokenId !== undefined) {
-      const current = await verifyAlphaPositionImport({
+      const current = await verifyV3Position({
         client: input.client,
         owner: loaded.wallet.address,
         tokenId: loaded.tokenId,

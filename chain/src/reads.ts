@@ -11,6 +11,11 @@ import {
   UNISWAP_SHARED_ARC,
   UNISWAP_V3_ARC,
 } from "./arc";
+import { readToken, SUPPORTED_UNISWAP_FEES, type DiscoveredToken } from "./pool-discovery";
+
+const factoryAbi = parseAbi([
+  "function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)",
+]);
 
 const poolAbi = parseAbi([
   "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
@@ -67,8 +72,18 @@ export type TokenAmount = {
   formatted: string;
 };
 
-export type AlphaPosition = {
+export type V3Position = {
   tokenId: string;
+  /** The USDC pool the position is in. `token` is the other token, with the owner's balance. */
+  pool: {
+    address: Address;
+    token: DiscoveredToken;
+    token0: Address;
+    token1: Address;
+    fee: number;
+    sqrtPriceX96: string;
+    tick: number;
+  };
   tickLower: number;
   tickUpper: number;
   liquidity: string;
@@ -90,7 +105,7 @@ export type AlphaWalletSummary = {
     positionManager: { usdc: TokenAmount; cirBtc: TokenAmount };
     permit2: { usdc: TokenAmount; cirBtc: TokenAmount };
   };
-  positions: AlphaPosition[];
+  positions: V3Position[];
 };
 
 const MAX_UINT128 = (1n << 128n) - 1n;
@@ -243,11 +258,23 @@ async function readAllowance(
   );
 }
 
-export async function readAlphaPositions(
+export type V3PoolKey = { token0: Address; token1: Address; fee: number };
+
+const poolKey = (token0: Address, token1: Address, fee: number) => `${token0}:${token1}:${fee}`;
+
+/**
+ * The v3 positions the owner holds in supported USDC pools. With `pools`, only positions
+ * in those pools: anyone can send a position to a wallet, so callers showing a user their
+ * own positions pass the pools that user opened.
+ */
+export async function readV3Positions(
   client: ChainReadClient,
   ownerInput: Address,
-  options: { blockNumber?: bigint } = {},
-): Promise<AlphaPosition[]> {
+  options: { blockNumber?: bigint; pools?: readonly V3PoolKey[] } = {},
+): Promise<V3Position[]> {
+  if (options.pools?.length === 0) return [];
+  const listed = options.pools && new Set(options.pools.map((pool) =>
+    poolKey(getAddress(pool.token0), getAddress(pool.token1), pool.fee)));
   const owner = getAddress(ownerInput);
   const manager = UNISWAP_V3_ARC.nonfungiblePositionManager.address;
   const positionCount = bigint(
@@ -290,51 +317,98 @@ export async function readAlphaPositions(
       "position",
     ),
   })));
-  const alphaPositions = allPositions.filter(({ position }) =>
-    address(position[2], "position token0") === ALPHA_POOL.token0.address &&
-    address(position[3], "position token1") === ALPHA_POOL.token1.address &&
-    number(position[4], "position fee") === ALPHA_POOL.fee);
+  const usdc = ARC_TOKENS.USDC;
+  // Several positions often share a pool, so each pool is read once.
+  const pools = new Map<string, Promise<V3Position["pool"]>>();
+  const readPool = (token0: Address, token1: Address, fee: number) => {
+    const key = poolKey(token0, token1, fee);
+    const known = pools.get(key);
+    if (known) return known;
+    const pool = (async () => {
+      const [token, poolValue] = await Promise.all([
+        readToken(client, token0 === usdc.address ? token1 : token0, owner, options.blockNumber),
+        client.readContract({
+          address: UNISWAP_V3_ARC.factory.address,
+          abi: factoryAbi,
+          functionName: "getPool",
+          args: [token0, token1, fee],
+          blockNumber: options.blockNumber,
+        }),
+      ]);
+      const poolAddress = address(poolValue, "factory pool");
+      const slot0 = tuple(
+        await client.readContract({
+          address: poolAddress,
+          abi: poolAbi,
+          functionName: "slot0",
+          blockNumber: options.blockNumber,
+        }),
+        "pool slot0",
+      );
+      return {
+        address: poolAddress,
+        token,
+        token0,
+        token1,
+        fee,
+        sqrtPriceX96: bigint(slot0[0], "pool sqrt price").toString(),
+        tick: number(slot0[1], "pool tick"),
+      };
+    })();
+    pools.set(key, pool);
+    return pool;
+  };
 
-  return Promise.all(alphaPositions.map(async ({ tokenId, position }): Promise<AlphaPosition> => {
-    const simulation = await client.simulateContract({
+  const positions = await Promise.all(allPositions.map(async ({ tokenId, position }): Promise<V3Position | null> => {
+    const token0 = address(position[2], "position token0");
+    const token1 = address(position[3], "position token1");
+    const fee = number(position[4], "position fee");
+    if (
+      (token0 !== usdc.address && token1 !== usdc.address) ||
+      !(SUPPORTED_UNISWAP_FEES as readonly number[]).includes(fee) ||
+      (listed && !listed.has(poolKey(token0, token1, fee)))
+    ) return null;
+    let pool;
+    try {
+      pool = await readPool(token0, token1, fee);
+    } catch {
+      return null; // A token that cannot be read is left out; the other positions still show.
+    }
+    const decimals0 = token0 === usdc.address ? usdc.decimals : pool.token.decimals;
+    const decimals1 = token1 === usdc.address ? usdc.decimals : pool.token.decimals;
+    // These fees are shown, not acted on. A token that refuses the transfer must not take
+    // the wallet summary down with it, so fall back to the fees recorded on the position.
+    const claimable = await client.simulateContract({
       account: owner,
       address: manager,
       abi: positionManagerAbi,
       functionName: "collect",
       args: [{ tokenId, recipient: owner, amount0Max: MAX_UINT128, amount1Max: MAX_UINT128 }],
       blockNumber: options.blockNumber,
-    });
-    const claimable = tuple(simulation.result, "collect simulation");
+    }).then(
+      (simulation) => tuple(simulation.result, "collect simulation"),
+      () => [position[10], position[11]],
+    );
 
     return {
       tokenId: tokenId.toString(),
+      pool,
       tickLower: number(position[5], "position lower tick"),
       tickUpper: number(position[6], "position upper tick"),
       liquidity: bigint(position[7], "position liquidity").toString(),
-      recordedOwed0: amount(
-        bigint(position[10], "position recorded token0 fees"),
-        ALPHA_POOL.token0.decimals,
-      ),
-      recordedOwed1: amount(
-        bigint(position[11], "position recorded token1 fees"),
-        ALPHA_POOL.token1.decimals,
-      ),
-      claimable0: amount(
-        bigint(claimable[0], "claimable token0 fees"),
-        ALPHA_POOL.token0.decimals,
-      ),
-      claimable1: amount(
-        bigint(claimable[1], "claimable token1 fees"),
-        ALPHA_POOL.token1.decimals,
-      ),
+      recordedOwed0: amount(bigint(position[10], "position recorded token0 fees"), decimals0),
+      recordedOwed1: amount(bigint(position[11], "position recorded token1 fees"), decimals1),
+      claimable0: amount(bigint(claimable[0], "claimable token0 fees"), decimals0),
+      claimable1: amount(bigint(claimable[1], "claimable token1 fees"), decimals1),
     };
   }));
+  return positions.filter((position): position is V3Position => position !== null);
 }
 
 export async function readAlphaWalletSummary(
   client: ChainReadClient,
   ownerInput: Address,
-  options: { blockNumber?: bigint } = {},
+  options: { blockNumber?: bigint; pools?: readonly V3PoolKey[] } = {},
 ): Promise<AlphaWalletSummary> {
   const owner = getAddress(ownerInput);
   const positionManager = UNISWAP_V3_ARC.nonfungiblePositionManager.address;
@@ -358,7 +432,7 @@ export async function readAlphaWalletSummary(
     readAllowance(client, ARC_TOKENS.cirBTC.address, owner, positionManager, ARC_TOKENS.cirBTC.decimals, options.blockNumber),
     readAllowance(client, ARC_TOKENS.USDC.address, owner, permit2, ARC_TOKENS.USDC.decimals, options.blockNumber),
     readAllowance(client, ARC_TOKENS.cirBTC.address, owner, permit2, ARC_TOKENS.cirBTC.decimals, options.blockNumber),
-    readAlphaPositions(client, owner, options),
+    readV3Positions(client, owner, options),
   ]);
 
   return {

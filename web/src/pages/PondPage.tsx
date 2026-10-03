@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import type { AlphaWalletSummary, Waters } from "@stillwater/chain";
-import { ALPHA_POOL } from "@stillwater/chain";
 import type { AuthUser, ManagedWalletRecord } from "../lib/api-client";
 import { Koi } from "../components/Icons";
 import { pondFromV4, pondHeadline, pondsFromSummary, tomoNotes, type TomoNote } from "../lib/ponds";
@@ -32,7 +31,7 @@ export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenPos
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }).toUpperCase();
 
   const openPondPool = (note: TomoNote) => {
-    const pool = note.pond?.v4?.pool.address ?? (note.pond?.v3 ? ALPHA_POOL.address : null);
+    const pool = note.pond?.v4?.pool.address ?? note.pond?.v3?.pool.address;
     if (pool) onOpenPool(pool);
   };
 

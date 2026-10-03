@@ -55,7 +55,7 @@ import {
   withdrawalMessage,
   withdrawalPayloadHash,
   withdrawalTypes,
-  verifyAlphaPositionImport,
+  verifyV3Position,
   type AlphaApprovalToken,
   type ApprovalSimulationClient,
   type ChainReadClient,
@@ -670,11 +670,21 @@ export function createApp(dependencies: AppDependencies = {}) {
 
   app.get("/v1/wallets/summary", async (context) => {
     const wallet = await context.env.DB.prepare(
-      "SELECT address FROM managed_wallets WHERE user_id = ?1 AND state != 'closed'",
+      "SELECT id, address FROM managed_wallets WHERE user_id = ?1 AND state != 'closed'",
     )
       .bind(context.get("user").id)
-      .first<{ address: Address }>();
+      .first<{ id: string; address: Address }>();
     if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
+    // Anyone can send a position to a wallet. Only positions in pools this wallet opened
+    // a position in through Stillwater are shown as the user's own.
+    const opened = await context.env.DB.prepare(
+      `SELECT DISTINCT mi.token0_address, mi.token1_address, mi.fee
+       FROM wallet_intents wi JOIN mint_intents mi ON mi.intent_id = wi.id
+       WHERE wi.wallet_id = ?1 AND wi.status = 'confirmed' AND wi.kind = 'position_mint'
+         AND mi.token0_address IS NOT NULL AND mi.token1_address IS NOT NULL AND mi.fee IS NOT NULL`,
+    ).bind(wallet.id).all<{ token0_address: Address; token1_address: Address; fee: number }>();
+    const pools = (opened.results ?? []).map((row) =>
+      ({ token0: row.token0_address, token1: row.token1_address, fee: row.fee }));
 
     const client =
       dependencies.createChainClient?.(context.env) ??
@@ -685,7 +695,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       }) as unknown as ChainReadClient);
     try {
       return context.json({
-        summary: await readAlphaWalletSummary(client, wallet.address),
+        summary: await readAlphaWalletSummary(client, wallet.address, { pools }),
       });
     } catch (error) {
       console.error("Arc wallet summary read failed", error);
@@ -2116,7 +2126,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     try {
       const block = await client.getBlock({ blockTag: "safe" });
       if (block.number === null || block.hash === null) throw new Error("No safe block");
-      const position = await verifyAlphaPositionImport({
+      const position = await verifyV3Position({
         client,
         owner: wallet.address,
         tokenId,
@@ -2189,7 +2199,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     const tokenId = BigInt(body.tokenId);
     let position;
     try {
-      position = await verifyAlphaPositionImport({
+      position = await verifyV3Position({
         client, owner: wallet.address, tokenId, blockNumber: block.number,
       });
     } catch {
@@ -2212,6 +2222,8 @@ export function createApp(dependencies: AppDependencies = {}) {
       !Number.isInteger(body.slippageBps)
     )) throw new AuthError("INVALID_POSITION_ACTION", 400);
 
+    // The CirBtc/Usdc field names predate other pools: they carry the position's
+    // token0 and token1 amounts, whichever tokens those are.
     let action;
     let expectedCirBtcRecord: string | null = null;
     let expectedUsdcRecord: string | null = null;

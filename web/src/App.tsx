@@ -331,9 +331,10 @@ export const App: React.FC = () => {
       </AnimatePresence>
 
       <IntentActionModal
+        // A fresh form for each position and action, so amounts never carry over.
+        key={modal ? `${modal.kind}:${modal.position.tokenId}` : 'closed'}
         modal={modal}
         summary={summary}
-        currentTick={summary?.pool?.tick}
         onClose={() => setModal(null)}
         onSuccess={refreshData}
         onNotify={addToast}

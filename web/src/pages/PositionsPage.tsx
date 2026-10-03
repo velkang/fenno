@@ -66,11 +66,7 @@ export function PositionsPage({
 
   const act = async (pond: Pond, action: PondAction) => {
     if (pond.v3) {
-      onOpenModal({
-        type: 'action',
-        kind: V3_MODAL_KIND[action],
-        position: pond.v3,
-      })
+      onOpenModal({ kind: V3_MODAL_KIND[action], position: pond.v3 })
       return
     }
     if (!pond.v4) return

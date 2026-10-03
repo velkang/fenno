@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { FADE } from "../lib/motion";
 import { formatUnits, zeroAddress } from "viem";
-import { api, type PublicPool } from "../lib/api-client";
+import { api, type PricedPool, type PublicPool } from "../lib/api-client";
 import { ARC_TOKENS, tokenWaters, type Waters } from "@stillwater/chain";
 import { IconSearch } from "../components/Icons";
 import { usdcDecimals as poolUsdcDecimals } from "../lib/swap-actions";
@@ -15,7 +15,7 @@ const TABLE_GRID = "grid grid-cols-[minmax(240px,2.2fr)_minmax(120px,1fr)_minmax
 const STATE_TEXT = "px-6 py-16 text-center text-[1.1rem] text-ink-muted";
 const CELL_LABEL = "hidden max-[800px]:mb-1 max-[800px]:block max-[800px]:text-[.8rem] max-[800px]:text-ink-faint";
 
-export function poolSpotPrice(pool: PublicPool): number {
+export function poolSpotPrice(pool: PricedPool): number {
   const ratio = (Number(pool.sqrtPriceX96) / 2 ** 96) ** 2;
   const tokenIsZero = pool.token0.toLowerCase() === pool.token.address.toLowerCase();
   const usdcDecimals = poolUsdcDecimals(pool);
