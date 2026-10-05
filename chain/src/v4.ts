@@ -42,6 +42,12 @@ const permit2Abi = parseAbi([
   "function allowance(address owner, address token, address spender) view returns (uint160 amount, uint48 expiration, uint48 nonce)",
 ]);
 
+/**
+ * How long a Permit2 approval lasts: the API asks for exactly this and the signer allows no
+ * longer. Long enough that repeat actions (a re-centre, the next swap) skip re-approving.
+ */
+export const PERMIT2_APPROVAL_SECONDS = 3 * 24 * 60 * 60;
+
 export const v4PositionManagerReadAbi = parseAbi([
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function getPoolAndPositionInfo(uint256 tokenId) view returns ((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,uint256 info)",

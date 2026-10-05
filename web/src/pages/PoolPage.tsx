@@ -60,6 +60,8 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
 
   // 0x800000 marks a v4 pool whose fee changes trade by trade.
   const fee = pool.fee === 0x800000 ? "a varying share" : `${(pool.fee / 10_000).toFixed(2)}%`;
+  // Nobody provides liquidity yet: there's no real price to add at, and nothing to trade against.
+  const empty = BigInt(pool.liquidity || "0") === 0n;
 
   // Fades in where the skeleton was.
   return <motion.div {...fade} className="mx-auto w-full max-w-[1280px] text-ink">
@@ -67,21 +69,37 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
       <div className="flex flex-col gap-3">
         {onBack ? <button type="button" onClick={onBack} className="min-h-10 self-start text-[1.05rem] text-link">← All pools</button> : null}
         <h1 className={PAGE_TITLE}>{pool.token.symbol} / USDC</h1>
-        <p className={PAGE_INTRO}>Earn {fee} of every trade in this pool by adding {pool.token.symbol} and USDC. {pool.token.symbol} is ${formatPoolPrice(poolSpotPrice(pool))} now.</p>
+        <p className={PAGE_INTRO}>{empty
+          ? `This pool would pay ${fee} of every trade, but nobody is trading in it yet.`
+          : <>Earn {fee} of every trade in this pool by adding {pool.token.symbol} and USDC. {pool.token.symbol} is ${formatPoolPrice(poolSpotPrice(pool))} now.</>}</p>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-3 max-[900px]:justify-start">
         <span className={`inline-flex min-h-11 items-center gap-2.5 rounded-full border px-4 text-[1.02rem] font-semibold whitespace-nowrap ${tier.tone}`}>
           <WaterMark tier={tierId} className="h-4 w-9" />{tier.label}</span>
         {/* Holding none? The amounts form offers "Buy" in place of the presets instead. */}
-        {wallet && tokenBalance !== undefined && tokenBalance > 0n ? <button type="button" onClick={() => setBuying(true)}
+        {!empty && wallet && tokenBalance !== undefined && tokenBalance > 0n ? <button type="button" onClick={() => setBuying(true)}
           className="min-h-11 rounded-full border border-line px-5 text-[1.02rem] font-semibold text-ink hover:bg-tint">
           Buy more {pool.token.symbol}
         </button> : null}
       </div>
     </div>
-    <DepositPage initialPoolAddress={address} initialTokenAddress={pool.token.address} pool={pool}
-      balancesKey={swaps} onBuyToken={() => setBuying(true)} wallet={wallet} summary={summary} onRefresh={onRefresh}
-      onNotify={onNotify} onOpenAuth={onOpenAuth} />
+    {empty ? (
+      <section aria-labelledby="empty-pool-title" className="flex max-w-[680px] flex-col items-start gap-4 rounded-[28px] border border-line bg-card p-8">
+        <h2 id="empty-pool-title" className="text-[1.5rem] font-semibold">Nobody is trading in this pool yet</h2>
+        <p className="text-[1.1rem] leading-relaxed text-ink-muted">
+          It has no liquidity, so there&apos;s no real price to add at and no trades to earn from. Stillwater only adds
+          to pools that are already trading. Pick another pool for {pool.token.symbol}, or check back later.
+        </p>
+        {onBack ? <button type="button" onClick={onBack}
+          className="min-h-12 whitespace-nowrap rounded-full bg-accent px-6 text-[1.05rem] font-semibold text-on-accent hover:bg-accent-hover">
+          See other pools
+        </button> : null}
+      </section>
+    ) : (
+      <DepositPage initialPoolAddress={address} initialTokenAddress={pool.token.address} pool={pool}
+        balancesKey={swaps} onBuyToken={() => setBuying(true)} wallet={wallet} summary={summary} onRefresh={onRefresh}
+        onNotify={onNotify} onOpenAuth={onOpenAuth} />
+    )}
     <AnimatePresence>
       {buying ? <BuyDrawer key="buy-drawer" symbol={pool.token.symbol} onClose={() => setBuying(false)}>
         <SwapPage initialPoolAddress={address} wallet={wallet} summary={summary}

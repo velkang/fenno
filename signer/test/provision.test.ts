@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type CreateCustodyWallet,
   ProvisioningError,
@@ -73,12 +73,15 @@ describe("wallet provisioning", () => {
       .resolves.toEqual({ walletId: "wallet-1", address: custodyAddress, created: false });
   });
 
-  it("reports a Circle failure without storing anything", async () => {
+  it("reports a Circle failure without storing anything, and logs Circle's reason", async () => {
     const store = new MemoryStore();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(provisionWallet(store, async () => { throw new Error("CIRCLE_401"); },
       { userId: "user-1", walletId: "wallet-1", now: 1 }))
       .rejects.toMatchObject({ code: "CUSTODY_WALLET_CREATE_FAILED" });
     expect(store.insertCount).toBe(0);
+    expect(logged).toHaveBeenCalledWith("Circle wallet creation failed", "user-1", "CIRCLE_401");
+    logged.mockRestore();
   });
 
   it("requires a verified owner before generating a managed wallet", async () => {

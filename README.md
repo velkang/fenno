@@ -119,6 +119,7 @@ All variables and secrets live outside the repository: in the Cloudflare dashboa
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | automation | Secrets for the decision providers. Without a key for the chosen provider, Tomo only watches and never decides |
 | `AGENT_PROVIDER`, `AGENT_FALLBACK_PROVIDER` | automation | Optional: which provider decides (`claude` by default) and which to try when it fails or declines |
 | `AGENT_CLAUDE_MODEL`, `AGENT_OPENAI_MODEL` | automation | Optional model overrides; defaults `claude-opus-5-5` and `gpt-6-astra` |
+| `AGENT_DAILY_CALL_LIMIT` | automation | Optional: most model calls a day across all users (UTC days, default 200). Past it, Tomo holds until the next day |
 | `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
 | `ARC_RPC_URL` | api, signer, indexer, automation | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
 

@@ -62,6 +62,7 @@ import {
   type Mint,
   type PoolDiscoveryClient,
   type PositionActionClient,
+  PERMIT2_APPROVAL_SECONDS,
 } from "@stillwater/chain";
 import {
   AuthError,
@@ -1295,7 +1296,8 @@ export function createApp(dependencies: AppDependencies = {}) {
     const amount = BigInt(body.amount as string);
     const spender = body.purpose === "swap"
       ? UNISWAP_SHARED_ARC.universalRouter.address : UNISWAP_V4_ARC.positionManager;
-    const expiration = body.stage === "permit2" ? BigInt(Math.floor(now() / 1_000) + 30 * 60) : 0n;
+    const expiration = body.stage === "permit2"
+      ? BigInt(Math.floor(now() / 1_000) + PERMIT2_APPROVAL_SECONDS) : 0n;
     let approval;
     try {
       approval = buildArcV4Approval({ poolId: pool.id, token, stage: body.stage,

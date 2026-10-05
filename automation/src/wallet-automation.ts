@@ -4,13 +4,16 @@ import { agentApi } from "./agent-api";
 import { decidersFromEnv, type DeciderEnv } from "./decide/provider";
 import { advance, startState, type Outcome, type RunPlan, type RunState } from "./stepper";
 import { WATCH_MS } from "./watch";
-import { watchWallet, type WatchChain, type WatchState } from "./watcher";
+import { reserveModelCall, watchWallet, type WatchChain, type WatchState } from "./watcher";
 
 const FINISH_RETRY_MS = 60_000;
+const DEFAULT_DAILY_CALL_LIMIT = 200;
 
 export type AutomationEnv = DeciderEnv & {
   DB: D1Database;
   ARC_RPC_URL?: string;
+  /** Most model calls a day across all users; past it the agent holds. Default 200. */
+  AGENT_DAILY_CALL_LIMIT?: string;
   // The Stillwater API, called as the agent for one run.
   API: Fetcher;
   AGENT_SECRET?: string;
@@ -88,8 +91,10 @@ export class WalletAutomation {
       const chain = createPublicClient({ chain: arc, transport: arcRpcTransport(this.env.ARC_RPC_URL),
         batch: { multicall: true } }) as unknown as WatchChain;
       const watch = this.deps.watch ?? watchWallet;
+      const limit = Number(this.env.AGENT_DAILY_CALL_LIMIT || DEFAULT_DAILY_CALL_LIMIT);
       const result = await watch(walletId, previous ?? { memories: {} },
-        { db: this.env.DB, chain, deciders: decidersFromEnv(this.env), now });
+        { db: this.env.DB, chain, deciders: decidersFromEnv(this.env), now,
+          reserveCall: () => reserveModelCall(this.env.DB, Date.now(), Number.isFinite(limit) ? limit : DEFAULT_DAILY_CALL_LIMIT) });
       if (result.stop) {
         // No active mandate left: stop until one is set again.
         await this.ctx.storage.delete(["watching", "watch"]);

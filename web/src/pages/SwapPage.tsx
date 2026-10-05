@@ -308,7 +308,7 @@ export function SwapPage({
                       {candidate.token.symbol} / USDC
                     </strong>
                     <span className={NOTE_TEXT}>
-                      {formatFeeTier(candidate.fee)} fee ·{' '}
+                      Fee {formatFeeTier(candidate.fee)} ·{' '}
                       {candidate.token.address.slice(0, 10)}…
                     </span>
                   </button>

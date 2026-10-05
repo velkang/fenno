@@ -58,7 +58,9 @@ export async function provisionWallet(
   try {
     // The user id makes retries return the same Circle wallet.
     custody = await createWallet(input.userId);
-  } catch {
+  } catch (error) {
+    // Circle's error code (e.g. CIRCLE_401) or the network error; never keys or request bodies.
+    console.error("Circle wallet creation failed", input.userId, error instanceof Error ? error.message : String(error));
     throw new ProvisioningError("CUSTODY_WALLET_CREATE_FAILED");
   }
   const wallet: StoredManagedWallet = {

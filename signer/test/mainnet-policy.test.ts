@@ -26,6 +26,7 @@ import {
   mintPayloadHash,
   swapPayloadHash,
   withdrawalPayloadHash,
+  PERMIT2_APPROVAL_SECONDS,
 } from "@stillwater/chain";
 import {
   validateMainnetIntent,
@@ -141,6 +142,23 @@ describe("mainnet signer policy", () => {
     expect(validateMainnetIntent(v4Request)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
     expect(validateMainnetIntent({ ...v4Request, transaction: { ...v4Request.transaction,
       data: "0x" } })).toEqual({ allowed: false, reason: "V4_APPROVAL_INVALID" });
+  });
+
+  it("lets a Permit2 approval last up to three days, and no longer", () => {
+    const expiringIn = (seconds: number) => {
+      const approval = buildArcV4Approval({ poolId: `0x${"11".repeat(32)}`, token: other, stage: "permit2",
+        amount: 100n, expiration: BigInt(Math.floor(now / 1_000) + seconds) });
+      return validateMainnetIntent(request({
+        intent: { kind: "v4_approval", status: "pending", expiresAt: now + 60_000,
+          payloadHash: arcV4ApprovalPayloadHash(approval) },
+        transaction: { chainId: ARC_CHAIN_ID, to: approval.to, data: approval.data, value: 0n },
+        v4Approval: { transaction: approval },
+      }));
+    };
+    expect(expiringIn(PERMIT2_APPROVAL_SECONDS)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
+    expect(PERMIT2_APPROVAL_SECONDS).toBe(3 * 24 * 60 * 60);
+    expect(expiringIn(PERMIT2_APPROVAL_SECONDS + 60).reason).toBe("PERMIT2_EXPIRATION_INVALID");
+    expect(expiringIn(-60).reason).toBe("PERMIT2_EXPIRATION_INVALID");
   });
   it("allows an exact approval but never an altered payload", () => {
     expect(validateMainnetIntent(request())).toEqual({

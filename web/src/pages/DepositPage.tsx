@@ -419,8 +419,12 @@ export const DepositPage: React.FC<Props> = ({
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not open the position";
-      onNotify("error", "Position not opened", msg === "V4_MINT_SIMULATION_FAILED" || msg === "V4_POOL_NOT_EXECUTABLE"
-        ? "This pool can't take new positions. Nothing was sent." : msg);
+      // "V4 pool is invalid" comes from the mint builder when the pool has emptied meanwhile.
+      const empty = msg === "V4 pool is invalid" || msg === "POOL_NOT_AVAILABLE";
+      onNotify("error", "Position not opened", empty
+        ? "Nobody is trading in this pool right now, so it can't take a position. Nothing was sent."
+        : msg === "V4_MINT_SIMULATION_FAILED" || msg === "V4_POOL_NOT_EXECUTABLE"
+          ? "This pool can't take new positions. Nothing was sent." : msg);
       // A failed step can still have cost a network fee: show current balances now.
       void onRefresh();
     } finally {

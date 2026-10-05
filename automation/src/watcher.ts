@@ -56,6 +56,8 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
   chain: WatchChain;
   deciders: Deciders | null;
   now: number;
+  /** Takes one model call from today's budget; false once it's used up. */
+  reserveCall?: () => Promise<boolean>;
 }): Promise<WatchResult> {
   const { db, chain, now } = deps;
   const wallet = await db.prepare("SELECT id, address, state FROM managed_wallets WHERE id = ?1")
@@ -97,7 +99,10 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
         mandate: { mode: mandate.mode, band: mandate.band, maxPositionUsd: mandate.max_position_usd,
           runsLeftToday: Math.max(0, mandate.max_runs_per_day - runs.startedToday) },
       };
-      const result = await decide(facts, deps.deciders.primary, deps.deciders.fallback);
+      const deciders = deps.reserveCall ? withBudget(deps.deciders, deps.reserveCall) : deps.deciders;
+      const result = await decide(facts, deciders.primary, deciders.fallback);
+      // Out of calls for today: hold, and ask again once there are calls to spare.
+      if (!result.decision && result.note === "daily_limit") continue;
       memory = asked(memory, trigger, now);
       memories[mandate.id] = memory;
       const decision = result.decision;
@@ -232,4 +237,30 @@ async function recentRuns(db: D1Database, mandateId: string, now: number) {
     open = false;
   }
   return { open, lastFinishedAt: latest?.finished_at ?? null, startedToday: started?.runs ?? 0 };
+}
+
+/** Each provider call takes one call from the budget first, and is skipped when there is none. */
+function withBudget(deciders: Deciders, reserve: () => Promise<boolean>): Deciders {
+  const limited = (decider: Decider): Decider => ({
+    ...decider,
+    async decide(facts) {
+      if (!(await reserve())) return { provider: decider.provider, model: decider.model, decision: null, note: "daily_limit" };
+      return decider.decide(facts);
+    },
+  });
+  return { primary: limited(deciders.primary), ...(deciders.fallback ? { fallback: limited(deciders.fallback) } : {}) };
+}
+
+/**
+ * Counts a model call against today's (UTC) limit across all users, in one statement so
+ * two wallets can't both take the last call. Nothing is written once the limit is reached.
+ */
+export async function reserveModelCall(db: D1Database, now: number, limit: number): Promise<boolean> {
+  if (limit <= 0) return false;
+  const counted = await db.prepare(
+    `INSERT INTO automation_model_calls (day, calls) VALUES (?1, 1)
+     ON CONFLICT (day) DO UPDATE SET calls = calls + 1 WHERE calls < ?2
+     RETURNING calls`,
+  ).bind(new Date(now).toISOString().slice(0, 10), limit).first<{ calls: number }>();
+  return counted !== null;
 }

@@ -32,6 +32,7 @@ import {
   type ArcV4Swap,
   type ArcV4PositionAction,
   type PositionAction,
+  PERMIT2_APPROVAL_SECONDS,
 } from "@stillwater/chain";
 import type { WalletState } from "./policy";
 
@@ -119,6 +120,10 @@ const reject = (reason: string): MainnetPolicyDecision => ({ allowed: false, rea
 const same = (left: Address, right: Address) =>
   left.toLowerCase() === right.toLowerCase();
 const minimumAllowed = (desired: bigint) => (desired * 9_500n) / 10_000n;
+const validPermit2Expiration = (expiration: bigint, now: number) => {
+  const nowSeconds = BigInt(Math.floor(now / 1_000));
+  return expiration > nowSeconds && expiration <= nowSeconds + BigInt(PERMIT2_APPROVAL_SECONDS);
+};
 const validDeadline = (deadline: bigint, now: number) => {
   const nowSeconds = BigInt(Math.floor(now / 1_000));
   return deadline > nowSeconds && deadline <= nowSeconds + 30n * 60n;
@@ -232,7 +237,7 @@ export function validateMainnetIntent(
     const approval = context.transaction;
     if (!same(request.transaction.to, approval.to) || request.transaction.data !== approval.data ||
         request.transaction.value !== 0n || approval.amount <= 0n) return reject("V4_APPROVAL_INVALID");
-    if (approval.stage === "permit2" && !validDeadline(approval.expiration, request.now)) {
+    if (approval.stage === "permit2" && !validPermit2Expiration(approval.expiration, request.now)) {
       return reject("PERMIT2_EXPIRATION_INVALID");
     }
     return arcV4ApprovalPayloadHash(approval) === request.intent.payloadHash

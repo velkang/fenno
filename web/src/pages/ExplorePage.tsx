@@ -45,7 +45,7 @@ export function formatPoolPrice(value: number): string {
 // 0x800000 marks a v4 pool whose fee changes trade by trade.
 export function formatFeeTier(fee: number | undefined): string {
   if (fee === undefined) return "—";
-  if (fee === 0x800000) return "Varying";
+  if (fee === 0x800000) return "Varies";
   return `${(fee / 10_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
 }
 

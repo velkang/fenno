@@ -9,3 +9,5 @@ OPENAI_API_KEY=
 # Optional model overrides
 AGENT_CLAUDE_MODEL=
 AGENT_OPENAI_MODEL=
+# Most model calls a day across all users; past it Tomo holds until the next UTC day.
+AGENT_DAILY_CALL_LIMIT=200

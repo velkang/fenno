@@ -17,6 +17,7 @@ export {
 } from "./arc";
 export {
   v4PoolId,
+  PERMIT2_APPROVAL_SECONDS,
   readArcV4Pool,
   readArcV4PositionFees,
   quoteArcV4Swap,

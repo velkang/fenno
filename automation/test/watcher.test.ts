@@ -3,7 +3,7 @@ import { zeroAddress, type Address } from "viem";
 import { v4PoolId } from "@stillwater/chain";
 import type { Decider } from "../src/decide/provider";
 import type { Decision } from "../src/decide/decision";
-import { watchWallet, type WatchChain } from "../src/watcher";
+import { reserveModelCall, watchWallet, type WatchChain } from "../src/watcher";
 
 const NOW = 2_000_000_000_000;
 const wallet = "0x1111111111111111111111111111111111111111" as Address;
@@ -135,6 +135,28 @@ describe("the watcher", () => {
     const lapse = writes.find((write) => write.sql.includes("RUN_LOST"));
     expect(lapse?.args[0]).toBe("run-old");
     expect(writes.some((write) => write.sql.includes("INSERT INTO automation_runs"))).toBe(true);
+  });
+
+  it("stops asking the model once the day's calls across all users are used", async () => {
+    const { db } = setup({ mode: "ask", band: "agent" });
+    const asked = decider(recentre);
+    const result = await watchWallet("wallet-1", { memories: {} }, { db, chain, now: NOW,
+      deciders: { primary: asked }, reserveCall: async () => false });
+    expect(asked.asked).toBe(0);
+    // Not counted as asked: it tries again once calls are available.
+    expect(result.state.memories["mandate-1"]!.lastAskedAt).toBe(0);
+  });
+
+  it("counts calls per UTC day and refuses past the limit without writing", async () => {
+    const counted: Array<{ sql: string; args: unknown[] }> = [];
+    const answers = [{ calls: 1 }, { calls: 2 }, null];
+    const db = { prepare: (sql: string) => ({ bind: (...args: unknown[]) => ({
+      async first() { counted.push({ sql, args }); return answers.shift(); } }) }) } as unknown as D1Database;
+    expect(await reserveModelCall(db, NOW, 2)).toBe(true);
+    expect(await reserveModelCall(db, NOW, 2)).toBe(true);
+    expect(await reserveModelCall(db, NOW, 2)).toBe(false);
+    expect(counted[0]!.args).toEqual([new Date(NOW).toISOString().slice(0, 10), 2]);
+    expect(counted[0]!.sql).toContain("WHERE calls < ?2");
   });
 
   it("stops when the wallet has no active mandate", async () => {
