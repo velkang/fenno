@@ -48,10 +48,29 @@ describe("mandate policy for agent requests", () => {
       .toBe("MANDATE_WALLET_NOT_ACTIVE");
   });
 
-  it("rejects anything outside the five v4 position actions", () => {
-    for (const kind of ["usdc_withdrawal", "single_pool_swap", "position_mint", "erc20_approval"] as const) {
+  it("rejects anything but approving, swapping, opening, collecting and closing", () => {
+    for (const kind of ["usdc_withdrawal", "position_increase", "position_decrease"] as const) {
       expect(validateMandate(request({ kind })).reason).toBe("MANDATE_KIND_NOT_ALLOWED");
     }
+  });
+
+  it("holds a v3 position's actions to the mandate's pool and limit", () => {
+    const v3Pool = "0x3333333333333333333333333333333333333333" as Hex;
+    const v3 = (changes: Partial<MandateRequest>) => validateMandate(request({
+      automation: { ...request().automation, mandate: { ...request().automation.mandate!, poolId: v3Pool } },
+      poolId: v3Pool, ...changes }));
+    for (const kind of ["erc20_approval", "position_collect", "position_withdraw"] as const) {
+      expect(v3({ kind, value: undefined }).allowed).toBe(true);
+    }
+    for (const kind of ["single_pool_swap", "position_mint"] as const) {
+      expect(v3({ kind }).allowed).toBe(true);
+      expect(v3({ kind, value: undefined }).reason).toBe("MANDATE_VALUE_UNKNOWN");
+      expect(v3({ kind, value: { usdc: 100_000_001n, usdcDecimals: 6 } }).reason).toBe("MANDATE_VALUE_EXCEEDS_LIMIT");
+    }
+    // Addresses compare without regard to letter case.
+    expect(v3({ kind: "position_mint", poolId: v3Pool.toUpperCase().replace("0X", "0x") as Hex }).allowed).toBe(true);
+    expect(v3({ kind: "position_mint", poolId: "0x4444444444444444444444444444444444444444" }).reason)
+      .toBe("MANDATE_POOL_NOT_ALLOWED");
   });
 
   it("rejects another pool", () => {

@@ -117,6 +117,7 @@ describe("wallet summary", () => {
       address: cirbtcPool,
       token: { address: ARC_TOKENS.cirBTC.address, symbol: "cirBTC", decimals: 8, balance: "250000000" },
       fee: 100,
+      tickSpacing: 1,
       sqrtPriceX96: Q96.toString(),
       tick: 0,
     });
@@ -127,6 +128,7 @@ describe("wallet summary", () => {
         token0: otherToken,
         token1: ARC_TOKENS.USDC.address,
         fee: 3_000,
+        tickSpacing: 60,
         sqrtPriceX96: (2n * Q96).toString(),
         tick: 13_863,
       },

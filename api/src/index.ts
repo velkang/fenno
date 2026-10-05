@@ -936,10 +936,11 @@ export function createApp(dependencies: AppDependencies = {}) {
     await context.env.DB.batch([
       context.env.DB.prepare(
         `INSERT INTO wallet_intents
-         (id, wallet_id, kind, payload_hash, status, expires_at, created_at, updated_at, idempotency_key_hash)
-         VALUES (?1, ?2, 'single_pool_swap', ?3, 'pending', ?4, ?5, ?5, ?6)`,
+         (id, wallet_id, kind, payload_hash, status, expires_at, created_at, updated_at, idempotency_key_hash,
+          automation_run_id)
+         VALUES (?1, ?2, 'single_pool_swap', ?3, 'pending', ?4, ?5, ?5, ?6, ?7)`,
       ).bind(intentId, swap.wallet.id, swapPayloadHash(built), Number(deadline) * 1_000,
-        timestamp, idempotencyKeyHash),
+        timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null),
       context.env.DB.prepare(
         `INSERT INTO swap_intents
          (intent_id, chain_id, pool_address, token_address, token_decimals, fee,
@@ -1415,8 +1416,8 @@ export function createApp(dependencies: AppDependencies = {}) {
     await context.env.DB.prepare(
       `INSERT OR IGNORE INTO wallet_intents (
         id, wallet_id, kind, payload_hash, status, expires_at, created_at,
-        updated_at, idempotency_key_hash
-      ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7)`,
+        updated_at, idempotency_key_hash, automation_run_id
+      ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7, ?8)`,
     )
       .bind(
         intentId,
@@ -1426,6 +1427,7 @@ export function createApp(dependencies: AppDependencies = {}) {
         timestamp + 10 * 60 * 1_000,
         timestamp,
         idempotencyKeyHash,
+        context.get("agentRun")?.id ?? null,
       )
       .run();
 
@@ -1908,11 +1910,11 @@ export function createApp(dependencies: AppDependencies = {}) {
       await context.env.DB.prepare(
         `INSERT INTO wallet_intents (
           id, wallet_id, kind, payload_hash, status, expires_at, created_at,
-          updated_at, idempotency_key_hash
-        ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7)`,
+          updated_at, idempotency_key_hash, automation_run_id
+        ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7, ?8)`,
       )
         .bind(intentId, wallet.id, kind, payloadHash, Number(deadline) * 1_000,
-          timestamp, idempotencyKeyHash)
+          timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null)
         .run();
 
       await context.env.DB.prepare(
@@ -1969,11 +1971,11 @@ export function createApp(dependencies: AppDependencies = {}) {
       await context.env.DB.prepare(
         `INSERT INTO wallet_intents (
           id, wallet_id, kind, payload_hash, status, failure_reason, expires_at, created_at,
-          updated_at, idempotency_key_hash
-        ) VALUES (?1, ?2, ?3, ?4, 'rejected', 'MINT_SIMULATION_FAILED', ?5, ?6, ?6, ?7)`,
+          updated_at, idempotency_key_hash, automation_run_id
+        ) VALUES (?1, ?2, ?3, ?4, 'rejected', 'MINT_SIMULATION_FAILED', ?5, ?6, ?6, ?7, ?8)`,
       )
         .bind(intentId, wallet.id, kind, fallbackPayloadHash, Number(deadline) * 1_000,
-          timestamp, idempotencyKeyHash)
+          timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null)
         .run();
       await context.env.DB.prepare(
         `INSERT INTO mint_intents (
@@ -2141,10 +2143,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     await context.env.DB.prepare(
       `INSERT OR IGNORE INTO wallet_intents (
         id, wallet_id, kind, payload_hash, status, expires_at, created_at,
-        updated_at, idempotency_key_hash
-      ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7)`,
+        updated_at, idempotency_key_hash, automation_run_id
+      ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7, ?8)`,
     ).bind(intentId, wallet.id, kind, payloadHash,
-      timestamp + 10 * 60 * 1_000, timestamp, idempotencyKeyHash).run();
+      timestamp + 10 * 60 * 1_000, timestamp, idempotencyKeyHash, context.get("agentRun")?.id ?? null).run();
     const stored = await context.env.DB.prepare(
       `SELECT id, payload_hash, status FROM wallet_intents
        WHERE wallet_id = ?1 AND kind = ?2 AND idempotency_key_hash = ?3`,

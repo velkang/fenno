@@ -5,6 +5,7 @@ import {
   readArcV4Pool,
   readArcV4Position,
   readArcV4PositionFees,
+  readV3Positions,
   usdcValue,
   type ChainReadClient,
 } from "@stillwater/chain";
@@ -18,9 +19,12 @@ export const AGENT_RUN_HEADER = "x-stillwater-run";
 /** The run an agent request belongs to. Set only for requests from the automation Worker. */
 export type AgentRun = { id: string; mandateId: string; poolId: Hex; walletId: string };
 
+/** A mandate's pool: a v4 pool id (32 bytes) or a v3 pool address (20 bytes). */
+const isV3Pool = (poolId: string) => /^0x[0-9a-fA-F]{40}$/.test(poolId);
+
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
-// Everything the agent may call: reading and working a v4 position. Withdrawals, wallet
+// Everything the agent may call: reading and working a v4 or v3 position. Withdrawals, wallet
 // settings and mandates are deliberately absent; the signer checks every request again.
 const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
   ["GET", /^\/v1\/wallets\/v4\/positions$/],
@@ -28,6 +32,10 @@ const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
   ["POST", /^\/v1\/wallets\/v4\/swaps\/(quote|prepare)$/],
   ["POST", /^\/v1\/wallets\/v4\/approvals\/prepare$/],
   ["POST", /^\/v1\/wallets\/v4\/positions\/(mint|actions)\/prepare$/],
+  ["GET", /^\/v1\/wallets\/tokens\/0x[0-9a-fA-F]{40}\/pools$/],
+  ["POST", /^\/v1\/wallets\/swaps\/(quote|prepare)$/],
+  ["POST", /^\/v1\/wallets\/approvals\/prepare$/],
+  ["POST", /^\/v1\/wallets\/positions\/(mint|actions)\/prepare$/],
   ["POST", /^\/v1\/wallets\/intents\/[A-Za-z0-9_-]+\/execute$/],
   ["POST", /^\/v1\/wallets\/attempts\/[A-Za-z0-9_-]+\/reconcile$/],
 ];
@@ -129,7 +137,7 @@ function parseMandate(body: Record<string, unknown>) {
   const whole = (value: unknown, min: number, max: number) =>
     typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
   if (
-    typeof poolId !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(poolId) ||
+    typeof poolId !== "string" || !/^0x([0-9a-fA-F]{64}|[0-9a-fA-F]{40})$/.test(poolId) ||
     (mode !== "ask" && mode !== "autopilot") ||
     (band !== "wide" && band !== "balanced" && band !== "narrow" && band !== "agent") ||
     !whole(maxPositionUsd, 1, 1_000_000) || !whole(maxRunsPerDay, 1, 24) ||
@@ -146,6 +154,58 @@ const ONE_OFF_HEADROOM = 1.25;
 const OWN_MANDATE_HEADROOM = 1.1;
 // Below this, the network fees of closing, swapping and reopening cost more than the band holds.
 const MIN_RECENTRE_USD = 1;
+
+type Valuation = { poolId: Hex; valueUsd: number } | { error: string; status: 404 | 422 };
+
+/** A v4 position's pool and its value now, uncollected fees included. */
+async function valueV4Position(context: Context<AppEnvironment>, client: ChainReadClient, owner: Address,
+  tokenId: string): Promise<Valuation> {
+  let position;
+  try {
+    position = await readArcV4Position({ client, tokenId: BigInt(tokenId), owner });
+  } catch {
+    return { error: "V4_POSITION_NOT_OWNED", status: 404 };
+  }
+  if (position.liquidity <= 0n) return { error: "POSITION_EMPTY", status: 422 };
+  const listed = await context.env.DB.prepare("SELECT pool_id FROM v4_pool_directory WHERE pool_id = ?1")
+    .bind(position.poolId.toLowerCase()).first<{ pool_id: Hex }>();
+  if (!listed) return { error: "POOL_NOT_ELIGIBLE", status: 404 };
+  const pool = await readArcV4Pool({ client, key: position.poolKey });
+  if (!pool) return { error: "POOL_NOT_AVAILABLE", status: 422 };
+  const amounts = positionAmounts(Number(position.liquidity), pool.sqrtPriceX96,
+    position.tickLower, position.tickUpper);
+  // The close also collects uncollected fees, and the new band holds those too. A fee read
+  // that fails counts as none; the mandate's headroom covers small amounts.
+  const fees = await readArcV4PositionFees({ client, poolId: position.poolId, tokenId: BigInt(tokenId),
+    tickLower: position.tickLower, tickUpper: position.tickUpper }).catch(() => ({ amount0: 0n, amount1: 0n }));
+  const value = usdcValue({ pool, amount0: BigInt(Math.floor(amounts.amount0)) + fees.amount0,
+    amount1: BigInt(Math.floor(amounts.amount1)) + fees.amount1 });
+  if (!value) return { error: "POOL_NOT_ELIGIBLE", status: 422 };
+  return { poolId: listed.pool_id, valueUsd: Number(value.usdc) / 10 ** value.usdcDecimals };
+}
+
+/** A v3 position in a pool Stillwater lists, and its value now, claimable fees included. */
+async function valueV3Position(context: Context<AppEnvironment>, client: ChainReadClient, owner: Address,
+  poolAddress: string, tokenId: string): Promise<Valuation> {
+  const listed = await context.env.DB.prepare(
+    "SELECT pool_address, token0_address, token1_address, fee FROM pool_directory WHERE pool_address = ?1",
+  ).bind(poolAddress).first<{ pool_address: string; token0_address: Address; token1_address: Address; fee: number }>();
+  if (!listed) return { error: "POOL_NOT_ELIGIBLE", status: 404 };
+  const positions = await readV3Positions(client, owner, { pools: [{ token0: listed.token0_address,
+    token1: listed.token1_address, fee: listed.fee }] }).catch(() => []);
+  const position = positions.find((entry) => entry.tokenId === tokenId &&
+    entry.pool.address.toLowerCase() === poolAddress.toLowerCase());
+  if (!position) return { error: "POSITION_NOT_OWNED", status: 404 };
+  if (BigInt(position.liquidity) <= 0n) return { error: "POSITION_EMPTY", status: 422 };
+  const amounts = positionAmounts(Number(position.liquidity), position.pool.sqrtPriceX96,
+    position.tickLower, position.tickUpper);
+  const value = usdcValue({ pool: { currency0: position.pool.token0, currency1: position.pool.token1,
+    sqrtPriceX96: position.pool.sqrtPriceX96 },
+    amount0: BigInt(Math.floor(amounts.amount0)) + BigInt(position.claimable0.raw),
+    amount1: BigInt(Math.floor(amounts.amount1)) + BigInt(position.claimable1.raw) });
+  if (!value) return { error: "POOL_NOT_ELIGIBLE", status: 422 };
+  return { poolId: poolAddress.toLowerCase() as Hex, valueUsd: Number(value.usdc) / 10 ** value.usdcDecimals };
+}
 
 /** The signed-in user's mandates and runs. Session only: the agent can't reach these. */
 export function registerAutomationRoutes(
@@ -185,9 +245,10 @@ export function registerAutomationRoutes(
     if (!body || typeof body !== "object") throw new AuthError("INVALID_MANDATE", 400);
     const mandate = parseMandate(body);
     const wallet = await walletOf(context);
-    const pool = await context.env.DB.prepare(
-      "SELECT pool_id FROM v4_pool_directory WHERE pool_id = ?1",
-    ).bind(mandate.poolId).first<{ pool_id: string }>();
+    const pool = await context.env.DB.prepare(isV3Pool(mandate.poolId)
+      ? "SELECT pool_address FROM pool_directory WHERE pool_address = ?1"
+      : "SELECT pool_id FROM v4_pool_directory WHERE pool_id = ?1",
+    ).bind(mandate.poolId).first();
     if (!pool) return context.json({ error: "POOL_NOT_FOUND" }, 404);
     const timestamp = now();
     await context.env.DB.prepare(
@@ -264,31 +325,13 @@ export function registerAutomationRoutes(
 
     // What the position is worth now, to size (or check) the mandate the signer will hold it to.
     const client = chainClient(context.env);
-    let position;
-    try {
-      position = await readArcV4Position({ client, tokenId: BigInt(tokenId), owner: wallet.address });
-    } catch {
-      return context.json({ error: "V4_POSITION_NOT_OWNED" }, 404);
-    }
-    if (position.liquidity <= 0n) return context.json({ error: "POSITION_EMPTY" }, 422);
-    const listed = await context.env.DB.prepare("SELECT pool_id FROM v4_pool_directory WHERE pool_id = ?1")
-      .bind(position.poolId.toLowerCase()).first<{ pool_id: Hex }>();
-    if (!listed) return context.json({ error: "POOL_NOT_ELIGIBLE" }, 404);
-    const pool = await readArcV4Pool({ client, key: position.poolKey });
-    if (!pool) return context.json({ error: "POOL_NOT_AVAILABLE" }, 422);
-    const amounts = positionAmounts(Number(position.liquidity), pool.sqrtPriceX96,
-      position.tickLower, position.tickUpper);
-    // The close also collects uncollected fees, and the new band holds those too. A fee read
-    // that fails counts as none; the mandate's headroom covers small amounts.
-    const fees = await readArcV4PositionFees({ client, poolId: position.poolId, tokenId: BigInt(tokenId),
-      tickLower: position.tickLower, tickUpper: position.tickUpper }).catch(() => ({ amount0: 0n, amount1: 0n }));
-    const value = usdcValue({ pool, amount0: BigInt(Math.floor(amounts.amount0)) + fees.amount0,
-      amount1: BigInt(Math.floor(amounts.amount1)) + fees.amount1 });
-    if (!value) return context.json({ error: "POOL_NOT_ELIGIBLE" }, 422);
-    const valueUsd = Number(value.usdc) / 10 ** value.usdcDecimals;
+    const requestedPool = typeof body.poolId === "string" ? body.poolId : null;
+    const valued = requestedPool !== null && isV3Pool(requestedPool)
+      ? await valueV3Position(context, client, wallet.address, requestedPool, tokenId)
+      : await valueV4Position(context, client, wallet.address, tokenId);
+    if ("error" in valued) return context.json({ error: valued.error }, valued.status);
+    const { poolId, valueUsd } = valued;
     if (valueUsd < MIN_RECENTRE_USD) return context.json({ error: "POSITION_TOO_SMALL" }, 422);
-
-    const poolId = listed.pool_id;
     const timestamp = now();
     const own = await context.env.DB.prepare(
       `SELECT id, status, max_position_usd, max_runs_per_day FROM automation_mandates

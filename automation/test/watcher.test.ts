@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { zeroAddress, type Address } from "viem";
-import { v4PoolId } from "@stillwater/chain";
+import { ARC_TOKENS, UNISWAP_V3_ARC, v4PoolId } from "@stillwater/chain";
 import type { Decider } from "../src/decide/provider";
 import type { Decision } from "../src/decide/decision";
 import { reserveModelCall, watchWallet, type WatchChain } from "../src/watcher";
@@ -157,6 +157,63 @@ describe("the watcher", () => {
     expect(await reserveModelCall(db, NOW, 2)).toBe(false);
     expect(counted[0]!.args).toEqual([new Date(NOW).toISOString().slice(0, 10), 2]);
     expect(counted[0]!.sql).toContain("WHERE calls < ?2");
+  });
+
+  it("watches a v3 position the same way, asking about it with the same facts", async () => {
+    const v3Pool = "0x3333333333333333333333333333333333333333";
+    const usdc = ARC_TOKENS.USDC.address;
+    // Token ids 5 (closed, empty) and 9 (live): the newest live one in the mandate's pool is watched.
+    // About $60: liquidity 10^9 across ticks -600..600 at $1 (token and USDC both 6 decimals).
+    const v3Chain = {
+      async readContract({ address, functionName, args = [] }: { address: string; functionName: string; args?: unknown[] }) {
+        if (address === UNISWAP_V3_ARC.nonfungiblePositionManager.address && functionName === "balanceOf") return 2n;
+        if (functionName === "tokenOfOwnerByIndex") return args[1] === 0n ? 5n : 9n;
+        if (functionName === "positions") {
+          return [0n, wallet, token, usdc, 3000, -600, 600, args[0] === 9n ? 10n ** 9n : 0n, 0n, 0n, 0n, 0n];
+        }
+        if (functionName === "getPool") return v3Pool;
+        if (functionName === "slot0") return [2n ** 96n, 0, 0, 0, 0, 0, true];
+        if (functionName === "decimals") return 6;
+        if (functionName === "symbol") return "QUANTS";
+        if (functionName === "balanceOf" || functionName === "allowance") return 0n;
+        throw new Error(`Unexpected ${functionName}`);
+      },
+      async simulateContract() { return { result: [0n, 0n] }; },
+      async getGasPrice() { return 20_000_000_000n; },
+    } as unknown as WatchChain;
+    const writes: Array<{ sql: string; args: unknown[] }> = [];
+    const answer = (sql: string): unknown => {
+      if (sql.includes("FROM managed_wallets")) return { id: "wallet-1", address: wallet, state: "active" };
+      if (sql.includes("FROM automation_mandates")) return [{ id: "mandate-3", pool_id: v3Pool, mode: "ask",
+        band: "agent", max_position_usd: 500, max_runs_per_day: 2 }];
+      if (sql.includes("FROM pool_directory")) return { token_address: token, token_symbol: "QUANTS", token_decimals: 6,
+        token0_address: token, token1_address: usdc, fee: 3000 };
+      if (sql.includes("COUNT(*)")) return { runs: 0 };
+      return null;
+    };
+    const db = { prepare: (sql: string) => {
+      const statement = { sql, args: [] as unknown[],
+        bind(...args: unknown[]) { statement.args = args; return statement; },
+        async first() { return answer(sql); },
+        async all() { return { results: answer(sql) ?? [] }; },
+        async run() { writes.push(statement); return {}; } };
+      return statement;
+    } } as unknown as D1Database;
+    let facts: unknown;
+    const watching: Decider = { provider: "openai", model: "gpt-6-luna",
+      async decide(given) { facts = given; return { provider: "openai", model: "gpt-6-luna", decision: recentre }; } };
+
+    await watchWallet("wallet-1", { memories: {} }, { db, chain: v3Chain, now: NOW, deciders: { primary: watching } });
+    expect(facts).toMatchObject({ token: { symbol: "QUANTS" }, feeTierPercent: 0.3, band: { priceIs: "inside" } });
+    const { priceUsd, band, position } = facts as { priceUsd: number; band: { minUsd: number; maxUsd: number };
+      position: { valueUsd: number } };
+    expect(priceUsd).toBeCloseTo(1, 6);
+    expect(band.minUsd).toBeCloseTo(0.9418, 3);
+    expect(band.maxUsd).toBeCloseTo(1.0618, 3);
+    expect(position.valueUsd).toBeGreaterThan(50);
+    expect(position.valueUsd).toBeLessThan(70);
+    const insert = writes.find((write) => write.sql.includes("INSERT INTO automation_runs"))!;
+    expect(insert.args[9]).toBe("9");
   });
 
   it("stops when the wallet has no active mandate", async () => {

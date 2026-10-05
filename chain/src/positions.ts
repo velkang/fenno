@@ -216,6 +216,7 @@ export async function verifyV3Position(input: {
   const token0 = typeof positionValue[2] === "string" ? getAddress(positionValue[2]) : null;
   const token1 = typeof positionValue[3] === "string" ? getAddress(positionValue[3]) : null;
   if (
+    !token0 || !token1 ||
     (token0 !== ARC_TOKENS.USDC.address && token1 !== ARC_TOKENS.USDC.address) ||
     !(SUPPORTED_UNISWAP_FEES as readonly unknown[]).includes(positionValue[4])
   ) {
@@ -223,6 +224,9 @@ export async function verifyV3Position(input: {
   }
   return {
     tokenId: input.tokenId.toString(),
+    token0,
+    token1,
+    fee: Number(positionValue[4]),
     tickLower: Number(positionValue[5]),
     tickUpper: Number(positionValue[6]),
     liquidity: String(positionValue[7]),

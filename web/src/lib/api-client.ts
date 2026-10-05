@@ -155,9 +155,9 @@ export const api = {
     return request<{ intentId: string; status: string; simulation: { gasEstimate: string } }>(
       "/v1/wallets/v4/positions/mint/prepare", { method: "POST", body: JSON.stringify(params) });
   },
-  async startRecentre(tokenId: string, band: RecentreBand) {
+  async startRecentre(tokenId: string, band: RecentreBand, poolId: string) {
     return request<{ run: AutomationRun }>("/v1/automation/runs", {
-      method: "POST", body: JSON.stringify({ tokenId, band }) });
+      method: "POST", body: JSON.stringify({ tokenId, band, poolId }) });
   },
   async listMandates() {
     return request<{ mandates: Mandate[] }>("/v1/automation/mandates");

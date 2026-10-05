@@ -12,6 +12,8 @@ export type PondState = "feeding" | "resting-below" | "resting-above";
 export type Pond = {
   key: string;
   tokenId: string;
+  /** The v4 pool id or v3 pool address, as automation names the pool. */
+  poolId: string;
   symbol: string;
   pair: string;
   state: PondState;
@@ -63,13 +65,14 @@ function measure(position: {
 }
 
 export function pondFromV4(position: V4Position): Pond {
-  return { key: `v4:${position.tokenId}`, tokenId: position.tokenId, ...measure(position), v4: position };
+  return { key: `v4:${position.tokenId}`, tokenId: position.tokenId, poolId: position.pool.address,
+    ...measure(position), v4: position };
 }
 
 /** The wallet's v3 positions, from the wallet summary. */
 export function pondsFromSummary(summary: WalletSummary | null): Pond[] {
   return (summary?.positions ?? []).map((position) => ({
-    key: `v3:${position.tokenId}`, tokenId: position.tokenId,
+    key: `v3:${position.tokenId}`, tokenId: position.tokenId, poolId: position.pool.address,
     ...measure({ ...position, fees: { amount0: position.claimable0.raw, amount1: position.claimable1.raw } }),
     v3: position,
   }));
@@ -110,7 +113,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function runNotes(ponds: Pond[], runs: AutomationRun[], now: number): TomoNote[] {
   const notes: TomoNote[] = [];
   for (const run of runs) {
-    const pond = ponds.find((entry) => entry.v4?.pool.address.toLowerCase() === run.poolId.toLowerCase());
+    const pond = ponds.find((entry) => entry.poolId.toLowerCase() === run.poolId.toLowerCase());
     const name = pond ? `your ${pond.symbol} pond` : "your pond";
     const recent = (run.finishedAt ?? 0) > now - DAY_MS;
     const closing = run.kind === "close";
@@ -153,10 +156,7 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number, runs: AutomationRu
         advice: "There's no rush. Many people wait a few days to see if the price drifts back before moving their band.",
         steps: [
           `Wait: if ${pond.symbol} rises back into your band, the pond starts earning again by itself.`,
-          ...(pond.v4
-            ? ["Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price."]
-            : [`Or close the pond. You get your ${pond.symbol} and any fees back in your Stillwater wallet.`,
-              "Then open the pool again and choose a band around today's price."]),
+          "Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price.",
         ] });
     } else if (pond.state === "resting-above") {
       notes.push({ id: `${pond.key}:above`, pond,
@@ -164,10 +164,7 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number, runs: AutomationRu
         advice: "Your pond sold its token on the way up. You can wait for the price to return, or start a new band higher up.",
         steps: [
           `Wait: if ${pond.symbol} falls back into your band, the pond starts earning again by itself.`,
-          ...(pond.v4
-            ? ["Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price."]
-            : ["Or close the pond. You get your USDC and any fees back in your Stillwater wallet.",
-              "Then open the pool again and choose a band around today's price."]),
+          "Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price.",
         ] });
     } else if (pond.nearEdge) {
       notes.push({ id: `${pond.key}:edge`, pond,

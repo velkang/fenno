@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zeroAddress } from "viem";
+import { zeroAddress, type Hex } from "viem";
 import {
   ARC_CHAIN_ID,
   ARC_TOKENS,
@@ -10,6 +10,8 @@ import {
   buildArcV4PositionAction,
   arcV4PositionActionPayloadHash,
   arcV4SwapPayloadHash,
+  buildCollectAll,
+  positionActionPayloadHash,
   v4PoolId,
 } from "@stillwater/chain";
 import {
@@ -167,6 +169,33 @@ describe("mainnet audit-only evaluator", () => {
       .toBe("MANDATE_VALUE_EXCEEDS_LIMIT");
     expect((await evaluate({ status: "revoked", maxPositionUsd: 5 })).reasonCode)
       .toBe("MANDATE_NOT_ACTIVE");
+  });
+  it("holds an agent's v3 collect to the pool its position is in", async () => {
+    const token = "0x2222222222222222222222222222222222222222" as const;
+    const v3Pool = "0x3333333333333333333333333333333333333333" as const;
+    const collect = buildCollectAll({ tokenId: 7n, recipient: wallet });
+    const chain = {
+      getBlock: async () => ({ number: 100n, hash: blockHash }),
+      readContract: async ({ functionName }: { functionName: string }) =>
+        functionName === "ownerOf" ? wallet
+          : functionName === "getPool" ? v3Pool
+            : [0n, wallet, token, ARC_TOKENS.USDC.address, 3000, -60, 60, 1_000n, 0n, 0n, 0n, 0n],
+      call: async () => ({ data: "0x" }),
+    } as unknown as MainnetAuditClient;
+    const evaluate = (poolId: Hex) =>
+      evaluateMainnetIntent({ intentId: "agent-collect-1", client: chain, emergencyStop: false,
+        now: () => now, store: new MemoryStore({
+          ...fixture(), v4Approval: undefined, intentId: "agent-collect-1", kind: "position_collect",
+          payloadHash: positionActionPayloadHash(collect),
+          transaction: { chainId: ARC_CHAIN_ID, to: collect.to, data: collect.data, value: 0n },
+          tokenId: 7n,
+          automation: { runId: "run-1", runStatus: "running", runsStartedToday: 1,
+            mandate: { status: "active", poolId, maxPositionUsd: 5, maxRunsPerDay: 3 } },
+        }) });
+
+    expect((await evaluate(v3Pool)).reasonCode).toBe("POLICY_ALLOWED");
+    expect((await evaluate("0x4444444444444444444444444444444444444444")).reasonCode)
+      .toBe("MANDATE_POOL_NOT_ALLOWED");
   });
   it("re-quotes a v4 swap when ERC-20 USDC is currency1", async () => {
     const token = "0x2222222222222222222222222222222222222222" as const;

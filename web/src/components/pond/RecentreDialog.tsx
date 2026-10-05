@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { formatUnits, zeroAddress } from "viem";
 import { BANDS, bandTicks, positionAmounts, rebalanceSwap } from "@stillwater/chain";
-import { api, ApiError, type AutomationRun, type RecentreBand, type V4Position } from "../../lib/api-client";
+import { api, ApiError, type AutomationRun, type PricedPool, type RecentreBand } from "../../lib/api-client";
 import { runFailureMessage } from "../../lib/automation";
 import { fade, lift } from "../../lib/motion";
 import { formatPoolPrice, poolSpotPrice } from "../../pages/ExplorePage";
@@ -10,8 +10,17 @@ import { STRATEGIES, type StrategyKey } from "../StrategyCards";
 
 const BAND_OF: Record<StrategyKey, RecentreBand> = { conservative: "wide", balanced: "balanced", focused: "narrow" };
 
+/** A v4 or v3 position: what the preview needs to work out the new band. */
+type RecentrePosition = {
+  tokenId: string;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: string;
+  pool: PricedPool & { address: string; tickSpacing: number };
+};
+
 type Props = {
-  position: V4Position;
+  position: RecentrePosition;
   resting: boolean;
   onClose: () => void;
   onStarted: (run: AutomationRun) => void;
@@ -22,7 +31,7 @@ const amount = (raw: bigint, decimals: number) =>
   Number(formatUnits(raw, decimals)).toLocaleString("en-US", { maximumSignificantDigits: 6 });
 
 /** What re-centring will do, in plain steps, before anything is sent. */
-function usePlan(position: V4Position, band: RecentreBand) {
+function usePlan(position: RecentrePosition, band: RecentreBand) {
   return useMemo(() => {
     const { pool } = position;
     const tokenIsZero = pool.token0.toLowerCase() === pool.token.address.toLowerCase();
@@ -57,7 +66,7 @@ export function RecentreDialog({ position, resting, onClose, onStarted, onError 
   const start = async () => {
     setStarting(true);
     try {
-      const { run } = await api.startRecentre(position.tokenId, band);
+      const { run } = await api.startRecentre(position.tokenId, band, position.pool.address);
       onStarted(run);
     } catch (error) {
       onError(error instanceof ApiError ? runFailureMessage(error.code) : "Couldn't start. Try again.");

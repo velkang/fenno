@@ -17,9 +17,9 @@ type Props = {
   cared?: ReadonlyMap<string, "ask" | "autopilot">;
 };
 
-const ACTIONS: { id: PondAction; label: string; v3Only?: boolean; v4Only?: boolean }[] = [
-  { id: "recentre", label: "Re-centre band", v4Only: true },
-  { id: "care", label: "Tomo's care", v4Only: true },
+const ACTIONS: { id: PondAction; label: string; v3Only?: boolean }[] = [
+  { id: "recentre", label: "Re-centre band" },
+  { id: "care", label: "Tomo's care" },
   { id: "collect", label: "Collect fees" },
   { id: "add", label: "Add more", v3Only: true },
   { id: "remove", label: "Remove some", v3Only: true },
@@ -74,7 +74,7 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, r
             {expanded ? (
               <motion.div key="actions" {...reveal} className="overflow-hidden">
               <div className="flex flex-wrap gap-3 pb-6">
-                {ACTIONS.filter((action) => (!action.v3Only || pond.v3) && (!action.v4Only || pond.v4)).map((action) => (
+                {ACTIONS.filter((action) => !action.v3Only || pond.v3).map((action) => (
                   <button key={action.id} type="button" disabled={busy || moving} onClick={() => onAction(pond, action.id)}
                     className={action.id === "close"
                       ? "min-h-11 rounded-full border border-danger-line bg-danger-soft px-5 text-[1rem] font-semibold text-danger hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"

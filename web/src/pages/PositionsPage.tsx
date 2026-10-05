@@ -82,25 +82,17 @@ export function PositionsPage({
   const runningPools = new Set(automation.runs
     .filter((run) => run.status === 'running')
     .map((run) => run.poolId.toLowerCase()))
-  const mandateFor = (pond: Pond) => pond.v4
-    ? mandates.find((mandate) => mandate.poolId.toLowerCase() === pond.v4!.pool.address.toLowerCase())
-    : undefined
+  const mandateFor = (pond: Pond) =>
+    mandates.find((mandate) => mandate.poolId.toLowerCase() === pond.poolId.toLowerCase())
   const caredPonds = new Map(ponds.flatMap((pond) => {
     const mandate = mandateFor(pond)
     return mandate?.status === 'active' ? [[pond.key, mandate.mode] as const] : []
   }))
   const movingPonds = new Set(ponds
-    .filter((pond) => pond.v4 && runningPools.has(pond.v4.pool.address.toLowerCase()))
+    .filter((pond) => runningPools.has(pond.poolId.toLowerCase()))
     .map((pond) => pond.key))
 
   const act = async (pond: Pond, action: PondAction) => {
-    if (pond.v3) {
-      // Re-centring and Tomo's care are for v4 ponds only.
-      if (action === 'recentre' || action === 'care') return
-      onOpenModal({ kind: V3_MODAL_KIND[action], position: pond.v3 })
-      return
-    }
-    if (!pond.v4) return
     if (action === 'recentre') {
       setRecentring(pond)
       return
@@ -109,6 +101,11 @@ export function PositionsPage({
       setCaring(pond)
       return
     }
+    if (pond.v3) {
+      onOpenModal({ kind: V3_MODAL_KIND[action], position: pond.v3 })
+      return
+    }
+    if (!pond.v4) return
     if (
       action === 'close' &&
       !window.confirm(
@@ -218,10 +215,10 @@ export function PositionsPage({
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
-        {recentring?.v4 ? (
+        {recentring && (recentring.v4 ?? recentring.v3) ? (
           <RecentreDialog
             key={recentring.key}
-            position={recentring.v4}
+            position={(recentring.v4 ?? recentring.v3)!}
             resting={recentring.state !== 'feeding'}
             onClose={() => setRecentring(null)}
             onStarted={() => {

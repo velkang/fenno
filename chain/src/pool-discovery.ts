@@ -23,7 +23,7 @@ const erc20Abi = parseAbi([
 ]);
 
 export const SUPPORTED_UNISWAP_FEES = [100, 500, 3_000, 10_000] as const;
-const TICK_SPACING_BY_FEE: Record<number, number> = {
+export const TICK_SPACING_BY_FEE: Record<number, number> = {
   100: 1,
   500: 10,
   3_000: 60,

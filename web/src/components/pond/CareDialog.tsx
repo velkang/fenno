@@ -30,7 +30,7 @@ const BANDS: { id: BandChoice; name: string }[] = [
 const OPTION = "flex cursor-pointer flex-col gap-0.5 rounded-[18px] border px-4 py-3";
 const chosen = (on: boolean) => (on ? "border-accent bg-feed-soft" : "border-line bg-field hover:bg-tint");
 
-/** Whether Tomo may look after one v4 pond, and within what limits. */
+/** Whether Tomo may look after one pond, and within what limits. */
 export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) {
   const live = mandate && mandate.status === "active" ? mandate : undefined;
   const [mode, setMode] = useState<Mode>(live?.mode ?? "ask");
@@ -51,7 +51,6 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
   const tooLow = limitValid && pond.valueUsd !== null && limitUsd < pond.valueUsd * 1.1;
 
   const save = async () => {
-    if (!pond.v4) return;
     setSaving(true);
     try {
       if (mode === "off") {
@@ -59,7 +58,7 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
         onSaved(`Tomo won't change your ${pond.symbol} pond.`);
         return;
       }
-      await api.saveMandate({ poolId: pond.v4.pool.address, mode, band, maxPositionUsd: limitUsd, maxRunsPerDay: perDay });
+      await api.saveMandate({ poolId: pond.poolId, mode, band, maxPositionUsd: limitUsd, maxRunsPerDay: perDay });
       onSaved(mode === "ask"
         ? `Tomo will suggest changes to your ${pond.symbol} pond for you to approve.`
         : `Tomo will look after your ${pond.symbol} pond and tell you what it did.`);

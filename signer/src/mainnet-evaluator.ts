@@ -7,6 +7,8 @@ import {
   readArcV4Position,
   quoteArcV4Swap,
   readArcV4Pool,
+  readV3PoolAddress,
+  positionManagerAbi,
   quoteSwap,
   type Swap,
   withdrawalDomain,
@@ -21,7 +23,7 @@ import {
   type PoolDiscoveryClient,
   usdcValue,
 } from "@stillwater/chain";
-import { verifyTypedData, type Address, type Hex } from "viem";
+import { decodeFunctionData, verifyTypedData, type Address, type Hex } from "viem";
 import {
   validateMainnetIntent,
   type MainnetIntentKind,
@@ -162,6 +164,8 @@ export async function evaluateLoadedMainnetIntent(input: {
   let v4PositionAction: MainnetPolicyRequest["v4PositionAction"];
   // What an agent's mint or swap puts into the pool, at the price just read.
   let depositValue: ReturnType<typeof usdcValue> | undefined;
+  // The v3 pool a request works in, for holding an agent to its mandate.
+  let v3PoolAddress: Address | undefined;
   try {
     if (loaded.v4PositionAction) {
       const stored = loaded.v4PositionAction;
@@ -262,6 +266,12 @@ export async function evaluateLoadedMainnetIntent(input: {
       });
       swap = { transaction: loaded.swap.transaction, tokenAddress: loaded.swap.tokenAddress,
         freshAmountOut: quoted.amountOut };
+      v3PoolAddress = pool.address;
+      const tokenIn = loaded.swap.transaction.tokenIn.toLowerCase();
+      depositValue = usdcValue({ pool: { currency0: pool.token0.address, currency1: pool.token1.address,
+        sqrtPriceX96: pool.sqrtPriceX96 },
+        amount0: tokenIn === pool.token0.address.toLowerCase() ? loaded.swap.transaction.amountIn : 0n,
+        amount1: tokenIn === pool.token1.address.toLowerCase() ? loaded.swap.transaction.amountIn : 0n });
     }
     if (loaded.withdrawal) {
       const signatureValid = await verifyTypedData({
@@ -286,12 +296,13 @@ export async function evaluateLoadedMainnetIntent(input: {
         poolAddress: loaded.approvalPool.poolAddress,
         blockNumber: safeBlock.number,
       });
+      v3PoolAddress = loaded.approvalPool.poolAddress;
     }
     if (loaded.mintPool) {
       if (!input.client.getCode) throw new Error("Pool verification unavailable");
       const tokenAddress = loaded.mintPool.token0 === ARC_TOKENS.USDC.address
         ? loaded.mintPool.token1 : loaded.mintPool.token0;
-      await verifyArcSelectedPool({
+      const selected = await verifyArcSelectedPool({
         client: input.client as PoolDiscoveryClient,
         token: { address: tokenAddress, symbol: "TOKEN", decimals: loaded.mintPool.tokenDecimals ?? 18 },
         pool: {
@@ -311,6 +322,13 @@ export async function evaluateLoadedMainnetIntent(input: {
         },
         blockNumber: safeBlock.number,
       });
+      v3PoolAddress = selected.address;
+      const decoded = decodeFunctionData({ abi: positionManagerAbi, data: loaded.transaction.data });
+      if (decoded.functionName === "mint") {
+        depositValue = usdcValue({ pool: { currency0: selected.token0.address, currency1: selected.token1.address,
+          sqrtPriceX96: selected.sqrtPriceX96 }, amount0: decoded.args[0].amount0Desired,
+          amount1: decoded.args[0].amount1Desired });
+      }
     }
     if (loaded.tokenId !== undefined) {
       const current = await verifyV3Position({
@@ -319,6 +337,9 @@ export async function evaluateLoadedMainnetIntent(input: {
         tokenId: loaded.tokenId,
         blockNumber: safeBlock.number,
       });
+      if (loaded.automation) {
+        v3PoolAddress = await readV3PoolAddress(input.client, current, safeBlock.number);
+      }
       position = {
         tokenId: loaded.tokenId,
         owner: loaded.wallet.address,
@@ -352,7 +373,7 @@ export async function evaluateLoadedMainnetIntent(input: {
       kind: loaded.kind,
       walletState: loaded.wallet.state,
       poolId: loaded.v4Mint?.pool.id ?? loaded.v4Approval?.pool.id ?? loaded.v4Swap?.pool.id ??
-        loaded.v4PositionAction?.poolId,
+        loaded.v4PositionAction?.poolId ?? v3PoolAddress,
       value: depositValue ?? undefined,
     });
     if (!mandate.allowed) {

@@ -6,7 +6,7 @@ import {
   type Address,
 } from "viem";
 import { ARC_TOKENS, UNISWAP_V3_ARC } from "./arc";
-import { readToken, SUPPORTED_UNISWAP_FEES, type DiscoveredToken } from "./pool-discovery";
+import { readToken, SUPPORTED_UNISWAP_FEES, TICK_SPACING_BY_FEE, type DiscoveredToken } from "./pool-discovery";
 
 const factoryAbi = parseAbi([
   "function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)",
@@ -63,6 +63,7 @@ export type V3Position = {
     token0: Address;
     token1: Address;
     fee: number;
+    tickSpacing: number;
     sqrtPriceX96: string;
     tick: number;
   };
@@ -138,6 +139,21 @@ export type V3PoolKey = { token0: Address; token1: Address; fee: number };
 
 const poolKey = (token0: Address, token1: Address, fee: number) => `${token0}:${token1}:${fee}`;
 
+/** The v3 pool for a pair and fee tier, from the factory. */
+export async function readV3PoolAddress(
+  client: Pick<ChainReadClient, "readContract">,
+  key: V3PoolKey,
+  blockNumber?: bigint,
+): Promise<Address> {
+  return address(await client.readContract({
+    address: UNISWAP_V3_ARC.factory.address,
+    abi: factoryAbi,
+    functionName: "getPool",
+    args: [key.token0, key.token1, key.fee],
+    blockNumber,
+  }), "factory pool");
+}
+
 /**
  * The v3 positions the owner holds in supported USDC pools. With `pools`, only positions
  * in those pools: anyone can send a position to a wallet, so callers showing a user their
@@ -201,17 +217,10 @@ export async function readV3Positions(
     const known = pools.get(key);
     if (known) return known;
     const pool = (async () => {
-      const [token, poolValue] = await Promise.all([
+      const [token, poolAddress] = await Promise.all([
         readToken(client, token0 === usdc.address ? token1 : token0, owner, options.blockNumber),
-        client.readContract({
-          address: UNISWAP_V3_ARC.factory.address,
-          abi: factoryAbi,
-          functionName: "getPool",
-          args: [token0, token1, fee],
-          blockNumber: options.blockNumber,
-        }),
+        readV3PoolAddress(client, { token0, token1, fee }, options.blockNumber),
       ]);
-      const poolAddress = address(poolValue, "factory pool");
       const slot0 = tuple(
         await client.readContract({
           address: poolAddress,
@@ -227,6 +236,7 @@ export async function readV3Positions(
         token0,
         token1,
         fee,
+        tickSpacing: TICK_SPACING_BY_FEE[fee]!,
         sqrtPriceX96: bigint(slot0[0], "pool sqrt price").toString(),
         tick: number(slot0[1], "pool tick"),
       };

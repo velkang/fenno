@@ -19,6 +19,11 @@ function erc20Pool(): PoolInfo {
     sqrtPriceX96: (2n ** 96n).toString(), tick: 0, liquidity: "1000000000000", lpFee: 3000 };
 }
 
+// A v4 run never makes v3 calls.
+const noV3 = Object.fromEntries(["v3Holdings", "prepareV3Withdraw", "prepareV3Approval", "quoteV3Swap",
+  "prepareV3Swap", "prepareV3Mint"].map((name) => [name, async () => { throw new Error(`${name} in a v4 run`); }])) as unknown as
+  Pick<AgentApi, "v3Holdings" | "prepareV3Withdraw" | "prepareV3Approval" | "quoteV3Swap" | "prepareV3Swap" | "prepareV3Mint">;
+
 /** A wallet on a pretend chain: transactions settle when sent, each costing 1,000 raw USDC of gas. */
 function fakeApi(options: { pool?: PoolInfo; failReconcile?: string; failPrepare?: string; busyOnce?: boolean;
   startUsdc?: bigint; giftAfterClose?: bigint; stayPending?: boolean } = {}) {
@@ -38,6 +43,7 @@ function fakeApi(options: { pool?: PoolInfo; failReconcile?: string; failPrepare
   };
   const add = (address: string, delta: bigint) => balances.set(address, (balances.get(address) ?? 0n) + delta);
   const api: AgentApi = {
+    ...noV3,
     async pool() { return pool; },
     async balances(_poolId, purpose) {
       return {
@@ -174,6 +180,110 @@ describe("rebalance stepper", () => {
     const { api, sent } = fakeApi();
     expect(await drive(api, plan(erc20Pool()), NOW + 31 * 60 * 1_000)).toEqual({ kind: "failed", reason: "RUN_TIMED_OUT" });
     expect(sent).toEqual([]);
+  });
+});
+
+// The QUANTS-style v3 pool: token (6 decimals) first, ERC-20 USDC second, one raw USDC per raw token.
+const v3Pool = "0x3333333333333333333333333333333333333333" as Hex;
+const v3PoolInfo: PoolInfo = { address: v3Pool, token: { address: token, symbol: "MEME", decimals: 6 },
+  token0: token, token1: usdc, fee: 3000, tickSpacing: 60, sqrtPriceX96: (2n ** 96n).toString(), tick: 0,
+  liquidity: "1000000000000" };
+
+/** A v3 wallet on a pretend chain, as `fakeApi`: approvals go straight to the router or position manager. */
+function fakeV3Api(options: { closeReturns?: { token: bigint; usdc: bigint }; failReconcile?: string } = {}) {
+  const balances = new Map<string, bigint>([[token, 5_000_000n], [usdc, 10_000_000n]]);
+  const allowed = new Map<string, bigint>(); // `${token}:${"router" | "manager"}`
+  const intents = new Map<string, { step: string; apply: () => void }>();
+  const sent: string[] = [];
+  const minted: Array<{ amountToken: string; amountUsdc: string; tickLower: number; tickUpper: number; poolAddress: string }> = [];
+  const add = (address: string, delta: bigint) => balances.set(address, (balances.get(address) ?? 0n) + delta);
+  const allowance = (address: string, spender: string) => allowed.get(`${address}:${spender}`) ?? 0n;
+  const prepare = (step: string, apply: () => void) => {
+    const intentId = `intent-${intents.size + 1}`;
+    intents.set(intentId, { step, apply });
+    return { intentId };
+  };
+  const unused = async () => { throw new Error("v4 call in a v3 run"); };
+  const api: AgentApi = {
+    pool: async () => v3PoolInfo,
+    balances: unused, prepareWithdraw: unused, prepareApproval: unused, quoteSwap: unused, prepareSwap: unused,
+    prepareMint: unused,
+    async v3Holdings() {
+      return { token: { address: token, balance: String(balances.get(token)), allowance: String(allowance(token, "manager")) },
+        usdc: { address: usdc, balance: String(balances.get(usdc)), allowance: String(allowance(usdc, "manager")) } };
+    },
+    async prepareV3Withdraw() {
+      const back = options.closeReturns ?? { token: 1_000_000n, usdc: 0n };
+      return prepare("close", () => { add(token, back.token); add(usdc, back.usdc); });
+    },
+    async prepareV3Approval({ tokenAddress, spender }) {
+      return prepare(`${spender ?? "mint"}-approve`, () =>
+        allowed.set(`${tokenAddress}:${spender === "swap" ? "router" : "manager"}`, 2n ** 256n - 1n));
+    },
+    async quoteV3Swap({ direction, amountIn }) {
+      const tokenIn = direction === "buy" ? usdc : token;
+      return { expectedAmountOut: amountIn, minimumAmountOut: amountIn, allowance: String(allowance(tokenIn, "router")) };
+    },
+    async prepareV3Swap({ direction, amountIn }) {
+      const [tokenIn, tokenOut] = direction === "buy" ? [usdc, token] : [token, usdc];
+      if (allowance(tokenIn, "router") < BigInt(amountIn)) throw new ApiCallError("ROUTER_APPROVAL_REQUIRED", 409);
+      return prepare("swap", () => { add(tokenIn, -BigInt(amountIn)); add(tokenOut, BigInt(amountIn)); });
+    },
+    async prepareV3Mint(body) {
+      if (allowance(token, "manager") < BigInt(body.amountToken) || allowance(usdc, "manager") < BigInt(body.amountUsdc)) {
+        throw new ApiCallError("MINT_SIMULATION_FAILED", 422);
+      }
+      // The worst case: the open takes all it names.
+      return prepare("mint", () => { minted.push(body); add(token, -BigInt(body.amountToken)); add(usdc, -BigInt(body.amountUsdc)); });
+    },
+    async execute(intentId) {
+      const intent = intents.get(intentId)!;
+      intent.apply();
+      add(usdc, -1_000n);
+      sent.push(intent.step);
+      return { attemptId: `attempt-${intentId}` };
+    },
+    async reconcile(attemptId) {
+      const step = intents.get(attemptId.replace("attempt-", ""))!.step;
+      return options.failReconcile === step ? { status: "failed", reasonCode: "RECEIPT_REVERTED" } : { status: "confirmed" };
+    },
+  };
+  return { api, sent, minted, balances };
+}
+
+describe("re-centring a v3 position", () => {
+  it("closes, swaps, approves and reopens in the same pool with only the closed position's money", async () => {
+    const { api, sent, minted, balances } = fakeV3Api();
+    expect(await drive(api, plan(v3PoolInfo))).toEqual({ kind: "done" });
+    expect(sent).toEqual(["close", "swap-approve", "swap", "mint-approve", "mint-approve", "mint"]);
+    const [opened] = minted;
+    expect(opened!.poolAddress).toBe(v3Pool);
+    expect(BigInt(opened!.amountToken) + BigInt(opened!.amountUsdc)).toBeLessThanOrEqual(1_000_000n);
+    expect(BigInt(opened!.amountToken) + BigInt(opened!.amountUsdc)).toBeGreaterThan(900_000n);
+    expect(opened!.tickLower).toBeLessThan(0);
+    expect(opened!.tickUpper).toBeGreaterThan(0);
+    // The wallet's own money is untouched; only the six transactions' fees came off it.
+    expect(balances.get(token)).toBeGreaterThanOrEqual(5_000_000n);
+    expect(balances.get(usdc)).toBeGreaterThanOrEqual(10_000_000n - 6_000n);
+  });
+
+  it("skips the swap when the close already returned the band's ratio (about 47% token here)", async () => {
+    const { api, sent } = fakeV3Api({ closeReturns: { token: 470_000n, usdc: 530_000n } });
+    expect(await drive(api, plan(v3PoolInfo))).toEqual({ kind: "done" });
+    expect(sent).toEqual(["close", "mint-approve", "mint-approve", "mint"]);
+  });
+
+  it("stops after the close when the swap fails, leaving the tokens in the wallet", async () => {
+    const { api, sent, balances } = fakeV3Api({ failReconcile: "swap" });
+    expect(await drive(api, plan(v3PoolInfo))).toEqual({ kind: "failed", reason: "RECEIPT_REVERTED" });
+    expect(sent).toEqual(["close", "swap-approve", "swap"]);
+    expect(balances.get(token)! + balances.get(usdc)!).toBeGreaterThan(15_000_000n);
+  });
+
+  it("only closes when the run is a close", async () => {
+    const { api, sent } = fakeV3Api();
+    expect(await drive(api, { ...plan(v3PoolInfo), kind: "close" })).toEqual({ kind: "done" });
+    expect(sent).toEqual(["close"]);
   });
 });
 

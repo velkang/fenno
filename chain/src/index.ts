@@ -79,6 +79,7 @@ export {
 export {
   readWalletSummary,
   readV3Positions,
+  readV3PoolAddress,
   type WalletSummary,
   type ChainReadClient,
   type TokenAmount,

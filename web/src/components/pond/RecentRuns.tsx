@@ -20,7 +20,7 @@ function what(run: AutomationRun): string {
 export function RecentRuns({ runs, ponds }: { runs: AutomationRun[]; ponds: Pond[] }) {
   if (runs.length === 0) return null;
   const pair = (run: AutomationRun) => ponds.find((pond) =>
-    pond.v4?.pool.address.toLowerCase() === run.poolId.toLowerCase())?.pair ?? "A pond";
+    pond.poolId.toLowerCase() === run.poolId.toLowerCase())?.pair ?? "A pond";
   return (
     <section aria-labelledby="runs-title" className="flex flex-col gap-3 pt-4">
       <h2 id="runs-title" className="text-[1.4rem] font-semibold">Tomo's recent work</h2>

@@ -39,7 +39,7 @@ Signer Worker (private, no public route)
 | `api/` | Hono API on Cloudflare Workers: sign-in, pools, intents, and the D1 migrations in `api/migrations/` |
 | `signer/` | Private Worker that holds the key-wrapping secret, enforces the mainnet policy, and signs. See [signer/README.md](./signer/README.md) |
 | `indexer/` | Worker that discovers Uniswap v3/v4 USDC pools as they are created (every ~10 s) and keeps a rolling 7-day list of them in D1 |
-| `automation/` | Worker that looks after v4 positions: one Durable Object per wallet watches the positions a user handed to Tomo, asks Claude or OpenAI what to do when something changes, and re-centres or closes them (ask-first or autopilot) through the API like any other request |
+| `automation/` | Worker that looks after v3 and v4 positions: one Durable Object per wallet watches the positions a user handed to Tomo, asks Claude or OpenAI what to do when something changes, and re-centres or closes them (ask-first or autopilot) through the API like any other request |
 | `chain/` | Shared Arc and Uniswap addresses, reads, price math, and transaction builders |
 
 ## Running locally

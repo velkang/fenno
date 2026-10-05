@@ -7,7 +7,7 @@ export const AGENT_SECRET_HEADER = "x-stillwater-agent";
 export const AGENT_RUN_HEADER = "x-stillwater-run";
 
 export type PoolInfo = {
-  address: string; // the v4 pool id
+  address: string; // the v4 pool id, or the v3 pool address
   token: { address: string; symbol: string; decimals: number };
   token0: string;
   token1: string;
@@ -27,6 +27,12 @@ export type Balances = {
 
 export type Purpose = "mint" | "swap";
 
+/** A v3 pool's two tokens as the wallet holds them; `allowance` is the position manager's. */
+export type V3Holdings = {
+  token: { address: string; balance: string; allowance: string };
+  usdc: { address: string; balance: string; allowance: string };
+};
+
 export interface AgentApi {
   pool(poolId: Hex): Promise<PoolInfo>;
   balances(poolId: Hex, purpose: Purpose): Promise<Balances>;
@@ -38,6 +44,16 @@ export interface AgentApi {
     idempotencyKey: string }): Promise<{ intentId: string }>;
   prepareMint(body: { poolId: Hex; amount0Desired: string; amount1Desired: string; tickLower: number;
     tickUpper: number; deadline: string; idempotencyKey: string }): Promise<{ intentId: string }>;
+  v3Holdings(token: string): Promise<V3Holdings>;
+  prepareV3Withdraw(body: { tokenId: string; deadline: string; idempotencyKey: string }): Promise<{ intentId: string }>;
+  prepareV3Approval(body: { tokenAddress: string; poolAddress: string; poolTokenAddress: string;
+    spender?: "swap"; amount: string; idempotencyKey: string }): Promise<{ intentId: string }>;
+  quoteV3Swap(body: { tokenAddress: string; poolAddress: string; direction: "buy" | "sell"; amountIn: string }):
+    Promise<{ expectedAmountOut: string; minimumAmountOut: string; allowance: string }>;
+  prepareV3Swap(body: { tokenAddress: string; poolAddress: string; direction: "buy" | "sell"; amountIn: string;
+    idempotencyKey: string }): Promise<{ intentId: string }>;
+  prepareV3Mint(body: { tokenAddress: string; poolAddress: string; amountToken: string; amountUsdc: string;
+    tickLower: number; tickUpper: number; deadline: string; idempotencyKey: string }): Promise<{ intentId: string }>;
   execute(intentId: string): Promise<{ attemptId: string }>;
   reconcile(attemptId: string): Promise<{ status: string; reasonCode?: string }>;
 }
@@ -79,6 +95,13 @@ export function agentApi(api: Fetcher, secret: string, runId: string): AgentApi 
     quoteSwap: (body) => post("/v1/wallets/v4/swaps/quote", { slippageBps: SLIPPAGE_BPS, ...body }),
     prepareSwap: (body) => post("/v1/wallets/v4/swaps/prepare", { slippageBps: SLIPPAGE_BPS, ...body }),
     prepareMint: (body) => post("/v1/wallets/v4/positions/mint/prepare", { slippageBps: SLIPPAGE_BPS, ...body }),
+    v3Holdings: (token) => call(`/v1/wallets/tokens/${token}/pools`),
+    prepareV3Withdraw: (body) => post("/v1/wallets/positions/actions/prepare",
+      { action: "withdraw", slippageBps: SLIPPAGE_BPS, ...body }),
+    prepareV3Approval: (body) => post("/v1/wallets/approvals/prepare", body),
+    quoteV3Swap: (body) => post("/v1/wallets/swaps/quote", { slippageBps: SLIPPAGE_BPS, ...body }),
+    prepareV3Swap: (body) => post("/v1/wallets/swaps/prepare", { slippageBps: SLIPPAGE_BPS, ...body }),
+    prepareV3Mint: (body) => post("/v1/wallets/positions/mint/prepare", { slippageBps: SLIPPAGE_BPS, ...body }),
     execute: (intentId) => post(`/v1/wallets/intents/${intentId}/execute`, {}),
     reconcile: (attemptId) => post(`/v1/wallets/attempts/${attemptId}/reconcile`, {}),
   };

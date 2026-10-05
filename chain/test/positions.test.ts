@@ -135,12 +135,13 @@ describe("v3 position check", () => {
     verifyV3Position({ client, owner, tokenId: 7n, blockNumber: 99n });
 
   it("accepts a wallet-owned position in any USDC pool, in either token order", async () => {
-    const verified = { tokenId: "7", tickLower: -50, tickUpper: 50, liquidity: "999", blockNumber: "99" };
+    const verified = (token0: string, token1: string, fee: number) =>
+      ({ tokenId: "7", token0, token1, fee, tickLower: -50, tickUpper: 50, liquidity: "999", blockNumber: "99" });
 
     await expect(verify(positionClient(ARC_TOKENS.cirBTC.address, usdc, 100)))
-      .resolves.toEqual(verified);
-    await expect(verify(positionClient(meme, usdc, 3_000))).resolves.toEqual(verified);
-    await expect(verify(positionClient(usdc, meme, 10_000))).resolves.toEqual(verified);
+      .resolves.toEqual(verified(ARC_TOKENS.cirBTC.address, usdc, 100));
+    await expect(verify(positionClient(meme, usdc, 3_000))).resolves.toEqual(verified(meme, usdc, 3_000));
+    await expect(verify(positionClient(usdc, meme, 10_000))).resolves.toEqual(verified(usdc, meme, 10_000));
   });
 
   it("rejects a pair without USDC, an unsupported fee tier and another owner", async () => {

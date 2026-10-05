@@ -4,13 +4,14 @@ import {
   readArcV4Pool,
   readArcV4Position,
   readArcV4PositionFees,
+  readV3Positions,
   tickToPrice,
   usdcValue,
   type ChainReadClient,
 } from "@stillwater/chain";
 import type { DecisionFacts } from "./decide/decision";
 import { decide, type Decider } from "./decide/provider";
-import type { RunPlan } from "./stepper";
+import { isV3Pool, type RunPlan } from "./stepper";
 import {
   HOUR,
   asked,
@@ -27,7 +28,8 @@ import {
 // (ask-first) or a run that starts now (autopilot); the signer still checks every step.
 
 export type WatchState = { memories: Record<string, MandateMemory> };
-export type WatchChain = Pick<ChainReadClient, "readContract"> & { getGasPrice(): Promise<bigint> };
+export type WatchChain = Pick<ChainReadClient, "readContract" | "simulateContract" | "getBalance"> &
+  { getGasPrice(): Promise<bigint> };
 export type Deciders = { primary: Decider; fallback?: Decider };
 export type WatchResult = { state: WatchState; stop: boolean; start?: RunPlan };
 
@@ -146,6 +148,10 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
 
 /** The mandate's live position (the newest one with liquidity) and its numbers in dollars. */
 async function lookAt(mandate: Mandate, owner: Address, walletId: string, deps: { db: D1Database; chain: WatchChain }) {
+  return isV3Pool(mandate.pool_id) ? lookAtV3(mandate, owner, deps) : lookAtV4(mandate, owner, walletId, deps);
+}
+
+async function lookAtV4(mandate: Mandate, owner: Address, walletId: string, deps: { db: D1Database; chain: WatchChain }) {
   const { db, chain } = deps;
   const ids = (await db.prepare(
     `SELECT vmi.token_id FROM wallet_intents wi JOIN v4_mint_intents vmi ON vmi.intent_id = wi.id
@@ -172,38 +178,72 @@ async function lookAt(mandate: Mandate, owner: Address, walletId: string, deps: 
       .bind(mandate.pool_id).first<{ token_address: Address; token_symbol: string; token_decimals: number }>(),
   ]);
   if (!pool || !token) return null;
-
-  const tokenIsZero = pool.currency0.toLowerCase() === token.token_address.toLowerCase();
-  const usdcDecimals = [pool.currency0, pool.currency1].some((currency) => /^0x0{40}$/i.test(currency))
-    ? NATIVE_USDC_DECIMALS : 6;
-  const usd = (raw0: bigint, raw1: bigint) => {
-    const value = usdcValue({ pool, amount0: raw0, amount1: raw1 });
-    return value ? Number(value.usdc) / 10 ** value.usdcDecimals : 0;
-  };
-  const priceUsd = tokenIsZero
-    ? tickToPrice(pool.tick, token.token_decimals, usdcDecimals)
-    : 1 / tickToPrice(pool.tick, usdcDecimals, token.token_decimals);
-  const [minUsd, maxUsd] = tokenIsZero
-    ? [tickToPrice(position.tickLower, token.token_decimals, usdcDecimals), tickToPrice(position.tickUpper, token.token_decimals, usdcDecimals)]
-    : [1 / tickToPrice(position.tickUpper, usdcDecimals, token.token_decimals), 1 / tickToPrice(position.tickLower, usdcDecimals, token.token_decimals)];
-  const held = positionAmounts(Number(position.liquidity), pool.sqrtPriceX96, position.tickLower, position.tickUpper);
   const [fees, gasPrice] = await Promise.all([
     readArcV4PositionFees({ client: chain, poolId: position.poolId, tokenId: position.tokenId,
       tickLower: position.tickLower, tickUpper: position.tickUpper }).catch(() => ({ amount0: 0n, amount1: 0n })),
     chain.getGasPrice().catch(() => 0n),
   ]);
+  const native = [pool.currency0, pool.currency1].some((currency) => /^0x0{40}$/i.test(currency));
+  return describe({ tokenId: position.tokenId.toString(), symbol: token.token_symbol,
+    feeTierPercent: pool.lpFee / 10_000, pool, tokenIsZero: pool.currency0.toLowerCase() === token.token_address.toLowerCase(),
+    tokenDecimals: token.token_decimals, usdcDecimals: native ? NATIVE_USDC_DECIMALS : 6,
+    tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: position.liquidity, fees, gasPrice });
+}
+
+/** A v3 mandate's position: the newest one with liquidity that the wallet holds in that pool. */
+async function lookAtV3(mandate: Mandate, owner: Address, deps: { db: D1Database; chain: WatchChain }) {
+  const { db, chain } = deps;
+  const listed = await db.prepare(
+    `SELECT token_address, token_symbol, token_decimals, token0_address, token1_address, fee
+     FROM pool_directory WHERE pool_address = ?1`,
+  ).bind(mandate.pool_id).first<{ token_address: Address; token_symbol: string; token_decimals: number;
+    token0_address: Address; token1_address: Address; fee: number }>();
+  if (!listed) return null;
+  const positions = await readV3Positions(chain, owner, { pools: [{ token0: listed.token0_address,
+    token1: listed.token1_address, fee: listed.fee }] });
+  const position = positions
+    .filter((entry) => entry.pool.address.toLowerCase() === mandate.pool_id.toLowerCase() && BigInt(entry.liquidity) > 0n)
+    .sort((a, b) => (BigInt(b.tokenId) > BigInt(a.tokenId) ? 1 : -1))[0];
+  if (!position) return null;
+  const gasPrice = await chain.getGasPrice().catch(() => 0n);
+  const pool = { currency0: position.pool.token0, currency1: position.pool.token1,
+    sqrtPriceX96: position.pool.sqrtPriceX96, tick: position.pool.tick };
+  return describe({ tokenId: position.tokenId, symbol: listed.token_symbol, feeTierPercent: listed.fee / 10_000, pool,
+    tokenIsZero: pool.currency0.toLowerCase() === listed.token_address.toLowerCase(),
+    tokenDecimals: listed.token_decimals, usdcDecimals: 6, tickLower: position.tickLower, tickUpper: position.tickUpper,
+    liquidity: BigInt(position.liquidity),
+    fees: { amount0: BigInt(position.claimable0.raw), amount1: BigInt(position.claimable1.raw) }, gasPrice });
+}
+
+/** A position's numbers in dollars, the same for v3 and v4. */
+function describe(input: { tokenId: string; symbol: string; feeTierPercent: number;
+  pool: { currency0: Address; currency1: Address; sqrtPriceX96: string; tick: number }; tokenIsZero: boolean;
+  tokenDecimals: number; usdcDecimals: number; tickLower: number; tickUpper: number; liquidity: bigint;
+  fees: { amount0: bigint; amount1: bigint }; gasPrice: bigint }) {
+  const { pool, tokenIsZero, tokenDecimals, usdcDecimals, tickLower, tickUpper } = input;
+  const usd = (raw0: bigint, raw1: bigint) => {
+    const value = usdcValue({ pool, amount0: raw0, amount1: raw1 });
+    return value ? Number(value.usdc) / 10 ** value.usdcDecimals : 0;
+  };
+  const priceUsd = tokenIsZero
+    ? tickToPrice(pool.tick, tokenDecimals, usdcDecimals)
+    : 1 / tickToPrice(pool.tick, usdcDecimals, tokenDecimals);
+  const [minUsd, maxUsd] = tokenIsZero
+    ? [tickToPrice(tickLower, tokenDecimals, usdcDecimals), tickToPrice(tickUpper, tokenDecimals, usdcDecimals)]
+    : [1 / tickToPrice(tickUpper, usdcDecimals, tokenDecimals), 1 / tickToPrice(tickLower, usdcDecimals, tokenDecimals)];
+  const held = positionAmounts(Number(input.liquidity), pool.sqrtPriceX96, tickLower, tickUpper);
   return {
-    tokenId: position.tokenId.toString(),
-    symbol: token.token_symbol,
-    feeTierPercent: pool.lpFee / 10_000,
+    tokenId: input.tokenId,
+    symbol: input.symbol,
+    feeTierPercent: input.feeTierPercent,
     priceUsd,
     minUsd,
     maxUsd,
-    inBand: pool.tick >= position.tickLower && pool.tick < position.tickUpper,
+    inBand: pool.tick >= tickLower && pool.tick < tickUpper,
     priceIs: (priceUsd < minUsd ? "below" : priceUsd > maxUsd ? "above" : "inside") as DecisionFacts["band"]["priceIs"],
     valueUsd: usd(BigInt(Math.floor(held.amount0)), BigInt(Math.floor(held.amount1))),
-    feesUsd: usd(fees.amount0, fees.amount1),
-    recentreCostUsd: Number(gasPrice * RECENTRE_GAS) / 10 ** NATIVE_USDC_DECIMALS,
+    feesUsd: usd(input.fees.amount0, input.fees.amount1),
+    recentreCostUsd: Number(input.gasPrice * RECENTRE_GAS) / 10 ** NATIVE_USDC_DECIMALS,
   };
 }
 

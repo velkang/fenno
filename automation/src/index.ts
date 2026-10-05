@@ -22,7 +22,7 @@ export default {
     const text = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 200;
     if (!plan || !text(plan.runId) || !text(plan.walletId) || !text(plan.mandateId) || !text(plan.tokenId) ||
         typeof plan.walletAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(plan.walletAddress) ||
-        typeof plan.poolId !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(plan.poolId) ||
+        typeof plan.poolId !== "string" || !/^0x([0-9a-fA-F]{64}|[0-9a-fA-F]{40})$/.test(plan.poolId) ||
         !BANDS.has(plan.band as string) || (plan.kind !== "rebalance" && plan.kind !== "close") ||
         typeof plan.revokeMandate !== "boolean") {
       return Response.json({ error: "INVALID_RUN" }, { status: 400 });

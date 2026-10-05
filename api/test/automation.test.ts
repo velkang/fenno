@@ -1,6 +1,6 @@
 import { getAddress, zeroAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { v4PoolId, type ChainReadClient } from "@stillwater/chain";
+import { ARC_TOKENS, UNISWAP_V3_ARC, v4PoolId, type ChainReadClient } from "@stillwater/chain";
 import { hashOpaqueValue, type AuthStore } from "../src/auth";
 import { createApp, type Bindings } from "../src";
 
@@ -66,7 +66,7 @@ describe("agent identity", () => {
       ["POST", "/v1/wallets/withdrawals/prepare"],
       ["POST", "/v1/wallets/provision"],
       ["POST", "/v1/wallets/pause"],
-      ["POST", "/v1/wallets/positions/actions/prepare"],
+      ["GET", "/v1/wallets/tokens/0x2222222222222222222222222222222222222222/balance"],
       ["PUT", "/v1/automation/mandates"],
       ["GET", "/v1/wallets/summary"],
     ]) {
@@ -75,6 +75,21 @@ describe("agent identity", () => {
       expect(await response.json()).toEqual({ error: "AGENT_ROUTE_NOT_ALLOWED" });
     }
     expect(statements).toHaveLength(0);
+  });
+
+  it("reaches the routes for working a v3 position, still only for a running run", async () => {
+    const { request } = await setup(answerRun(null));
+    for (const [method, path] of [
+      ["GET", "/v1/wallets/tokens/0x2222222222222222222222222222222222222222/pools"],
+      ["POST", "/v1/wallets/approvals/prepare"],
+      ["POST", "/v1/wallets/swaps/quote"],
+      ["POST", "/v1/wallets/swaps/prepare"],
+      ["POST", "/v1/wallets/positions/mint/prepare"],
+      ["POST", "/v1/wallets/positions/actions/prepare"],
+    ]) {
+      const response = await request(path, { method, headers: agentHeaders(), body: method === "GET" ? undefined : "{}" });
+      expect(await response.json(), path).toEqual({ error: "MANDATE_RUN_NOT_RUNNING" });
+    }
   });
 
   it("refuses a run that is not running or whose mandate is revoked", async () => {
@@ -139,6 +154,33 @@ describe("agent identity", () => {
   });
 });
 
+describe("agent requests on a v3 position", () => {
+  it("marks the v3 requests it prepares with its run", async () => {
+    // collect: the cheapest v3 action to prepare; the swap, approval and open routes tag the same way.
+    const chain = {
+      async getBlock() { return { number: 100n, hash: `0x${"ab".repeat(32)}` }; },
+      async readContract({ functionName }: { functionName: string }) {
+        if (functionName === "ownerOf") return owner;
+        if (functionName === "positions") {
+          return [0n, owner, token, ARC_TOKENS.USDC.address, 3000, -600, 600, 10n ** 9n, 0n, 0n, 0n, 0n];
+        }
+        throw new Error(`Unexpected ${functionName}`);
+      },
+      async call() { return { data: "0x" }; },
+      async estimateGas() { return 100_000n; },
+    } as unknown as ChainReadClient;
+    const { request, statements } = await setup((sql) => sql.includes("FROM automation_runs ar") ? runningRun
+      : sql.includes("FROM managed_wallets") ? { id: "wallet-1", address: owner, state: "active" }
+      : sql.includes("SELECT id, payload_hash, status FROM wallet_intents") ? { id: statements.at(-1)?.args[0] } : null,
+      { chain });
+    await request("/v1/wallets/positions/actions/prepare", { method: "POST", headers: agentHeaders(),
+      body: JSON.stringify({ action: "collect", tokenId: "7", idempotencyKey: "agent-v3-collect-0001" }) });
+    const insert = statements.find((statement) => statement.sql.includes("INTO wallet_intents"))!;
+    expect(insert.sql).toContain("automation_run_id");
+    expect(insert.args.at(-1)).toBe("run-1");
+  });
+});
+
 describe("mandate routes", () => {
   const wallet = { id: "wallet-1", address: owner, state: "active" };
 
@@ -155,6 +197,23 @@ describe("mandate routes", () => {
       body: JSON.stringify(mandate) });
     expect(unknownPool.status).toBe(404);
     expect(await unknownPool.json()).toEqual({ error: "POOL_NOT_FOUND" });
+    const unknownV3Pool = await request("/v1/automation/mandates", { method: "PUT", headers: sessionHeaders,
+      body: JSON.stringify({ ...mandate, poolId: "0x3333333333333333333333333333333333333333" }) });
+    expect(unknownV3Pool.status).toBe(404);
+  });
+
+  it("saves a mandate for a v3 pool Stillwater lists, under its lower-case address", async () => {
+    const v3Pool = "0xAbCd333333333333333333333333333333333333";
+    const saved = { id: "mandate-2", pool_id: v3Pool.toLowerCase(), mode: "ask", status: "active", band: "wide",
+      max_position_usd: 50, max_runs_per_day: 2, created_at: NOW, updated_at: NOW };
+    const { request, statements } = await setup((sql) => sql.includes("FROM managed_wallets") ? wallet
+      : sql.includes("FROM pool_directory") ? { pool_address: v3Pool }
+      : sql.includes("FROM automation_mandates") ? saved : null);
+    const response = await request("/v1/automation/mandates", { method: "PUT", headers: sessionHeaders,
+      body: JSON.stringify({ poolId: v3Pool, mode: "ask", band: "wide", maxPositionUsd: 50, maxRunsPerDay: 2 }) });
+    expect(response.status).toBe(200);
+    const upsert = statements.find((statement) => statement.sql.includes("INSERT INTO automation_mandates"))!;
+    expect(upsert.args).toContain(v3Pool.toLowerCase());
   });
 
   it("saves a mandate for the signed-in user's wallet", async () => {
@@ -321,6 +380,48 @@ describe("starting a re-centre by hand", () => {
     expect(await response.json()).toEqual({ error: "POSITION_TOO_SMALL" });
     expect(statements.some((statement) => statement.sql.startsWith("INSERT"))).toBe(false);
     expect(worker.fetch).not.toHaveBeenCalled();
+  });
+
+  it("starts a re-centre of a v3 position in a pool Stillwater lists", async () => {
+    const v3Pool = getAddress("0x3333333333333333333333333333333333333333");
+    const usdc = ARC_TOKENS.USDC.address;
+    // About $60: liquidity 10^9 across ticks -600..600 at tick 0, token first, USDC second.
+    const v3Chain = {
+      async getBalance() { return 0n; },
+      async readContract({ address, functionName, args = [] }: { address: string; functionName: string; args?: unknown[] }) {
+        if (address === UNISWAP_V3_ARC.nonfungiblePositionManager.address && functionName === "balanceOf") return 1n;
+        if (functionName === "tokenOfOwnerByIndex") return 7n;
+        if (functionName === "positions") return [0n, owner, token, usdc, 3000, -600, 600, 10n ** 9n, 0n, 0n, 0n, 0n];
+        if (functionName === "getPool") return v3Pool;
+        if (functionName === "slot0") return [2n ** 96n, 0, 0, 0, 0, 0, true];
+        if (functionName === "decimals") return 18;
+        if (functionName === "symbol") return "MEME";
+        if (functionName === "balanceOf" || functionName === "allowance") return 0n;
+        throw new Error(`Unexpected ${functionName} ${String(args)}`);
+      },
+      async simulateContract() { return { result: [0n, 0n] }; },
+    } as unknown as ChainReadClient;
+    const listed = { pool_address: v3Pool, token0_address: token, token1_address: usdc, fee: 3000 };
+    const worker = automation();
+    const { request, statements } = await setup((sql) => sql.includes("FROM managed_wallets") ? wallet
+      : sql.includes("FROM pool_directory") ? listed : null,
+      { chain: v3Chain, automation: worker as unknown as Fetcher });
+    const response = await request("/v1/automation/runs", start({ tokenId: "7", band: "wide", poolId: v3Pool }));
+    expect(response.status).toBe(201);
+    const mandate = statements.find((statement) => statement.sql.includes("INSERT INTO automation_mandates"))!;
+    expect(mandate.args[2]).toBe(v3Pool.toLowerCase());
+    expect(mandate.args[5]).toBeGreaterThan(60);
+    expect(mandate.args[5]).toBeLessThan(90);
+    expect(await (worker.fetch.mock.calls[0]![0] as Request).json()).toMatchObject({
+      poolId: v3Pool.toLowerCase(), tokenId: "7", band: "wide", revokeMandate: true });
+
+    // A token id that isn't this wallet's position in that pool starts nothing.
+    const missing = await setup((sql) => sql.includes("FROM managed_wallets") ? wallet
+      : sql.includes("FROM pool_directory") ? listed : null,
+      { chain: v3Chain, automation: automation() as unknown as Fetcher });
+    const refused = await missing.request("/v1/automation/runs", start({ tokenId: "8", band: "wide", poolId: v3Pool }));
+    expect(refused.status).toBe(404);
+    expect(await refused.json()).toEqual({ error: "POSITION_NOT_OWNED" });
   });
 
   it("refuses a bad request and says when automation isn't running", async () => {
