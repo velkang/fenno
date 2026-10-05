@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { zeroAddress, type Hex } from "viem";
-import { ARC_TOKENS } from "@stillwater/chain";
-import { usdcValue, validateMandate, type MandateRequest } from "../src/mandate-policy";
+import type { Hex } from "viem";
+import { validateMandate, type MandateRequest } from "../src/mandate-policy";
 
 const poolId = `0x${"11".repeat(32)}` as Hex;
 const otherPool = `0x${"22".repeat(32)}` as Hex;
-const token = "0x2222222222222222222222222222222222222222" as const;
-const Q96 = 2n ** 96n;
 
 function request(overrides: Partial<MandateRequest> = {}): MandateRequest {
   return {
@@ -77,27 +74,5 @@ describe("mandate policy for agent requests", () => {
   it("rejects once more runs started in a day than the mandate allows", () => {
     expect(validateMandate(withAutomation({ runsStartedToday: 3 })).allowed).toBe(true);
     expect(validateMandate(withAutomation({ runsStartedToday: 4 })).reason).toBe("MANDATE_DAILY_LIMIT_REACHED");
-  });
-});
-
-describe("value of a v4 deposit in USDC", () => {
-  it("prices the token side with USDC as currency1", () => {
-    // Price 4 raw USDC per raw token: sqrtPrice = 2 * Q96.
-    const pool = { currency0: token, currency1: ARC_TOKENS.USDC.address, sqrtPriceX96: (2n * Q96).toString() };
-    expect(usdcValue({ pool, amount0: 10n, amount1: 5n })).toEqual({ usdc: 45n, usdcDecimals: 6 });
-  });
-
-  it("prices the token side with native USDC as currency0", () => {
-    // 4 raw tokens per raw USDC, so 40 raw tokens are worth 10 raw USDC.
-    const pool = { currency0: zeroAddress, currency1: token, sqrtPriceX96: (2n * Q96).toString() };
-    expect(usdcValue({ pool, amount0: 5n, amount1: 40n })).toEqual({ usdc: 15n, usdcDecimals: 18 });
-  });
-
-  it("has no value for a pool without USDC or without a price", () => {
-    const other = "0x3333333333333333333333333333333333333333" as const;
-    expect(usdcValue({ pool: { currency0: token, currency1: other, sqrtPriceX96: Q96.toString() },
-      amount0: 1n, amount1: 1n })).toBeNull();
-    expect(usdcValue({ pool: { currency0: zeroAddress, currency1: token, sqrtPriceX96: "0" },
-      amount0: 1n, amount1: 1n })).toBeNull();
   });
 });

@@ -4,12 +4,14 @@ import { SPRING } from "../lib/motion";
 import { formatUnits, getAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import {
   ALPHA_POOL,
+  bandTicks,
+  pairedAmount,
+  tickToPrice,
   type AlphaWalletSummary,
   type DiscoveredPool,
 } from "@stillwater/chain";
 import { useAppKit } from "@reown/appkit/react";
 import { api, type ManagedWalletRecord, type PublicPool, type TokenPoolDiscovery } from "../lib/api-client";
-import { alignTick, pairedAmount, priceToTick, tickToPrice } from "../lib/range-math";
 import { ensureV4Allowance, v4MintApprovals } from "../lib/v4-actions";
 import { waitForAttempt } from "../lib/attempts";
 import { KoiBand } from "../components/pond/KoiBand";
@@ -215,26 +217,14 @@ export const DepositPage: React.FC<Props> = ({
   }, [isCanonical, canonicalPool, currentTick, token0.decimals, token1.decimals, usdcIsPoolToken0]);
 
   // Range boundaries based on strategy preset
-  const { minPrice, maxPrice, tickLower, tickUpper } = useMemo(() => {
-    const spreadPct = STRATEGIES.find((entry) => entry.key === strategy)?.spread ?? 0.1;
-
-    const minP = spotPrice * (1 - spreadPct);
-    const maxP = spotPrice * (1 + spreadPct);
-
-    const rawLower = usdcIsPoolToken0
-      ? priceToTick(1 / maxP, token1.decimals, token0.decimals)
-      : priceToTick(minP, token0.decimals, token1.decimals);
-    const rawUpper = usdcIsPoolToken0
-      ? priceToTick(1 / minP, token1.decimals, token0.decimals)
-      : priceToTick(maxP, token0.decimals, token1.decimals);
-
-    return {
-      minPrice: minP,
-      maxPrice: maxP,
-      tickLower: alignTick(rawLower, tickSpacing),
-      tickUpper: alignTick(rawUpper, tickSpacing),
-    };
-  }, [strategy, spotPrice, token0.decimals, token1.decimals, tickSpacing, usdcIsPoolToken0]);
+  const { minPrice, maxPrice, tickLower, tickUpper } = useMemo(() => bandTicks({
+    spotPrice,
+    spread: STRATEGIES.find((entry) => entry.key === strategy)?.spread ?? 0.1,
+    tokenDecimals: token0.decimals,
+    usdcDecimals: token1.decimals,
+    usdcIsPoolToken0,
+    tickSpacing,
+  }), [strategy, spotPrice, token0.decimals, token1.decimals, tickSpacing, usdcIsPoolToken0]);
 
   useEffect(() => {
     if (!v4Pool || !wallet) return;

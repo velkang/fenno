@@ -1,7 +1,7 @@
 import { Pool, Position, V4PositionManager } from "@uniswap/v4-sdk";
 import { NativeCurrency, Percent, Token, type Currency } from "@uniswap/sdk-core";
 import {
-  encodeFunctionData, getAddress, isAddressEqual, keccak256, encodeAbiParameters,
+  decodeEventLog, encodeFunctionData, getAddress, isAddressEqual, keccak256, encodeAbiParameters,
   maxUint256, parseAbi, zeroAddress,
   type Address, type Hex,
 } from "viem";
@@ -48,6 +48,23 @@ export const v4PositionManagerReadAbi = parseAbi([
   "function getPositionLiquidity(uint256 tokenId) view returns (uint128 liquidity)",
   "event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)",
 ]);
+
+// The position NFTs a transaction minted to the owner, read from its receipt logs.
+export function v4MintedTokenIds(
+  logs: readonly { address: Address; topics: readonly Hex[]; data: Hex }[],
+  owner: Address,
+): bigint[] {
+  const ids: bigint[] = [];
+  for (const log of logs) {
+    if (!isAddressEqual(log.address, UNISWAP_V4_ARC.positionManager)) continue;
+    try {
+      const event = decodeEventLog({ abi: v4PositionManagerReadAbi, eventName: "Transfer",
+        data: log.data, topics: [...log.topics] as [Hex, ...Hex[]] });
+      if (event.args.from === zeroAddress && isAddressEqual(event.args.to, owner)) ids.push(event.args.tokenId);
+    } catch { /* PositionManager emits other events in the same receipt. */ }
+  }
+  return ids;
+}
 
 export async function readArcV4Position(input: {
   client: Pick<ChainReadClient, "readContract">;

@@ -1,11 +1,28 @@
-import { getAddress, keccak256, encodeAbiParameters, decodeAbiParameters, decodeFunctionData, parseAbi, zeroAddress } from "viem";
+import { encodeEventTopics, getAddress, keccak256, encodeAbiParameters, decodeAbiParameters, decodeFunctionData, parseAbi, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { ARC_TOKENS, UNISWAP_SHARED_ARC, UNISWAP_V4_ARC, buildArcV4Approval, buildArcV4Mint, buildArcV4PositionAction, buildArcV4Swap, quoteArcV4Swap, readArcV4Allowances, readArcV4Pool, readArcV4Position, readArcV4PositionFees, v4PoolId } from "../src";
+import { ARC_TOKENS, UNISWAP_SHARED_ARC, UNISWAP_V4_ARC, buildArcV4Approval, buildArcV4Mint, buildArcV4PositionAction, buildArcV4Swap, quoteArcV4Swap, readArcV4Allowances, readArcV4Pool, readArcV4Position, readArcV4PositionFees, v4MintedTokenIds, v4PoolId, v4PositionManagerReadAbi } from "../src";
 
 const token = getAddress("0x2222222222222222222222222222222222222222");
 const account = getAddress("0x1111111111111111111111111111111111111111");
 const hook = getAddress("0x3333333333333333333333333333333333333333");
 const key = { currency0: zeroAddress, currency1: token, fee: 3_000, tickSpacing: 60, hooks: hook };
+
+describe("Arc Uniswap v4 minted token ids", () => {
+  const transfer = (from: `0x${string}`, to: `0x${string}`, tokenId: bigint) => ({ data: "0x" as const,
+    topics: encodeEventTopics({ abi: v4PositionManagerReadAbi, eventName: "Transfer",
+      args: { from, to, tokenId } }) as `0x${string}`[] });
+
+  it("reads only PositionManager mints to the owner from receipt logs", () => {
+    const logs = [
+      { address: UNISWAP_V4_ARC.positionManager, ...transfer(zeroAddress, account, 7n) },
+      { address: UNISWAP_V4_ARC.positionManager, ...transfer(token, account, 8n) },
+      { address: UNISWAP_V4_ARC.positionManager, ...transfer(zeroAddress, token, 9n) },
+      { address: token, ...transfer(zeroAddress, account, 10n) },
+      { address: UNISWAP_V4_ARC.positionManager, data: "0x" as const, topics: [`0x${"00".repeat(32)}` as const] },
+    ];
+    expect(v4MintedTokenIds(logs, account)).toEqual([7n]);
+  });
+});
 
 describe("Arc Uniswap v4 uncollected fees", () => {
   const poolId = `0x${"ab".repeat(32)}` as const;

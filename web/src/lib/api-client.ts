@@ -57,6 +57,33 @@ export type V4Position = {
   fees: { amount0: string; amount1: string } | null;
 };
 
+export type RecentreBand = "wide" | "balanced" | "narrow";
+
+export type AutomationRun = {
+  id: string;
+  mandateId: string;
+  poolId: string;
+  kind: "rebalance" | "close";
+  status: "proposed" | "running" | "done" | "failed" | "declined" | "expired";
+  band: RecentreBand | null;
+  trigger: string;
+  reason: string | null;
+  failureReason: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+};
+
+export type Mandate = {
+  id: string;
+  poolId: string;
+  mode: "ask" | "autopilot";
+  status: "active" | "paused" | "revoked";
+  band: RecentreBand | "agent";
+  maxPositionUsd: number;
+  maxRunsPerDay: number;
+};
+
 export class ApiError extends Error {
   constructor(public code: string, public status: number, message?: string) {
     super(message || code);
@@ -127,6 +154,26 @@ export const api = {
     idempotencyKey: string }) {
     return request<{ intentId: string; status: string; simulation: { gasEstimate: string } }>(
       "/v1/wallets/v4/positions/mint/prepare", { method: "POST", body: JSON.stringify(params) });
+  },
+  async startRecentre(tokenId: string, band: RecentreBand) {
+    return request<{ run: AutomationRun }>("/v1/automation/runs", {
+      method: "POST", body: JSON.stringify({ tokenId, band }) });
+  },
+  async listMandates() {
+    return request<{ mandates: Mandate[] }>("/v1/automation/mandates");
+  },
+  async saveMandate(mandate: Pick<Mandate, "poolId" | "mode" | "band" | "maxPositionUsd" | "maxRunsPerDay">) {
+    return request<{ mandate: Mandate }>("/v1/automation/mandates", { method: "PUT", body: JSON.stringify(mandate) });
+  },
+  async revokeMandate(mandateId: string) {
+    return request<{ revoked: boolean }>(`/v1/automation/mandates/${encodeURIComponent(mandateId)}`, { method: "DELETE" });
+  },
+  async answerProposal(runId: string, approve: boolean) {
+    return request<{ runId: string; status: string }>(
+      `/v1/automation/runs/${encodeURIComponent(runId)}/${approve ? "approve" : "decline"}`, { method: "POST" });
+  },
+  async listAutomationRuns() {
+    return request<{ runs: AutomationRun[] }>("/v1/automation/runs");
   },
   async listV4Positions(page = 0) {
     return request<{ positions: V4Position[]; page: number; hasMore: boolean }>(`/v1/wallets/v4/positions?page=${page}`);

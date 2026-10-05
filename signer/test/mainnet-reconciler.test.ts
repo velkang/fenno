@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Hex } from "viem";
+import { encodeEventTopics, zeroAddress, type Hex } from "viem";
+import { UNISWAP_V4_ARC, v4PositionManagerReadAbi } from "@stillwater/chain";
 import {
   MainnetReconciliationError,
   reconcileMainnetAttempt,
@@ -33,7 +34,7 @@ function fixture(overrides: Partial<MainnetAttempt> = {}): MainnetAttempt {
 
 class MemoryStore implements MainnetReplacementStore {
   observations: Array<{ outcome: ReconciliationOutcome; reasonCode: string }> = [];
-  finalized: { reasonCode: string; quarantineWallet: boolean } | null = null;
+  finalized: { reasonCode: string; quarantineWallet: boolean; v4TokenId?: string | null } | null = null;
   replacement: MainnetAttempt | null = null;
 
   constructor(readonly attempt: MainnetAttempt | null) {}
@@ -56,6 +57,7 @@ class MemoryStore implements MainnetReplacementStore {
     reasonCode: string;
     blockNumber: number | null;
     quarantineWallet: boolean;
+    v4TokenId?: string | null;
   }) {
     if (this.attempt) {
       this.attempt.status = input.attemptStatus;
@@ -101,7 +103,7 @@ describe("mainnet transaction reconciliation", () => {
       rpc: rpc({
         getTransactionReceipt: async () => {
           receiptReads += 1;
-          return { status: "success", blockNumber: 123n };
+          return { status: "success", blockNumber: 123n, logs: [] };
         },
       }),
       now: () => now,
@@ -122,13 +124,30 @@ describe("mainnet transaction reconciliation", () => {
     expect(receiptReads).toBe(1);
   });
 
+  it("records the v4 position NFT a confirmed mint gave the wallet", async () => {
+    const store = new MemoryStore(fixture());
+    const topics = encodeEventTopics({ abi: v4PositionManagerReadAbi, eventName: "Transfer",
+      args: { from: zeroAddress, to: fixture().walletAddress, tokenId: 42n } }) as Hex[];
+    await reconcileMainnetAttempt({
+      attemptId: "attempt-1",
+      store,
+      rpc: rpc({
+        getTransactionReceipt: async () => ({ status: "success", blockNumber: 123n,
+          logs: [{ address: UNISWAP_V4_ARC.positionManager, topics, data: "0x" }] }),
+      }),
+      now: () => now,
+    });
+
+    expect(store.finalized?.v4TokenId).toBe("42");
+  });
+
   it("marks a reverted receipt as failed", async () => {
     const store = new MemoryStore(fixture());
     const result = await reconcileMainnetAttempt({
       attemptId: "attempt-1",
       store,
       rpc: rpc({
-        getTransactionReceipt: async () => ({ status: "reverted", blockNumber: 124n }),
+        getTransactionReceipt: async () => ({ status: "reverted", blockNumber: 124n, logs: [] }),
       }),
       now: () => now,
     });

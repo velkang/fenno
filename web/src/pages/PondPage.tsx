@@ -1,11 +1,12 @@
 import { useMemo } from "react";
 import type { AlphaWalletSummary, Waters } from "@stillwater/chain";
-import type { AuthUser, ManagedWalletRecord } from "../lib/api-client";
+import { api, ApiError, type AuthUser, type ManagedWalletRecord } from "../lib/api-client";
 import { Koi } from "../components/Icons";
 import { pondFromV4, pondHeadline, pondsFromSummary, tomoNotes, type TomoNote } from "../lib/ponds";
 import { ChooseWaters } from "../components/pond/ChooseWaters";
 import { KoiBandCard } from "../components/pond/KoiBandCard";
 import { TomoCard } from "../components/pond/TomoCard";
+import { runFailureMessage, useAutomationRuns } from "../lib/automation";
 import { useV4Ponds } from "../components/pond/useV4Ponds";
 
 type Props = {
@@ -22,6 +23,18 @@ type Props = {
 
 export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenPositions, onOpenAuth, onExplore, onOpenPool }: Props) {
   const v4 = useV4Ponds(wallet, onRefresh, onNotify);
+  const { runs, refresh: refreshRuns } = useAutomationRuns(wallet);
+  const answer = async (note: TomoNote, approve: boolean) => {
+    if (!note.proposal) return;
+    try {
+      await api.answerProposal(note.proposal.runId, approve);
+      onNotify(approve ? "success" : "info", approve ? "Approved" : "Not now",
+        approve ? "Tomo is on it. This takes a few minutes." : "Tomo will look again later.");
+    } catch (error) {
+      onNotify("error", "Couldn't answer", error instanceof ApiError ? runFailureMessage(error.code) : "Try again.");
+    }
+    await refreshRuns();
+  };
   const ponds = useMemo(() => [...v4.positions.map(pondFromV4), ...pondsFromSummary(summary)], [v4.positions, summary]);
   const gatheredUsd = ponds.reduce((sum, pond) => sum + (pond.gatheredUsd ?? 0), 0);
   // Feature the pond that needs attention first, else the most valuable one.
@@ -80,7 +93,7 @@ export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenPos
       </section>
 
       <aside className="flex flex-col gap-11">
-        <TomoCard notes={tomoNotes(ponds, gatheredUsd)} onOpenPond={openPondPool} />
+        <TomoCard notes={tomoNotes(ponds, gatheredUsd, runs)} onOpenPond={openPondPool} onAnswer={answer} />
         <ChooseWaters onChoose={onExplore} />
       </aside>
     </div>

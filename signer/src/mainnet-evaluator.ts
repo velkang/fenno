@@ -19,6 +19,7 @@ import {
   type ChainReadClient,
   type ArcV4Pool,
   type PoolDiscoveryClient,
+  usdcValue,
 } from "@stillwater/chain";
 import { verifyTypedData, type Address, type Hex } from "viem";
 import {
@@ -27,7 +28,7 @@ import {
   type MainnetPolicyRequest,
 } from "./mainnet-policy";
 import type { WalletState } from "./policy";
-import { usdcValue, validateMandate, type AutomationContext } from "./mandate-policy";
+import { validateMandate, type AutomationContext } from "./mandate-policy";
 
 export type CustodyWallet = {
   walletId: string;

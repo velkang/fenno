@@ -294,7 +294,7 @@ export default {
             getTransactionReceipt: async (hash) => {
               try {
                 const receipt = await client.getTransactionReceipt({ hash });
-                return { status: receipt.status, blockNumber: receipt.blockNumber };
+                return { status: receipt.status, blockNumber: receipt.blockNumber, logs: receipt.logs };
               } catch (error) {
                 if (error instanceof TransactionReceiptNotFoundError) return null;
                 throw error;

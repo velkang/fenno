@@ -39,6 +39,7 @@ Signer Worker (private, no public route)
 | `api/` | Hono API on Cloudflare Workers: sign-in, pools, intents, and the D1 migrations in `api/migrations/` |
 | `signer/` | Private Worker that holds the key-wrapping secret, enforces the mainnet policy, and signs. See [signer/README.md](./signer/README.md) |
 | `indexer/` | Worker that discovers Uniswap v3/v4 USDC pools as they are created (every ~10 s) and keeps a rolling 7-day list of them in D1 |
+| `automation/` | Worker that looks after v4 positions: one Durable Object per wallet watches the positions a user handed to Tomo, asks Claude or OpenAI what to do when something changes, and re-centres or closes them (ask-first or autopilot) through the API like any other request |
 | `chain/` | Shared Arc and Uniswap addresses, reads, price math, and transaction builders |
 
 ## Running locally
@@ -56,7 +57,10 @@ Requires Node 22.13 or newer and pnpm 11.
    ```bash
    cp api/.dev.vars.example api/.dev.vars
    cp signer/.dev.vars.example signer/.dev.vars
+   cp automation/.dev.vars.example automation/.dev.vars
    ```
+
+   To run re-centring locally, put the same random value in `AGENT_SECRET` in `api/.dev.vars` and `automation/.dev.vars` (for example from `openssl rand -hex 32`). Without it, a re-centre stops before sending anything.
 
    In `signer/.dev.vars`, set the three `CIRCLE_*` values (see [Circle wallets](#circle-wallets)). Anyone with the API key and entity secret controls every Stillwater wallet in that Circle account.
 
@@ -66,7 +70,7 @@ Requires Node 22.13 or newer and pnpm 11.
    pnpm db:migrate:local
    ```
 
-4. Start the API and signer (port 8787), the indexer (port 8788), and the web app (port 5173), each in its own terminal:
+4. Start the API, signer and automation Worker (port 8787), the indexer (port 8788), and the web app (port 5173), each in its own terminal:
 
    ```bash
    pnpm dev
@@ -111,8 +115,12 @@ All variables and secrets live outside the repository: in the Cloudflare dashboa
 | `CIRCLE_WALLET_SET_ID` | signer | **Required**: the Circle wallet set new wallets are created in |
 | `AUTH_URI` | api | **Required**: the web app's URL; sign-in messages are bound to its host |
 | `AUTH_COOKIE_SECURE` | api | Local only: `false` allows the session cookie over plain `http`. Never set it in production |
+| `AGENT_SECRET` | api, automation | **Required for re-centring** (secret): shared by the two, so the automation Worker can act for a wallet within its mandate |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | automation | Secrets for the decision providers. Without a key for the chosen provider, Tomo only watches and never decides |
+| `AGENT_PROVIDER`, `AGENT_FALLBACK_PROVIDER` | automation | Optional: which provider decides (`claude` by default) and which to try when it fails or declines |
+| `AGENT_CLAUDE_MODEL`, `AGENT_OPENAI_MODEL` | automation | Optional model overrides; defaults `claude-opus-5-5` and `gpt-6-astra` |
 | `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
-| `ARC_RPC_URL` | api, signer, indexer | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
+| `ARC_RPC_URL` | api, signer, indexer, automation | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
 
 Mainnet transactions are allowed by default; there are no per-action value or fee limits.
 
@@ -122,11 +130,12 @@ Never commit `.dev.vars` files or the `.wrangler/` state directories. Both are g
 
 Stillwater is deployed from the Cloudflare dashboard.
 
-There are four Workers:
+There are five Workers:
 - **`stillwater-web`**, the website, serves the app and forwards `/v1` and `/health` to the API through a service binding. Each Worker keeps its own URL while the sign-in cookie stays on the website's host.
 - **`stillwater-api`**, the API, reaches the private signer and the indexer through service bindings.
 - **`stillwater-signer`**, the private signer.
 - **`stillwater-indexer`**, which runs pool discovery and the scheduled jobs.
+- **`stillwater-automation`**, which re-centres positions. The API wakes it through a service binding, and it calls the API back as the agent.
 
 1. **Create the production database.** In the dashboard, go to Storage & Databases → D1 and create a database named `stillwater-prod`. Copy its ID into `database_id` in `api/`, `signer/` and `indexer/wrangler.jsonc` (replacing `PASTE_PRODUCTION_D1_ID`), and push.
 
@@ -138,6 +147,9 @@ There are four Workers:
    | `stillwater-api` | `api` | `pnpm install --frozen-lockfile` | `npx wrangler d1 migrations apply stillwater-prod --remote && npx wrangler deploy` |
    | `stillwater-web` | `web` | `pnpm install --frozen-lockfile && pnpm build` | `npx wrangler deploy` (default) |
    | `stillwater-indexer` | `indexer` | `pnpm install --frozen-lockfile` | `npx wrangler deploy` (default) |
+   | `stillwater-automation` | `automation` | `pnpm install --frozen-lockfile` | `npx wrangler deploy` (default) |
+
+   The API and the automation Worker each bind to the other. Create `stillwater-automation` after the API exists. If the API's own build fails because `stillwater-automation` doesn't exist yet, retry it once the automation Worker is deployed.
 
    - The API's deploy command applies any new database migrations before each deploy.
    - For `stillwater-web`, add the build variable `VITE_REOWN_PROJECT_ID` (your Reown project ID) and add the website's URL to that Reown project's allowed domains. People sign in with email, Google or X only; if the Reown project shows sign-in toggles, turn those three on and wallets off.
@@ -152,6 +164,12 @@ There are four Workers:
    | `stillwater-signer` | `CIRCLE_ENTITY_SECRET` | Secret | Your registered entity secret |
    | `stillwater-signer` | `CIRCLE_WALLET_SET_ID` | Text | The wallet set's id |
    | `stillwater-api` | `AUTH_URI` | Text | The website's URL, shown on the `stillwater-web` Worker's page, e.g. `https://stillwater-web.<your-subdomain>.workers.dev` |
+   | `stillwater-api` | `AGENT_SECRET` | Secret | A long random value, e.g. from `openssl rand -hex 32` |
+   | `stillwater-automation` | `AGENT_SECRET` | Secret | The same value as the API's |
+   | `stillwater-automation` | `ANTHROPIC_API_KEY` | Secret | For Claude to decide (the default provider) |
+   | `stillwater-automation` | `OPENAI_API_KEY` | Secret | Optional: for OpenAI, as the provider or the fallback |
+   | `stillwater-automation` | `AGENT_PROVIDER` | Text | Optional: `claude` (default) or `openai` |
+   | `stillwater-automation` | `AGENT_FALLBACK_PROVIDER` | Text | Optional: the other provider, used when the first fails or declines |
 
 4. **Open the website and sign in.** Saving a variable in the dashboard applies it immediately, so setting `EMERGENCY_STOP` to `true` on the signer halts signing without a commit.
 

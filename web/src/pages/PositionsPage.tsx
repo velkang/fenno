@@ -11,8 +11,12 @@ import {
 import { PondList, type PondAction } from '../components/pond/PondList'
 import { useV4Ponds } from '../components/pond/useV4Ponds'
 import { Loading, Skeleton } from '../components/Skeleton'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { fade } from '../lib/motion'
+import { runFailureMessage, useAutomationRuns, useMandates } from '../lib/automation'
+import { RecentreDialog } from '../components/pond/RecentreDialog'
+import { CareDialog } from '../components/pond/CareDialog'
+import { RecentRuns } from '../components/pond/RecentRuns'
 
 type Props = {
   user: AuthUser | null
@@ -51,6 +55,18 @@ export function PositionsPage({
 }: Props) {
   const v4 = useV4Ponds(wallet, onRefresh, onNotify)
   const [collecting, setCollecting] = useState(false)
+  const [recentring, setRecentring] = useState<Pond | null>(null)
+  const [caring, setCaring] = useState<Pond | null>(null)
+  const { mandates, refresh: refreshMandates } = useMandates(wallet)
+  const automation = useAutomationRuns(wallet, (run) => {
+    if (run.status === 'done') {
+      onNotify('success', 'Band re-centred', 'Your pond earns around today’s price again.')
+    } else {
+      onNotify('error', 'Re-centring stopped',
+        `${runFailureMessage(run.failureReason)} Anything already taken out is in your Stillwater wallet.`)
+    }
+    void Promise.all([v4.refresh(), onRefresh()])
+  })
   const ponds = useMemo(
     () => [...v4.positions.map(pondFromV4), ...pondsFromSummary(summary)],
     [v4.positions, summary],
@@ -63,13 +79,36 @@ export function PositionsPage({
     0,
   )
   const busy = collecting || v4.busy !== null || v4.pendingAttempt !== null
+  const runningPools = new Set(automation.runs
+    .filter((run) => run.status === 'running')
+    .map((run) => run.poolId.toLowerCase()))
+  const mandateFor = (pond: Pond) => pond.v4
+    ? mandates.find((mandate) => mandate.poolId.toLowerCase() === pond.v4!.pool.address.toLowerCase())
+    : undefined
+  const caredPonds = new Map(ponds.flatMap((pond) => {
+    const mandate = mandateFor(pond)
+    return mandate?.status === 'active' ? [[pond.key, mandate.mode] as const] : []
+  }))
+  const movingPonds = new Set(ponds
+    .filter((pond) => pond.v4 && runningPools.has(pond.v4.pool.address.toLowerCase()))
+    .map((pond) => pond.key))
 
   const act = async (pond: Pond, action: PondAction) => {
     if (pond.v3) {
+      // Re-centring and Tomo's care are for v4 ponds only.
+      if (action === 'recentre' || action === 'care') return
       onOpenModal({ kind: V3_MODAL_KIND[action], position: pond.v3 })
       return
     }
     if (!pond.v4) return
+    if (action === 'recentre') {
+      setRecentring(pond)
+      return
+    }
+    if (action === 'care') {
+      setCaring(pond)
+      return
+    }
     if (
       action === 'close' &&
       !window.confirm(
@@ -139,6 +178,8 @@ export function PositionsPage({
             collectAllUsd={collectAllUsd}
             onCollectAll={() => void collectAll()}
             onAction={(pond, action) => void act(pond, action)}
+            recentring={movingPonds}
+            cared={caredPonds}
           />
         </motion.div>
       )}
@@ -159,6 +200,39 @@ export function PositionsPage({
           {v4.error}
         </p>
       ) : null}
+      <RecentRuns runs={automation.runs} ponds={ponds} />
+      <AnimatePresence>
+        {caring ? (
+          <CareDialog
+            key={caring.key}
+            pond={caring}
+            mandate={mandateFor(caring)}
+            onClose={() => setCaring(null)}
+            onSaved={(message) => {
+              setCaring(null)
+              onNotify('success', 'Saved', message)
+              void refreshMandates()
+            }}
+            onError={(message) => onNotify('error', 'Couldn’t save', message)}
+          />
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {recentring?.v4 ? (
+          <RecentreDialog
+            key={recentring.key}
+            position={recentring.v4}
+            resting={recentring.state !== 'feeding'}
+            onClose={() => setRecentring(null)}
+            onStarted={() => {
+              setRecentring(null)
+              onNotify('info', 'Re-centring started', 'This takes a few minutes. You can leave this page.')
+              void automation.refresh()
+            }}
+            onError={(message) => onNotify('error', 'Couldn’t re-centre', message)}
+          />
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }

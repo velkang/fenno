@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import { v4MintedTokenIds } from "@stillwater/chain";
 
 export type MainnetAttemptStatus =
   | "submitted"
@@ -61,6 +62,8 @@ export interface MainnetReconciliationStore {
     latestNonce: number | null;
     pendingNonce: number | null;
     quarantineWallet: boolean;
+    // The position NFT a confirmed v4 mint gave the wallet.
+    v4TokenId?: string | null;
     now: number;
   }): Promise<void>;
 }
@@ -78,6 +81,7 @@ export interface MainnetReceiptRpc {
   getTransactionReceipt(hash: Hex): Promise<{
     status: "success" | "reverted";
     blockNumber: bigint;
+    logs: readonly { address: Address; topics: readonly Hex[]; data: Hex }[];
   } | null>;
   getTransaction(hash: Hex): Promise<{ nonce: number } | null>;
   getTransactionCount(address: Address, blockTag: "latest" | "pending"): Promise<number>;
@@ -197,6 +201,7 @@ export async function reconcileMainnetAttempt(input: {
     }
     const confirmed = receipt.status === "success";
     const reasonCode = confirmed ? "RECEIPT_CONFIRMED" : "RECEIPT_REVERTED";
+    const mintedIds = confirmed ? v4MintedTokenIds(receipt.logs, attempt.walletAddress) : [];
     await input.store.finalize({
       attempt,
       attemptStatus: confirmed ? "confirmed" : "reverted",
@@ -206,6 +211,7 @@ export async function reconcileMainnetAttempt(input: {
       latestNonce: null,
       pendingNonce: null,
       quarantineWallet: false,
+      v4TokenId: mintedIds.length === 1 ? mintedIds[0].toString() : null,
       now: checkedAt,
     });
     return result(

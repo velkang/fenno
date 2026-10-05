@@ -1,3 +1,5 @@
 AUTH_URI=http://localhost:8787
 # Local only: "false" allows the session cookie over plain http. Never set it in production.
 AUTH_COOKIE_SECURE=false
+# Shared with automation
+AGENT_SECRET=

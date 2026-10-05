@@ -1,5 +1,4 @@
-import { zeroAddress, type Address, type Hex } from "viem";
-import { ARC_TOKENS } from "@stillwater/chain";
+import type { Hex } from "viem";
 import type { MainnetIntentKind, MainnetPolicyDecision } from "./mainnet-policy";
 import type { WalletState } from "./policy";
 
@@ -56,31 +55,4 @@ export function validateMandate(request: MandateRequest): MainnetPolicyDecision 
   }
   if (automation.runsStartedToday > mandate.maxRunsPerDay) return reject("MANDATE_DAILY_LIMIT_REACHED");
   return { allowed: true, reason: "POLICY_ALLOWED" };
-}
-
-const Q192 = 1n << 192n;
-
-/**
- * The USDC value of putting `amount0` and `amount1` into a v4 USDC pool at its current
- * price. USDC is the 6-decimal ERC-20 or native USDC (18 decimals, always currency0).
- * Null when the pool has no USDC side or no price.
- */
-export function usdcValue(input: {
-  pool: { currency0: Address; currency1: Address; sqrtPriceX96: string };
-  amount0: bigint;
-  amount1: bigint;
-}): { usdc: bigint; usdcDecimals: number } | null {
-  const { pool, amount0, amount1 } = input;
-  const isUsdc = (currency: Address) =>
-    currency.toLowerCase() === zeroAddress || currency.toLowerCase() === ARC_TOKENS.USDC.address.toLowerCase();
-  const squared = BigInt(pool.sqrtPriceX96) ** 2n; // raw currency1 per raw currency0, times 2^192
-  if (squared === 0n) return null;
-  const usdcDecimals = (usdc: Address) => (usdc.toLowerCase() === zeroAddress ? 18 : ARC_TOKENS.USDC.decimals);
-  if (isUsdc(pool.currency0)) {
-    return { usdc: amount0 + (amount1 * Q192) / squared, usdcDecimals: usdcDecimals(pool.currency0) };
-  }
-  if (isUsdc(pool.currency1)) {
-    return { usdc: amount1 + (amount0 * squared) / Q192, usdcDecimals: usdcDecimals(pool.currency1) };
-  }
-  return null;
 }

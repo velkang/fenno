@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { parseUnits, formatUnits } from "viem";
 import { api } from "../lib/api-client";
 import { waitForAttempt } from "../lib/attempts";
-import { pairedAmount } from "../lib/range-math";
-import { ARC_TOKENS, type AlphaWalletSummary, type V3Position } from "@stillwater/chain";
+import { ARC_TOKENS, pairedAmount, type AlphaWalletSummary, type V3Position } from "@stillwater/chain";
 import { formatPoolPrice, poolSpotPrice } from "../pages/ExplorePage";
 import { IconClose, IconArrowLeftRight } from "./Icons";
 

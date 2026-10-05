@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { BaseError, ContractFunctionRevertedError, createPublicClient, decodeEventLog, encodeFunctionData, getAddress, http, isAddress, parseAbi, toEventSelector, verifyTypedData, zeroAddress, type Address, type Hex } from "viem";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, encodeFunctionData, getAddress, http, isAddress, parseAbi, verifyTypedData, zeroAddress, type Address, type Hex } from "viem";
 import {
   ARC_CHAIN_ID,
   ALPHA_POOL,
@@ -16,7 +16,7 @@ import {
   buildArcV4PositionAction,
   arcV4PositionActionPayloadHash,
   readArcV4Position,
-  v4PositionManagerReadAbi,
+  v4MintedTokenIds,
   alphaPositionImportPayloadHash,
   arc,
   arcRpcTransport,
@@ -76,7 +76,6 @@ import { D1AuthStore } from "./d1-auth-store";
 import { D1IndexerHealthStore, getIndexerHealth } from "./indexer-health";
 
 const SESSION_COOKIE = "stillwater_session";
-const TRANSFER_TOPIC = toEventSelector("Transfer(address,address,uint256)");
 
 export type Bindings = {
   DB: D1Database;
@@ -90,6 +89,8 @@ export type Bindings = {
   INDEXER?: Fetcher;
   // Shared with the automation Worker; its requests act for one wallet under a mandate.
   AGENT_SECRET?: string;
+  // The automation Worker: starts and steps through re-centring runs.
+  AUTOMATION?: Fetcher;
 };
 
 type Variables = {
@@ -341,14 +342,15 @@ export function createApp(dependencies: AppDependencies = {}) {
   async function mintedV4Positions(env: Bindings, wallet: { id: string; address: Address }, offset = 0) {
     // One query joins each mint to its directory row, so D1 is not queried per NFT.
     const rows = await env.DB.prepare(
-      `SELECT mta.transaction_hash, vmi.pool_id AS minted_pool_id, vpd.*
+      `SELECT mta.transaction_hash, vmi.intent_id, vmi.token_id, vmi.pool_id AS minted_pool_id, vpd.*
        FROM v4_mint_intents vmi
        JOIN wallet_intents wi ON wi.id = vmi.intent_id
        JOIN mainnet_transaction_attempts mta ON mta.intent_id = wi.id
        LEFT JOIN v4_pool_directory vpd ON vpd.pool_id = vmi.pool_id
        WHERE wi.wallet_id = ?1 AND wi.status = 'confirmed' AND mta.status = 'confirmed'
        ORDER BY mta.submitted_at DESC LIMIT 50 OFFSET ?2`,
-    ).bind(wallet.id, offset).all<{ transaction_hash: Hex; minted_pool_id: Hex } &
+    ).bind(wallet.id, offset).all<{ transaction_hash: Hex; intent_id: string; token_id: string | null;
+      minted_pool_id: Hex } &
       (V4PoolDirectoryRow | { [K in keyof V4PoolDirectoryRow]: null })>();
     const client = (dependencies.createChainClient?.(env) ??
       createPublicClient({ chain: arc, transport: arcRpcTransport(env.ARC_RPC_URL), batch: { multicall: true } })) as unknown as
@@ -359,18 +361,23 @@ export function createApp(dependencies: AppDependencies = {}) {
     const block = await client.getBlock({ blockTag: "latest" });
     if (block.number === null) throw new Error("Arc block unavailable");
     const blockNumber = block.number;
+    const recorded: D1PreparedStatement[] = [];
     const found = await Promise.all((rows.results ?? []).map(async (row) => {
-      const receipt = await client.getTransactionReceipt({ hash: row.transaction_hash });
-      const ids: bigint[] = [];
-      for (const log of receipt.logs) {
-        if (log.address.toLowerCase() !== UNISWAP_V4_ARC.positionManager.toLowerCase()) continue;
-        if (log.topics[0] !== TRANSFER_TOPIC) continue;
+      let ids: bigint[];
+      if (row.token_id !== null) {
+        ids = [BigInt(row.token_id)];
+      } else {
+        // Mints confirmed before token ids were recorded: the RPC prunes old receipts, so an
+        // unreadable one hides only that mint, and a readable one is recorded for next time.
         try {
-          const event = decodeEventLog({ abi: v4PositionManagerReadAbi,
-            data: log.data, topics: [...log.topics] as [Hex, ...Hex[]] });
-          if (event.eventName === "Transfer" && event.args.from === zeroAddress &&
-              event.args.to.toLowerCase() === wallet.address.toLowerCase()) ids.push(event.args.tokenId);
-        } catch { /* PositionManager emits other events in the same receipt. */ }
+          ids = v4MintedTokenIds((await client.getTransactionReceipt({ hash: row.transaction_hash })).logs,
+            wallet.address);
+        } catch { return []; }
+        if (ids.length === 1) {
+          recorded.push(env.DB.prepare(
+            "UPDATE v4_mint_intents SET token_id = ?2 WHERE intent_id = ?1 AND token_id IS NULL",
+          ).bind(row.intent_id, ids[0].toString()));
+        }
       }
       return Promise.all(ids.map(async (tokenId) => {
         try {
@@ -378,7 +385,8 @@ export function createApp(dependencies: AppDependencies = {}) {
             blockNumber });
           if (position.poolId.toLowerCase() !== row.minted_pool_id.toLowerCase()) return null;
           if (row.pool_id === null) return null;
-          const { transaction_hash: _hash, minted_pool_id: _minted, ...pool } = row;
+          const { transaction_hash: _hash, intent_id: _intent, token_id: _token, minted_pool_id: _minted,
+            ...pool } = row;
           const [live, fees] = await Promise.all([
             readArcV4Pool({ client, key: position.poolKey, blockNumber }),
             // Uncollected fees are shown, not acted on: a failed read shows as unknown.
@@ -396,6 +404,8 @@ export function createApp(dependencies: AppDependencies = {}) {
         } catch { return null; } // Burned or transferred NFTs are no longer wallet positions.
       }));
     }));
+    // Recording is a cache: a failed write only means the receipt is read again next time.
+    if (recorded.length > 0) await env.DB.batch(recorded).catch(() => undefined);
     return { positions: found.flat().filter((value): value is NonNullable<typeof value> => value !== null),
       hasMore: (rows.results ?? []).length === 50 };
   }
@@ -613,7 +623,8 @@ export function createApp(dependencies: AppDependencies = {}) {
   app.use("/v1/auth/logout", requireSession(now));
   app.use("/v1/wallets/*", requireSession(now));
   app.use("/v1/automation/*", requireSession(now));
-  registerAutomationRoutes(app, now);
+  registerAutomationRoutes(app, now, (env) => (dependencies.createChainClient?.(env) ??
+    createPublicClient({ chain: arc, transport: http(env.ARC_RPC_URL), batch: { multicall: true } })) as ChainReadClient);
 
   app.get("/v1/me", (context) => context.json({ user: context.get("user") }));
 

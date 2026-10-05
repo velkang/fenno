@@ -8,7 +8,7 @@
   "scripts": {
     "check": "pnpm -r --if-present check",
     "test": "pnpm -r --if-present test",
-    "dev": "wrangler dev -c api/wrangler.jsonc -c signer/wrangler.jsonc --local",
+    "dev": "wrangler dev -c api/wrangler.jsonc -c signer/wrangler.jsonc -c automation/wrangler.jsonc --local",
     "dev:smoke": "wrangler dev -c api/wrangler.jsonc -c signer/wrangler.jsonc --local --persist-to .wrangler/smoke-state --port 8790",
     "web:dev": "pnpm --dir web dev",
     "web:build": "pnpm --dir web build",

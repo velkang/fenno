@@ -18,12 +18,15 @@ function snoozedUntil(id: string): number {
 type Props = {
   notes: TomoNote[];
   onOpenPond?: (note: TomoNote) => void;
+  /** Answers one of Tomo's suggestions. */
+  onAnswer?: (note: TomoNote, approve: boolean) => Promise<void>;
 };
 
 /** Tomo's most useful note that isn't snoozed; "Remind me tomorrow" hides it for a day. */
-export function TomoCard({ notes, onOpenPond }: Props) {
+export function TomoCard({ notes, onOpenPond, onAnswer }: Props) {
   const [snoozed, setSnoozed] = useState<string[]>([]);
   const [walking, setWalking] = useState(false);
+  const [answering, setAnswering] = useState(false);
   const note = useMemo(() => notes.find((entry) => !snoozed.includes(entry.id) && snoozedUntil(entry.id) < Date.now())
     ?? notes[notes.length - 1], [notes, snoozed]);
   if (!note) return null;
@@ -51,6 +54,20 @@ export function TomoCard({ notes, onOpenPond }: Props) {
         <motion.div key={note.id} {...fade} className="flex flex-col gap-5">
           <p aria-live="polite" className="text-[1.4rem] leading-snug font-medium">{note.message}</p>
           <p className="text-[1.1rem] leading-relaxed text-ink-muted">{note.advice}</p>
+          {/* With the note's text, so a suggestion's buttons never show beside another note. */}
+          {note.proposal && onAnswer ? (
+            <div className="flex flex-wrap gap-3">
+              {[{ approve: true, label: "Approve" }, { approve: false, label: "Not now" }].map(({ approve, label }) => (
+                <button key={label} type="button" disabled={answering}
+                  onClick={() => { setAnswering(true); void onAnswer(note, approve).finally(() => setAnswering(false)); }}
+                  className={approve
+                    ? "min-h-14 flex-auto whitespace-nowrap rounded-full bg-accent px-6 text-[1.05rem] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60"
+                    : "min-h-14 flex-auto whitespace-nowrap rounded-full border border-line px-6 text-[1.05rem] font-medium text-ink hover:bg-tint disabled:opacity-60"}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </motion.div>
       </AnimatePresence>
       <AnimatePresence initial={false}>
@@ -62,6 +79,7 @@ export function TomoCard({ notes, onOpenPond }: Props) {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      {note.proposal && onAnswer ? null : (
       <div className="flex flex-wrap gap-3">
         {note.steps.length > 0 ? (
           walking && note.pond && onOpenPond ? (
@@ -83,6 +101,7 @@ export function TomoCard({ notes, onOpenPond }: Props) {
           </button>
         ) : null}
       </div>
+      )}
     </section>
   );
 }

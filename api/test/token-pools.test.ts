@@ -81,11 +81,14 @@ describe("token pool discovery route", () => {
       fee: 3000, tick_spacing: 60, hooks: zeroAddress, token_address: token,
       token_symbol: "MEME", token_decimals: 18, sqrt_price_x96: (2n ** 96n).toString(),
       tick: 0, liquidity: "1000000", lp_fee: 3000, block_number: 100, updated_at: 123 };
-    const db = { prepare(sql: string) { return { bind() { return this; },
+    const writes: Array<{ sql: string; args: unknown[] }> = [];
+    const db = { prepare(sql: string) { return { sql, args: [] as unknown[],
+      bind(...args: unknown[]) { this.args = args; return this; },
       async first() { return sql.includes("managed_wallets") ? { id: "wallet-1", address: owner } : row; },
       async all() { return { results: [{ transaction_hash: `0x${"ab".repeat(32)}`,
-        minted_pool_id: poolId, ...row }] }; },
-    }; } } as unknown as D1Database;
+        minted_pool_id: poolId, intent_id: "intent-1", token_id: null, ...row }] }; },
+    }; }, async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+      writes.push(...statements); return []; } } as unknown as D1Database;
     const topics = encodeEventTopics({ abi: v4PositionManagerReadAbi, eventName: "Transfer",
       args: { from: zeroAddress, to: owner, tokenId: 7n } });
     const chainClient = {
@@ -115,6 +118,57 @@ describe("token pool discovery route", () => {
       tickLower: -60, tickUpper: 60, liquidity: "100000",
       fees: { amount0: "300000", amount1: "0" },
       pool: { address: poolId, token: { symbol: "MEME" } } }] });
+    // A mint confirmed before token ids were recorded keeps its id once the receipt is read.
+    expect(writes).toEqual([expect.objectContaining({ args: ["intent-1", "7"] })]);
+    expect(writes[0].sql).toContain("UPDATE v4_mint_intents SET token_id");
+  });
+
+  it("lists v4 NFTs from recorded token ids and skips mints whose receipt is unreadable", async () => {
+    const sessionToken = "v4-pruned-receipt-session";
+    const sessionHash = await hashOpaqueValue(sessionToken);
+    const authStore = { findSessionUser: async (value: string) =>
+      value === sessionHash ? { id: "user-1", ownerAddress: owner } : null } as unknown as AuthStore;
+    const key = { currency0: zeroAddress, currency1: token, fee: 3000,
+      tickSpacing: 60, hooks: zeroAddress };
+    const poolId = v4PoolId(key);
+    const row = { pool_id: poolId, currency0: zeroAddress, currency1: token,
+      fee: 3000, tick_spacing: 60, hooks: zeroAddress, token_address: token,
+      token_symbol: "MEME", token_decimals: 18, sqrt_price_x96: (2n ** 96n).toString(),
+      tick: 0, liquidity: "1000000", lp_fee: 3000, block_number: 100, updated_at: 123 };
+    const db = { prepare(sql: string) { return { bind() { return this; },
+      async first() { return { id: "wallet-1", address: owner }; },
+      async all() { return { results: [
+        { transaction_hash: `0x${"ab".repeat(32)}`, minted_pool_id: poolId,
+          intent_id: "intent-1", token_id: "7", ...row },
+        { transaction_hash: `0x${"cd".repeat(32)}`, minted_pool_id: poolId,
+          intent_id: "intent-2", token_id: null, ...row },
+      ] }; },
+    }; }, async batch() { throw new Error("Unexpected write"); } } as unknown as D1Database;
+    // The RPC no longer keeps either mint's receipt.
+    const getTransactionReceipt = vi.fn(async () => { throw new Error("Receipt not found"); });
+    const chainClient = {
+      async getBlock() { return { number: 100n }; },
+      getTransactionReceipt,
+      async readContract({ functionName }: { functionName: string }) {
+        if (functionName === "ownerOf") return owner;
+        if (functionName === "getPoolAndPositionInfo") return [key,
+          (((1n << 24n) - 60n) << 8n) | (60n << 32n)];
+        if (functionName === "getPositionLiquidity") return 100_000n;
+        if (functionName === "getSlot0") return [2n ** 96n, 0, 0, 3000];
+        if (functionName === "getLiquidity") return 1_000_000n;
+        throw new Error("Unexpected read");
+      },
+    } as unknown as ChainReadClient;
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787" } satisfies Bindings;
+    const response = await createApp({ createAuthStore: () => authStore,
+      createChainClient: () => chainClient }).request("/v1/wallets/v4/positions", {
+      headers: { cookie: `stillwater_session=${sessionToken}` },
+    }, env);
+    expect(response.status).toBe(200);
+    const body = await response.json() as { positions: Array<{ tokenId: string }> };
+    expect(body.positions.map((position) => position.tokenId)).toEqual(["7"]);
+    expect(getTransactionReceipt).toHaveBeenCalledTimes(1);
+    expect(getTransactionReceipt).toHaveBeenCalledWith({ hash: `0x${"cd".repeat(32)}` });
   });
 
   it("prepares a v4 full withdrawal only for an owned position that simulates", async () => {

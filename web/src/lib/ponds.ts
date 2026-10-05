@@ -1,7 +1,7 @@
 import { zeroAddress } from "viem";
-import type { AlphaWalletSummary, V3Position } from "@stillwater/chain";
-import type { PricedPool, V4Position } from "./api-client";
-import { tickToPrice } from "./range-math";
+import { positionAmounts, tickToPrice, type AlphaWalletSummary, type V3Position } from "@stillwater/chain";
+import type { AutomationRun, PricedPool, V4Position } from "./api-client";
+import { runFailureMessage } from "./automation";
 import { poolSpotPrice } from "../pages/ExplorePage";
 
 // A "pond" is one liquidity position, v3 or v4, described the way the Pond page
@@ -25,16 +25,6 @@ export type Pond = {
   v4?: V4Position;
   v3?: V3Position;
 };
-
-/** Raw token amounts a position holds at the current price (Uniswap's liquidity math). */
-export function positionAmounts(liquidity: number, sqrtPriceX96: string, tickLower: number, tickUpper: number) {
-  const sqrtPrice = Number(sqrtPriceX96) / 2 ** 96;
-  const sqrtLower = Math.pow(1.0001, tickLower / 2);
-  const sqrtUpper = Math.pow(1.0001, tickUpper / 2);
-  if (sqrtPrice <= sqrtLower) return { amount0: liquidity * (sqrtUpper - sqrtLower) / (sqrtLower * sqrtUpper), amount1: 0 };
-  if (sqrtPrice >= sqrtUpper) return { amount0: 0, amount1: liquidity * (sqrtUpper - sqrtLower) };
-  return { amount0: liquidity * (sqrtUpper - sqrtPrice) / (sqrtPrice * sqrtUpper), amount1: liquidity * (sqrtPrice - sqrtLower) };
-}
 
 function describe(price: number, min: number, max: number): Pick<Pond, "state" | "nearEdge"> {
   if (price < min) return { state: "resting-below", nearEdge: false };
@@ -110,11 +100,52 @@ export type TomoNote = {
   /** Plain steps behind "Walk me through it". */
   steps: string[];
   pond?: Pond;
+  /** A change Tomo suggests; the user approves it or says not now. */
+  proposal?: { runId: string };
 };
 
-/** Tomo's notes, most useful first. A note can be snoozed for a day. */
-export function tomoNotes(ponds: Pond[], gatheredUsd: number): TomoNote[] {
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Notes about re-centring: one going now, or one that ended in the last day. */
+function runNotes(ponds: Pond[], runs: AutomationRun[], now: number): TomoNote[] {
   const notes: TomoNote[] = [];
+  for (const run of runs) {
+    const pond = ponds.find((entry) => entry.v4?.pool.address.toLowerCase() === run.poolId.toLowerCase());
+    const name = pond ? `your ${pond.symbol} pond` : "your pond";
+    const recent = (run.finishedAt ?? 0) > now - DAY_MS;
+    const closing = run.kind === "close";
+    // The agent's own words for why, when it was the agent's idea.
+    const why = run.trigger !== "user" && run.reason ? ` ${run.reason}` : "";
+    if (run.status === "proposed") {
+      notes.push({ id: `run:${run.id}:proposed`, pond, proposal: { runId: run.id },
+        message: closing ? `I'd suggest closing ${name}.${why}` : `I'd suggest re-centring ${name}.${why}`,
+        advice: closing
+          ? "Closing brings its tokens and fees back to your Stillwater wallet. Nothing happens unless you approve; the suggestion lapses in a day."
+          : "Re-centring closes the band and opens a new one around today's price. Nothing happens unless you approve; the suggestion lapses in a day.",
+        steps: [] });
+    } else if (run.status === "running") {
+      notes.push({ id: `run:${run.id}:running`, pond,
+        message: closing ? `I'm closing ${name}.${why}` : `I'm re-centring ${name} around today's price.${why}`,
+        advice: "It takes a few minutes. You can leave this page; I'll tell you when it's done.", steps: [] });
+    } else if (run.status === "failed" && recent) {
+      notes.push({ id: `run:${run.id}:failed`, pond,
+        message: `Re-centring ${name} stopped. ${runFailureMessage(run.failureReason)}`,
+        advice: "Anything already taken out is in your Stillwater wallet. You can open the pool and choose a band again.",
+        steps: [] });
+    } else if (run.status === "done" && recent) {
+      notes.push(closing
+        ? { id: `run:${run.id}:done`, pond, message: `I closed ${name}.${why}`,
+          advice: "Its tokens and fees are back in your Stillwater wallet.", steps: [] }
+        : { id: `run:${run.id}:done`, pond, message: `I re-centred ${name} around today's price.${why}`,
+          advice: "It earns again while the price stays inside its new band.", steps: [] });
+    }
+  }
+  return notes;
+}
+
+/** Tomo's notes, most useful first. A note can be snoozed for a day. */
+export function tomoNotes(ponds: Pond[], gatheredUsd: number, runs: AutomationRun[] = [], now = Date.now()): TomoNote[] {
+  const notes: TomoNote[] = runNotes(ponds, runs, now);
   for (const pond of ponds) {
     if (pond.state === "resting-below") {
       notes.push({ id: `${pond.key}:below`, pond,
@@ -122,8 +153,10 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number): TomoNote[] {
         advice: "There's no rush. Many people wait a few days to see if the price drifts back before moving their band.",
         steps: [
           `Wait: if ${pond.symbol} rises back into your band, the pond starts earning again by itself.`,
-          `Or close the pond. You get your ${pond.symbol} and any fees back in your Stillwater wallet.`,
-          "Then open the pool again and choose a band around today's price.",
+          ...(pond.v4
+            ? ["Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price."]
+            : [`Or close the pond. You get your ${pond.symbol} and any fees back in your Stillwater wallet.`,
+              "Then open the pool again and choose a band around today's price."]),
         ] });
     } else if (pond.state === "resting-above") {
       notes.push({ id: `${pond.key}:above`, pond,
@@ -131,8 +164,10 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number): TomoNote[] {
         advice: "Your pond sold its token on the way up. You can wait for the price to return, or start a new band higher up.",
         steps: [
           `Wait: if ${pond.symbol} falls back into your band, the pond starts earning again by itself.`,
-          "Or close the pond. You get your USDC and any fees back in your Stillwater wallet.",
-          "Then open the pool again and choose a band around today's price.",
+          ...(pond.v4
+            ? ["Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price."]
+            : ["Or close the pond. You get your USDC and any fees back in your Stillwater wallet.",
+              "Then open the pool again and choose a band around today's price."]),
         ] });
     } else if (pond.nearEdge) {
       notes.push({ id: `${pond.key}:edge`, pond,

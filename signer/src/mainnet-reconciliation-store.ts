@@ -84,6 +84,7 @@ export class D1MainnetReconciliationStore implements MainnetReplacementStore {
     latestNonce: number | null;
     pendingNonce: number | null;
     quarantineWallet: boolean;
+    v4TokenId?: string | null;
     now: number;
   }): Promise<void> {
     const outcome = input.attemptStatus === "confirmed"
@@ -141,6 +142,14 @@ export class D1MainnetReconciliationStore implements MainnetReplacementStore {
         now: input.now,
       }),
     ];
+    if (input.v4TokenId) {
+      statements.push(
+        this.db.prepare(
+          `UPDATE v4_mint_intents SET token_id = ?2
+           WHERE intent_id = ?1 AND token_id IS NULL`,
+        ).bind(input.attempt.intentId, input.v4TokenId),
+      );
+    }
     if (input.quarantineWallet) {
       statements.push(
         this.db.prepare(

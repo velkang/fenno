@@ -1,5 +1,6 @@
 import React from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { BANDS } from "@stillwater/chain";
 import { formatPoolPrice } from "../pages/ExplorePage";
 
 export type StrategyKey = "conservative" | "balanced" | "focused";
@@ -14,11 +15,11 @@ type Props = {
 };
 
 export const STRATEGIES: { key: StrategyKey; name: string; spread: number; label: string; hint: string }[] = [
-  { key: "conservative", name: "Wide", spread: 0.25, label: "±25%",
+  { key: "conservative", name: "Wide", spread: BANDS.wide, label: "±25%",
     hint: "Keeps earning through big price swings. Earns less per trade." },
-  { key: "balanced", name: "Balanced", spread: 0.1, label: "±10%",
+  { key: "balanced", name: "Balanced", spread: BANDS.balanced, label: "±10%",
     hint: "A middle ground for most people." },
-  { key: "focused", name: "Narrow", spread: 0.03, label: "±3%",
+  { key: "focused", name: "Narrow", spread: BANDS.narrow, label: "±3%",
     hint: "Earns the most per trade, but rests after small moves." },
 ];
 
