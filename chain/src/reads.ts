@@ -5,12 +5,7 @@ import {
   type Abi,
   type Address,
 } from "viem";
-import {
-  ALPHA_POOL,
-  ARC_TOKENS,
-  UNISWAP_SHARED_ARC,
-  UNISWAP_V3_ARC,
-} from "./arc";
+import { ARC_TOKENS, UNISWAP_V3_ARC } from "./arc";
 import { readToken, SUPPORTED_UNISWAP_FEES, type DiscoveredToken } from "./pool-discovery";
 
 const factoryAbi = parseAbi([
@@ -54,19 +49,6 @@ export type ChainReadClient = {
   ): Promise<{ result: unknown }>;
 };
 
-export type AlphaPoolState = {
-  address: Address;
-  token0: Address;
-  token1: Address;
-  fee: number;
-  tickSpacing: number;
-  sqrtPriceX96: string;
-  tick: number;
-  liquidity: string;
-  token1PerToken0: string;
-  token0PerToken1: string;
-};
-
 export type TokenAmount = {
   raw: string;
   formatted: string;
@@ -93,23 +75,17 @@ export type V3Position = {
   claimable1: TokenAmount;
 };
 
-export type AlphaWalletSummary = {
+/** The wallet's USDC and its v3 positions. Other tokens are listed by /v1/wallets/assets. */
+export type WalletSummary = {
   owner: Address;
-  pool: AlphaPoolState;
   balances: {
     nativeUsdc: TokenAmount;
     usdc: TokenAmount;
-    cirBtc: TokenAmount;
-  };
-  allowances: {
-    positionManager: { usdc: TokenAmount; cirBtc: TokenAmount };
-    permit2: { usdc: TokenAmount; cirBtc: TokenAmount };
   };
   positions: V3Position[];
 };
 
 const MAX_UINT128 = (1n << 128n) - 1n;
-const Q192 = 1n << 192n;
 const MAX_POSITION_ENUMERATION = 100n;
 
 function tuple(value: unknown, name: string): readonly unknown[] {
@@ -136,83 +112,6 @@ function amount(value: bigint, decimals: number): TokenAmount {
   return { raw: value.toString(), formatted: formatUnits(value, decimals) };
 }
 
-function decimalRatio(
-  numerator: bigint,
-  denominator: bigint,
-  precision = 18,
-): string {
-  if (denominator === 0n) throw new Error("Cannot format a zero denominator");
-  const integer = numerator / denominator;
-  const fraction = ((numerator % denominator) * 10n ** BigInt(precision)) /
-    denominator;
-  const trimmed = fraction.toString().padStart(precision, "0").replace(/0+$/, "");
-  return trimmed ? `${integer}.${trimmed}` : integer.toString();
-}
-
-export async function readAlphaPoolState(
-  client: ChainReadClient,
-  options: { blockNumber?: bigint } = {},
-): Promise<AlphaPoolState> {
-  const call = (functionName: string) =>
-    client.readContract({
-      address: ALPHA_POOL.address,
-      abi: poolAbi,
-      functionName,
-      blockNumber: options.blockNumber,
-    });
-  const [slot0Value, liquidityValue, token0Value, token1Value, feeValue, spacingValue] =
-    await Promise.all([
-      call("slot0"),
-      call("liquidity"),
-      call("token0"),
-      call("token1"),
-      call("fee"),
-      call("tickSpacing"),
-    ]);
-
-  const slot0 = tuple(slot0Value, "pool slot0");
-  const sqrtPriceX96 = bigint(slot0[0], "pool sqrt price");
-  const tick = number(slot0[1], "pool tick");
-  const token0 = address(token0Value, "pool token0");
-  const token1 = address(token1Value, "pool token1");
-  const fee = number(feeValue, "pool fee");
-  const tickSpacing = number(spacingValue, "pool tick spacing");
-
-  if (
-    token0 !== ALPHA_POOL.token0.address ||
-    token1 !== ALPHA_POOL.token1.address ||
-    fee !== ALPHA_POOL.fee ||
-    tickSpacing !== ALPHA_POOL.tickSpacing
-  ) {
-    throw new Error("Arc alpha pool configuration mismatch");
-  }
-
-  const squaredPrice = sqrtPriceX96 * sqrtPriceX96;
-  const token1PerToken0Numerator =
-    squaredPrice * 10n ** BigInt(ALPHA_POOL.token0.decimals);
-  const token1PerToken0Denominator =
-    Q192 * 10n ** BigInt(ALPHA_POOL.token1.decimals);
-
-  return {
-    address: ALPHA_POOL.address,
-    token0,
-    token1,
-    fee,
-    tickSpacing,
-    sqrtPriceX96: sqrtPriceX96.toString(),
-    tick,
-    liquidity: bigint(liquidityValue, "pool liquidity").toString(),
-    token1PerToken0: decimalRatio(
-      token1PerToken0Numerator,
-      token1PerToken0Denominator,
-    ),
-    token0PerToken1: decimalRatio(
-      token1PerToken0Denominator,
-      token1PerToken0Numerator,
-    ),
-  };
-}
-
 async function readTokenAmount(
   client: ChainReadClient,
   token: Address,
@@ -230,29 +129,6 @@ async function readTokenAmount(
         blockNumber,
       }),
       "token balance",
-    ),
-    decimals,
-  );
-}
-
-async function readAllowance(
-  client: ChainReadClient,
-  token: Address,
-  owner: Address,
-  spender: Address,
-  decimals: number,
-  blockNumber?: bigint,
-): Promise<TokenAmount> {
-  return amount(
-    bigint(
-      await client.readContract({
-        address: token,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [owner, spender],
-        blockNumber,
-      }),
-      "token allowance",
     ),
     decimals,
   );
@@ -405,48 +281,20 @@ export async function readV3Positions(
   return positions.filter((position): position is V3Position => position !== null);
 }
 
-export async function readAlphaWalletSummary(
+export async function readWalletSummary(
   client: ChainReadClient,
   ownerInput: Address,
   options: { blockNumber?: bigint; pools?: readonly V3PoolKey[] } = {},
-): Promise<AlphaWalletSummary> {
+): Promise<WalletSummary> {
   const owner = getAddress(ownerInput);
-  const positionManager = UNISWAP_V3_ARC.nonfungiblePositionManager.address;
-  const permit2 = UNISWAP_SHARED_ARC.permit2.address;
-  const [
-    pool,
-    nativeBalance,
-    usdc,
-    cirBtc,
-    managerUsdc,
-    managerCirBtc,
-    permit2Usdc,
-    permit2CirBtc,
-    positions,
-  ] = await Promise.all([
-    readAlphaPoolState(client, options),
+  const [nativeBalance, usdc, positions] = await Promise.all([
     client.getBalance({ address: owner, blockNumber: options.blockNumber }),
     readTokenAmount(client, ARC_TOKENS.USDC.address, owner, ARC_TOKENS.USDC.decimals, options.blockNumber),
-    readTokenAmount(client, ARC_TOKENS.cirBTC.address, owner, ARC_TOKENS.cirBTC.decimals, options.blockNumber),
-    readAllowance(client, ARC_TOKENS.USDC.address, owner, positionManager, ARC_TOKENS.USDC.decimals, options.blockNumber),
-    readAllowance(client, ARC_TOKENS.cirBTC.address, owner, positionManager, ARC_TOKENS.cirBTC.decimals, options.blockNumber),
-    readAllowance(client, ARC_TOKENS.USDC.address, owner, permit2, ARC_TOKENS.USDC.decimals, options.blockNumber),
-    readAllowance(client, ARC_TOKENS.cirBTC.address, owner, permit2, ARC_TOKENS.cirBTC.decimals, options.blockNumber),
     readV3Positions(client, owner, options),
   ]);
-
   return {
     owner,
-    pool,
-    balances: {
-      nativeUsdc: amount(nativeBalance, 18),
-      usdc,
-      cirBtc,
-    },
-    allowances: {
-      positionManager: { usdc: managerUsdc, cirBtc: managerCirBtc },
-      permit2: { usdc: permit2Usdc, cirBtc: permit2CirBtc },
-    },
+    balances: { nativeUsdc: amount(nativeBalance, 18), usdc },
     positions,
   };
 }

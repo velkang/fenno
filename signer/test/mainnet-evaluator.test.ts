@@ -3,8 +3,9 @@ import { zeroAddress } from "viem";
 import {
   ARC_CHAIN_ID,
   ARC_TOKENS,
-  alphaApprovalPayloadHash,
-  buildAlphaApproval,
+  PERMIT2_APPROVAL_SECONDS,
+  arcV4ApprovalPayloadHash,
+  buildArcV4Approval,
   buildArcV4Swap,
   buildArcV4PositionAction,
   arcV4PositionActionPayloadHash,
@@ -30,14 +31,21 @@ class MemoryStore implements MainnetEvaluationStore {
   async save(value: MainnetEvaluation) { this.evaluations.push(value); }
 }
 
+// A Permit2 approval for a native-USDC pool: a v4 intent needing only pool and token reads.
 function fixture(): LoadedMainnetIntent {
-  const approval = buildAlphaApproval({ token: "USDC", amount: 1_000_000n });
+  const token = "0x2222222222222222222222222222222222222222" as const;
+  const key = { currency0: zeroAddress, currency1: token, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const pool = { ...key, id: v4PoolId(key), sqrtPriceX96: (2n ** 96n).toString(),
+    tick: 0, liquidity: "1000000", lpFee: 3000 };
+  const stored = { pool, token, tokenDecimals: 18, stage: "permit2" as const, amount: 1_000_000n,
+    expiration: BigInt(Math.floor(now / 1_000) + PERMIT2_APPROVAL_SECONDS) };
+  const approval = buildArcV4Approval({ ...stored, poolId: pool.id });
   return {
     intentId: "approval-1",
-    kind: "erc20_approval",
+    kind: "v4_approval",
     status: "pending",
     expiresAt: now + 60_000,
-    payloadHash: alphaApprovalPayloadHash(approval),
+    payloadHash: arcV4ApprovalPayloadHash(approval),
     wallet: { address: wallet, state: "active" },
     transaction: {
       chainId: ARC_CHAIN_ID,
@@ -45,12 +53,15 @@ function fixture(): LoadedMainnetIntent {
       data: approval.data,
       value: 0n,
     },
+    v4Approval: { ...stored, spender: approval.spender },
   };
 }
 
 function client(call: () => Promise<unknown>): MainnetAuditClient {
   return {
     getBlock: async () => ({ number: 100n, hash: blockHash }),
+    readContract: async ({ functionName }: { functionName: string }) =>
+      functionName === "getSlot0" ? [2n ** 96n, 0, 0, 3000] : functionName === "decimals" ? 18 : 1_000_000n,
     call,
   } as unknown as MainnetAuditClient;
 }
@@ -66,7 +77,7 @@ describe("mainnet audit-only evaluator", () => {
     const action = buildArcV4PositionAction({ kind: "withdraw", pool,
       tokenDecimals: 18, tokenId: 7n, recipient: wallet, liquidity: 100_000n,
       tickLower: -60, tickUpper: 60, slippageBps: 100, deadline });
-    const loaded: LoadedMainnetIntent = { ...fixture(), intentId: "v4-withdraw-1",
+    const loaded: LoadedMainnetIntent = { ...fixture(), v4Approval: undefined, intentId: "v4-withdraw-1",
       kind: "v4_position_withdraw", wallet: { address: wallet, state: "paused" },
       payloadHash: arcV4PositionActionPayloadHash(action),
       transaction: { chainId: ARC_CHAIN_ID, to: action.to, data: action.data, value: 0n },
@@ -104,7 +115,7 @@ describe("mainnet audit-only evaluator", () => {
       amountIn: 1_000_000_000_000_000_000n, amountOutMinimum: 990n,
       deadline: BigInt(Math.floor(now / 1_000) + 600) });
     const store = new MemoryStore({
-      ...fixture(), intentId: "v4-swap-1", kind: "v4_single_pool_swap",
+      ...fixture(), v4Approval: undefined, intentId: "v4-swap-1", kind: "v4_single_pool_swap",
       payloadHash: arcV4SwapPayloadHash(swap),
       transaction: { chainId: ARC_CHAIN_ID, to: swap.to, data: swap.data, value: swap.value },
       v4Swap: { pool, tokenIn: zeroAddress, amountIn: swap.amountIn,
@@ -142,7 +153,7 @@ describe("mainnet audit-only evaluator", () => {
     const evaluate = (mandate: { status: string; maxPositionUsd: number }) =>
       evaluateMainnetIntent({ intentId: "agent-swap-1", client: chain, emergencyStop: false,
         now: () => now, store: new MemoryStore({
-          ...fixture(), intentId: "agent-swap-1", kind: "v4_single_pool_swap",
+          ...fixture(), v4Approval: undefined, intentId: "agent-swap-1", kind: "v4_single_pool_swap",
           payloadHash: arcV4SwapPayloadHash(swap),
           transaction: { chainId: ARC_CHAIN_ID, to: swap.to, data: swap.data, value: swap.value },
           v4Swap: { pool, tokenIn: zeroAddress, amountIn: swap.amountIn,
@@ -168,7 +179,7 @@ describe("mainnet audit-only evaluator", () => {
       amountIn: 2_000_000n, amountOutMinimum: (amountOut * 95n) / 100n,
       deadline: BigInt(Math.floor(now / 1_000) + 600) });
     const store = new MemoryStore({
-      ...fixture(), intentId: "v4-swap-2", kind: "v4_single_pool_swap",
+      ...fixture(), v4Approval: undefined, intentId: "v4-swap-2", kind: "v4_single_pool_swap",
       payloadHash: arcV4SwapPayloadHash(swap),
       transaction: { chainId: ARC_CHAIN_ID, to: swap.to, data: swap.data, value: swap.value },
       v4Swap: { pool, tokenIn: ARC_TOKENS.USDC.address, amountIn: swap.amountIn,

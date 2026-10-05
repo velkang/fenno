@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { formatUnits, parseUnits } from 'viem'
 import { useChainId } from 'wagmi'
-import { ARC_CHAIN_ID, type AlphaWalletSummary } from '@stillwater/chain'
+import { ARC_CHAIN_ID, type WalletSummary } from '@stillwater/chain'
 import {
   api,
   ApiError,
@@ -42,7 +42,7 @@ const PRIMARY_BUTTON =
 type Props = {
   initialPoolAddress?: string
   wallet: ManagedWalletRecord | null
-  summary: AlphaWalletSummary | null
+  summary: WalletSummary | null
   onRefresh: () => Promise<void>
   onOpenAuth: () => void
   onNotify: (

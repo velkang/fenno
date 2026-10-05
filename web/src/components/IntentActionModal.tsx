@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { parseUnits, formatUnits } from "viem";
 import { api } from "../lib/api-client";
 import { waitForAttempt } from "../lib/attempts";
-import { ARC_TOKENS, pairedAmount, type AlphaWalletSummary, type V3Position } from "@stillwater/chain";
+import { ARC_TOKENS, pairedAmount, type WalletSummary, type V3Position } from "@stillwater/chain";
 import { formatPoolPrice, poolSpotPrice } from "../pages/ExplorePage";
 import { IconClose, IconArrowLeftRight } from "./Icons";
 
@@ -12,7 +12,7 @@ export type ModalType =
 
 type Props = {
   modal: ModalType;
-  summary?: AlphaWalletSummary | null;
+  summary?: WalletSummary | null;
   onClose: () => void;
   onSuccess: () => Promise<void>;
   onNotify: (type: "success" | "error" | "info", title: string, message?: string) => void;
@@ -21,10 +21,10 @@ type Props = {
 type Side = "token" | "usdc";
 // A simulated action reports token0 and token1 amounts under these names.
 type SimulatedAmounts = {
-  amountCirBtc?: string;
-  amountUsdc?: string;
-  collectedCirBtc?: string;
-  collectedUsdc?: string;
+  amount0?: string;
+  amount1?: string;
+  collected0?: string;
+  collected1?: string;
 };
 
 function parseHumanUnits(value: string, decimals: number, label: string): string {
@@ -152,8 +152,8 @@ export const IntentActionModal: React.FC<Props> = ({
         action: kind,
         kind,
         tokenId: position.tokenId,
-        amountCirBtc: amount0,
-        amountUsdc: amount1,
+        amount0: amount0,
+        amount1: amount1,
         liquidity:
           kind === "decrease"
             ? actionLiquidity.trim() || position.liquidity
@@ -399,8 +399,8 @@ export const IntentActionModal: React.FC<Props> = ({
           <div className="flex flex-col gap-4">
             {(() => {
               const data = preparedIntent.simulationData;
-              const amount0 = data?.amountCirBtc ?? data?.collectedCirBtc;
-              const amount1 = data?.amountUsdc ?? data?.collectedUsdc;
+              const amount0 = data?.amount0 ?? data?.collected0;
+              const amount1 = data?.amount1 ?? data?.collected1;
               if (amount0 === undefined || amount1 === undefined) return null;
               const [tokenRaw, usdcRaw] = reorder(amount0, amount1);
               const heading =

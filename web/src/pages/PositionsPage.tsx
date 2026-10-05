@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { AlphaWalletSummary } from '@stillwater/chain'
+import type { WalletSummary } from '@stillwater/chain'
 import type { AuthUser, ManagedWalletRecord } from '../lib/api-client'
 import type { ModalType } from '../components/IntentActionModal'
 import {
@@ -21,7 +21,7 @@ import { RecentRuns } from '../components/pond/RecentRuns'
 type Props = {
   user: AuthUser | null
   wallet: ManagedWalletRecord | null
-  summary: AlphaWalletSummary | null
+  summary: WalletSummary | null
   onRefresh: () => Promise<void>
   onNotify: (
     type: 'success' | 'error' | 'info',

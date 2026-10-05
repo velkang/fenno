@@ -5,7 +5,7 @@ import {
   ARC_CHAIN_ID,
   withdrawalDomain,
   withdrawalTypes,
-  type AlphaWalletSummary,
+  type WalletSummary,
 } from '@stillwater/chain'
 import { api, ApiError, type ManagedWalletRecord } from '../lib/api-client'
 import { usePendingAttempt } from '../lib/attempts'
@@ -31,7 +31,7 @@ type Props = {
   wallet: ManagedWalletRecord | null
   canProvision: boolean
   ownerAddress?: string
-  summary: AlphaWalletSummary | null
+  summary: WalletSummary | null
   onClose: () => void
   onProvision: () => Promise<void>
   onRefresh: () => Promise<void>
@@ -454,13 +454,9 @@ export function WalletPanel({
                 </p>
               </form>
             )}
-            {(summary && summary.balances.cirBtc.raw !== '0') ||
-            assets.length > 0 ? (
+            {assets.length > 0 ? (
               <div className="mt-2 flex flex-wrap justify-between gap-3 border-t border-line pt-5 text-[1.05rem] tabular-nums">
                 <span className={LABEL_TEXT}>Other assets</span>
-                {summary && summary.balances.cirBtc.raw !== '0' ? (
-                  <strong>{summary.balances.cirBtc.formatted} cirBTC</strong>
-                ) : null}
                 {assets.map((asset) => (
                   <strong key={asset.address} title={asset.address}>
                     {formatUnits(BigInt(asset.raw), asset.decimals)}{' '}

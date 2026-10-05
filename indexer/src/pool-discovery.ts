@@ -46,8 +46,6 @@ export type ProtocolDirectory = {
   stateColumns: string[];
   /** Tables (with their pool column) whose rows mean a user acted on a pool: such pools never expire. */
   usedBy: Array<{ table: string; column: string }>;
-  /** Pools that never expire regardless of use. */
-  pinned?: string[];
   emitter: Address;
   /** eth_getLogs topic filters for USDC pool creations, optionally of one token. */
   creationTopics(token?: Address): unknown[][];
@@ -229,9 +227,7 @@ export async function refreshDirectory(input: { db: D1Database; dir: ProtocolDir
 /** Deletes up to `limit` of the rows older than `cutoff` that no user has acted on; returns their keys, lowercased. */
 async function expirePools(db: D1Database, dir: ProtocolDirectory, rows: DirectoryRow[], cutoff: number,
   limit: number): Promise<Set<string>> {
-  const pinned = new Set((dir.pinned ?? []).map((key) => key.toLowerCase()));
-  const old = rows.filter((row) => Number(row.updated_at) < cutoff).map((row) => String(row[dir.keyColumn]))
-    .filter((key) => !pinned.has(key.toLowerCase()));
+  const old = rows.filter((row) => Number(row.updated_at) < cutoff).map((row) => String(row[dir.keyColumn]));
   if (old.length === 0 || limit <= 0) return new Set();
   // NOCASE matches each intent table's pool-column index, so this reads only matching rows.
   const used = await db.prepare(

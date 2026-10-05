@@ -63,15 +63,15 @@ function base(
 export function buildIncreaseLiquidity(input: {
   tokenId: bigint;
   recipient: Address;
-  amountCirBtc: bigint;
-  amountUsdc: bigint;
+  amount0: bigint;
+  amount1: bigint;
   slippageBps: number;
   deadline: bigint;
 }): PositionAction {
-  if (input.amountCirBtc < 0n || input.amountUsdc < 0n) {
+  if (input.amount0 < 0n || input.amount1 < 0n) {
     throw new Error("Position amounts cannot be negative");
   }
-  if (input.amountCirBtc === 0n && input.amountUsdc === 0n) {
+  if (input.amount0 === 0n && input.amount1 === 0n) {
     throw new Error("At least one position amount must be positive");
   }
   if (input.deadline <= 0n) throw new Error("Invalid position deadline");
@@ -80,10 +80,10 @@ export function buildIncreaseLiquidity(input: {
     functionName: "increaseLiquidity",
     args: [{
       tokenId: input.tokenId,
-      amount0Desired: input.amountCirBtc,
-      amount1Desired: input.amountUsdc,
-      amount0Min: minimum(input.amountCirBtc, input.slippageBps),
-      amount1Min: minimum(input.amountUsdc, input.slippageBps),
+      amount0Desired: input.amount0,
+      amount1Desired: input.amount1,
+      amount0Min: minimum(input.amount0, input.slippageBps),
+      amount1Min: minimum(input.amount1, input.slippageBps),
       deadline: input.deadline,
     }],
   });
@@ -94,18 +94,18 @@ export function buildDecreaseLiquidity(input: {
   tokenId: bigint;
   recipient: Address;
   liquidity: bigint;
-  expectedCirBtc: bigint;
-  expectedUsdc: bigint;
+  expected0: bigint;
+  expected1: bigint;
   slippageBps: number;
   deadline: bigint;
 }): PositionAction {
   if (input.liquidity <= 0n || input.liquidity > maxUint128) {
     throw new Error("Invalid position liquidity");
   }
-  if (input.expectedCirBtc < 0n || input.expectedUsdc < 0n) {
+  if (input.expected0 < 0n || input.expected1 < 0n) {
     throw new Error("Expected position amounts cannot be negative");
   }
-  if (input.expectedCirBtc === 0n && input.expectedUsdc === 0n) {
+  if (input.expected0 === 0n && input.expected1 === 0n) {
     throw new Error("At least one expected position amount must be positive");
   }
   if (input.deadline <= 0n) throw new Error("Invalid position deadline");
@@ -115,8 +115,8 @@ export function buildDecreaseLiquidity(input: {
     args: [{
       tokenId: input.tokenId,
       liquidity: input.liquidity,
-      amount0Min: minimum(input.expectedCirBtc, input.slippageBps),
-      amount1Min: minimum(input.expectedUsdc, input.slippageBps),
+      amount0Min: minimum(input.expected0, input.slippageBps),
+      amount1Min: minimum(input.expected1, input.slippageBps),
       deadline: input.deadline,
     }],
   });
@@ -145,8 +145,8 @@ export function buildFullWithdrawal(input: {
   tokenId: bigint;
   recipient: Address;
   liquidity: bigint;
-  expectedCirBtc: bigint;
-  expectedUsdc: bigint;
+  expected0: bigint;
+  expected1: bigint;
   slippageBps: number;
   deadline: bigint;
 }): PositionAction {
@@ -210,8 +210,8 @@ export async function simulatePositionAction(input: {
     });
     output = {
       liquidity: liquidity.toString(),
-      amountCirBtc: amount0.toString(),
-      amountUsdc: amount1.toString(),
+      amount0: amount0.toString(),
+      amount1: amount1.toString(),
     };
   } else if (input.action.kind === "decrease") {
     const [amount0, amount1] = decodeFunctionResult({
@@ -219,14 +219,14 @@ export async function simulatePositionAction(input: {
       functionName: "decreaseLiquidity",
       data: result.data,
     });
-    output = { amountCirBtc: amount0.toString(), amountUsdc: amount1.toString() };
+    output = { amount0: amount0.toString(), amount1: amount1.toString() };
   } else if (input.action.kind === "collect") {
     const [amount0, amount1] = decodeFunctionResult({
       abi: managerAbi,
       functionName: "collect",
       data: result.data,
     });
-    output = { amountCirBtc: amount0.toString(), amountUsdc: amount1.toString() };
+    output = { amount0: amount0.toString(), amount1: amount1.toString() };
   } else {
     const results = decodeFunctionResult({
       abi: managerAbi,
@@ -245,10 +245,10 @@ export async function simulatePositionAction(input: {
       data: results[1],
     });
     output = {
-      decreasedCirBtc: decreased0.toString(),
-      decreasedUsdc: decreased1.toString(),
-      collectedCirBtc: collected0.toString(),
-      collectedUsdc: collected1.toString(),
+      decreased0: decreased0.toString(),
+      decreased1: decreased1.toString(),
+      collected0: collected0.toString(),
+      collected1: collected1.toString(),
       burnsPosition: true,
     };
   }

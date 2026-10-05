@@ -1,7 +1,7 @@
 import { encodeAbiParameters, getAddress, pad, toEventSelector, toFunctionSelector, zeroAddress,
   type Address, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
-import { ALPHA_POOL, ARC_TOKENS, UNISWAP_V3_ARC, UNISWAP_V4_ARC, v4PoolId } from "@stillwater/chain";
+import { ARC_TOKENS, UNISWAP_V3_ARC, UNISWAP_V4_ARC, v4PoolId } from "@stillwater/chain";
 import { v3Directory } from "../src/pool-directory";
 import { v4Directory } from "../src/v4-pool-directory";
 import { discoverToken, refreshDirectory, RETENTION_MS, runLivePass } from "../src/pool-discovery";
@@ -283,18 +283,6 @@ describe("v3 pool discovery from PoolCreated events", () => {
     expect(upserts("pool_directory")).toEqual([expect.objectContaining({ pool_address: pool,
       token_address: token, token_symbol: "MEME", fee: 500, tick_spacing: 10, liquidity: "900",
       usdc_reserve: "42", tick: 7, created_block: 1_999_100 })]);
-  });
-
-  it("never expires the pinned cirBTC pool", async () => {
-    const NOW = 2_000_000_000_000;
-    const pinned = { refresh_rowid: 1, pool_address: ALPHA_POOL.address, liquidity: "900",
-      updated_at: NOW - RETENTION_MS - 1 };
-    const { db, deletes } = fakeDb({ rows: { pool_directory: [pinned] } });
-    const { client } = fakeRpc({ calls: { ...stateCalls,
-      [`${ALPHA_POOL.address.toLowerCase()}:${toFunctionSelector("slot0()")}`]: stateCalls[`${pool.toLowerCase()}:${toFunctionSelector("slot0()")}`],
-      [`${ALPHA_POOL.address.toLowerCase()}:${toFunctionSelector("liquidity()")}`]: hex(uint(900)) } });
-    await refreshDirectory({ db, dir: v3Directory, client, limit: 10, expireLimit: 5, now: () => NOW });
-    expect(deletes("pool_directory")).toEqual([]);
   });
 
   it("finds a pasted token's pools at once: v4 by token topic, v3 through the factory", async () => {

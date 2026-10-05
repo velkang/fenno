@@ -79,8 +79,8 @@ export type LoadedMainnetIntent = {
     tickLower: number; tickUpper: number; liquidity: bigint; tokenDecimals: number;
     slippageBps: number; deadline: bigint; recipient: Address };
   tokenId?: bigint;
-  expectedCirBtc?: bigint;
-  expectedUsdc?: bigint;
+  expected0?: bigint;
+  expected1?: bigint;
   withdrawal?: {
     transaction: UsdcWithdrawal;
     ownerAddress: Address;
@@ -323,8 +323,8 @@ export async function evaluateLoadedMainnetIntent(input: {
         tokenId: loaded.tokenId,
         owner: loaded.wallet.address,
         liquidity: BigInt(current.liquidity),
-        expectedCirBtc: loaded.expectedCirBtc,
-        expectedUsdc: loaded.expectedUsdc,
+        expected0: loaded.expected0,
+        expected1: loaded.expected1,
       };
     }
     await input.client.call({

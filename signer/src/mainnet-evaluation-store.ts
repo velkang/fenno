@@ -264,15 +264,15 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
     const data = row.approval_calldata ?? row.mint_calldata ?? row.v4_calldata ?? row.v4a_calldata ?? row.v4s_calldata ?? row.v4pa_calldata ?? row.action_calldata ??
       row.withdrawal_calldata ?? row.swap_calldata;
     if (chainId === null || target === null || data === null) return null;
-    let expectedCirBtc: bigint | undefined;
-    let expectedUsdc: bigint | undefined;
+    let expected0: bigint | undefined;
+    let expected1: bigint | undefined;
     if (row.constraints_json) {
       const constraints = JSON.parse(row.constraints_json) as Record<string, unknown>;
-      if (typeof constraints.expectedCirBtc === "string") {
-        expectedCirBtc = BigInt(constraints.expectedCirBtc);
+      if (typeof constraints.expected0 === "string") {
+        expected0 = BigInt(constraints.expected0);
       }
-      if (typeof constraints.expectedUsdc === "string") {
-        expectedUsdc = BigInt(constraints.expectedUsdc);
+      if (typeof constraints.expected1 === "string") {
+        expected1 = BigInt(constraints.expected1);
       }
     }
     const approvalPool = row.approval_target && row.approval_pool_address
@@ -361,8 +361,8 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
           deadline: BigInt(row.v4pa_deadline), recipient: getAddress(row.v4pa_recipient) }
         : undefined,
       tokenId: row.action_token_id === null ? undefined : BigInt(row.action_token_id),
-      expectedCirBtc,
-      expectedUsdc,
+      expected0,
+      expected1,
       withdrawal: row.withdrawal_recipient && row.withdrawal_amount &&
         row.withdrawal_owner_address && row.withdrawal_owner_signature &&
         row.withdrawal_nonce && row.withdrawal_expires_at

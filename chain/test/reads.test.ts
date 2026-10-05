@@ -1,12 +1,9 @@
-import { zeroAddress, type Address } from "viem";
+import { getAddress, zeroAddress, type Address } from "viem";
 import { describe, expect, it } from "vitest";
 import {
-  ALPHA_POOL,
   ARC_TOKENS,
-  UNISWAP_SHARED_ARC,
   UNISWAP_V3_ARC,
-  readAlphaPoolState,
-  readAlphaWalletSummary,
+  readWalletSummary,
   type ChainReadClient,
 } from "../src";
 
@@ -14,10 +11,12 @@ const owner = "0x1111111111111111111111111111111111111111" as Address;
 const otherToken = "0x2222222222222222222222222222222222222222" as Address;
 const thirdToken = "0x3333333333333333333333333333333333333333" as Address;
 const otherPool = "0x4444444444444444444444444444444444444444" as Address;
+// The cirBTC/USDC 0.01% pool: an ordinary v3 USDC pool here.
+const cirbtcPool = getAddress("0x82916BeE18fcef517b26c72d7CB5F13694E1Db41");
 const Q96 = 1n << 96n;
 
 function fakeClient(
-  overrides: { poolToken0?: Address; unreadableToken?: Address; collectFails?: bigint } = {},
+  overrides: { unreadableToken?: Address; collectFails?: bigint } = {},
 ): ChainReadClient {
   return {
     async getBalance() {
@@ -25,18 +24,11 @@ function fakeClient(
     },
     async readContract(parameters) {
       const { address, functionName, args = [] } = parameters;
-      if (address === ALPHA_POOL.address) {
-        if (functionName === "slot0") return [Q96, 0, 0, 0, 0, 0, true];
-        if (functionName === "liquidity") return 42n;
-        if (functionName === "token0") return overrides.poolToken0 ?? ALPHA_POOL.token0.address;
-        if (functionName === "token1") return ALPHA_POOL.token1.address;
-        if (functionName === "fee") return ALPHA_POOL.fee;
-        if (functionName === "tickSpacing") return ALPHA_POOL.tickSpacing;
-      }
+      if (address === cirbtcPool && functionName === "slot0") return [Q96, 0, 0, 0, 0, 0, true];
 
       if (address === otherPool && functionName === "slot0") return [2n * Q96, 13_863, 0, 0, 0, 0, true];
       if (address === UNISWAP_V3_ARC.factory.address && functionName === "getPool") {
-        return args[0] === otherToken ? otherPool : ALPHA_POOL.address;
+        return args[0] === otherToken ? otherPool : cirbtcPool;
       }
       if (functionName === "decimals") {
         if (address === overrides.unreadableToken) throw new Error("decimals reverted");
@@ -53,9 +45,9 @@ function fakeClient(
             return [
               0n,
               zeroAddress,
-              ALPHA_POOL.token0.address,
-              ALPHA_POOL.token1.address,
-              ALPHA_POOL.fee,
+              ARC_TOKENS.cirBTC.address,
+              ARC_TOKENS.USDC.address,
+              100,
               -100,
               100,
               9_000n,
@@ -86,13 +78,7 @@ function fakeClient(
       if (functionName === "balanceOf") {
         return address === ARC_TOKENS.USDC.address ? 12_500_000n : 250_000_000n;
       }
-      if (functionName === "allowance") {
-        const spender = args[1];
-        const base = spender === UNISWAP_SHARED_ARC.permit2.address ? 2n : 1n;
-        return address === ARC_TOKENS.USDC.address
-          ? base * 1_000_000n
-          : base * 100_000_000n;
-      }
+      if (functionName === "allowance") return 0n;
       throw new Error(`Unexpected ${functionName} call to ${address}`);
     },
     async simulateContract(parameters) {
@@ -105,45 +91,14 @@ function fakeClient(
   };
 }
 
-describe("Arc alpha reads", () => {
-  it("validates the canonical pool and formats its decimal-adjusted price", async () => {
-    const pool = await readAlphaPoolState(fakeClient());
-
-    expect(pool.liquidity).toBe("42");
-    expect(pool.token1PerToken0).toBe("100");
-    expect(pool.token0PerToken1).toBe("0.01");
-  });
-
-  it("pins every pool call to the requested checkpoint block", async () => {
-    const client = fakeClient();
-    const calls: Array<bigint | undefined> = [];
-    const readContract = client.readContract.bind(client);
-    client.readContract = async (parameters) => {
-      calls.push(parameters.blockNumber);
-      return readContract(parameters);
-    };
-
-    await readAlphaPoolState(client, { blockNumber: 123n });
-
-    expect(calls).toEqual(Array(6).fill(123n));
-  });
-
-  it("rejects a pool whose onchain configuration no longer matches", async () => {
-    await expect(
-      readAlphaPoolState(fakeClient({ poolToken0: otherToken })),
-    ).rejects.toThrow("Arc alpha pool configuration mismatch");
-  });
-
-  it("returns balances, allowances, and simulated claimable fees", async () => {
-    const summary = await readAlphaWalletSummary(fakeClient(), owner);
+describe("wallet summary", () => {
+  it("returns USDC balances and simulated claimable fees", async () => {
+    const summary = await readWalletSummary(fakeClient(), owner);
 
     expect(summary.balances).toEqual({
       nativeUsdc: { raw: "1250000000000000000", formatted: "1.25" },
       usdc: { raw: "12500000", formatted: "12.5" },
-      cirBtc: { raw: "250000000", formatted: "2.5" },
     });
-    expect(summary.allowances.positionManager.usdc.formatted).toBe("1");
-    expect(summary.allowances.permit2.usdc.formatted).toBe("2");
     expect(summary.positions[0]).toMatchObject({
       tokenId: "7",
       liquidity: "9000",
@@ -155,13 +110,13 @@ describe("Arc alpha reads", () => {
   });
 
   it("lists positions in every USDC pool with that pool's token and price", async () => {
-    const { positions } = await readAlphaWalletSummary(fakeClient(), owner);
+    const { positions } = await readWalletSummary(fakeClient(), owner);
 
     expect(positions.map((position) => position.tokenId)).toEqual(["7", "8"]);
     expect(positions[0].pool).toMatchObject({
-      address: ALPHA_POOL.address,
+      address: cirbtcPool,
       token: { address: ARC_TOKENS.cirBTC.address, symbol: "cirBTC", decimals: 8, balance: "250000000" },
-      fee: ALPHA_POOL.fee,
+      fee: 100,
       sqrtPriceX96: Q96.toString(),
       tick: 0,
     });
@@ -183,7 +138,7 @@ describe("Arc alpha reads", () => {
 
   it("lists only positions in the given pools", async () => {
     const pools = [{ token0: otherToken, token1: ARC_TOKENS.USDC.address, fee: 3_000 }];
-    const { positions } = await readAlphaWalletSummary(fakeClient(), owner, { pools });
+    const { positions } = await readWalletSummary(fakeClient(), owner, { pools });
 
     expect(positions.map((position) => position.tokenId)).toEqual(["8"]);
   });
@@ -197,20 +152,20 @@ describe("Arc alpha reads", () => {
       return readContract(parameters);
     };
 
-    const { positions } = await readAlphaWalletSummary(client, owner, { pools: [] });
+    const { positions } = await readWalletSummary(client, owner, { pools: [] });
 
     expect(positions).toEqual([]);
     expect(positionManagerCalls).toBe(0);
   });
 
   it("leaves out a position whose token cannot be read and keeps the rest", async () => {
-    const { positions } = await readAlphaWalletSummary(fakeClient({ unreadableToken: otherToken }), owner);
+    const { positions } = await readWalletSummary(fakeClient({ unreadableToken: otherToken }), owner);
 
     expect(positions.map((position) => position.tokenId)).toEqual(["7"]);
   });
 
   it("shows a position's recorded fees when its fee collection cannot be simulated", async () => {
-    const { positions } = await readAlphaWalletSummary(fakeClient({ collectFails: 7n }), owner);
+    const { positions } = await readWalletSummary(fakeClient({ collectFails: 7n }), owner);
 
     expect(positions.map((position) => position.tokenId)).toEqual(["7", "8"]);
     expect(positions[0]).toMatchObject({

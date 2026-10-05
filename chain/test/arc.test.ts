@@ -1,7 +1,6 @@
 import { createPublicClient, getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
-  ALPHA_POOL,
   ARC_CHAIN_ID,
   ARC_TOKENS,
   UNISWAP_SHARED_ARC,
@@ -12,7 +11,7 @@ import {
   maxArcUsdcAmount,
 } from "../src";
 
-describe("Arc alpha configuration", () => {
+describe("Arc configuration", () => {
   it("uses Arc mainnet chain ID and USDC gas metadata", () => {
     expect(arc.id).toBe(ARC_CHAIN_ID);
     expect(arc.nativeCurrency).toEqual({
@@ -23,21 +22,12 @@ describe("Arc alpha configuration", () => {
     expect(ARC_TOKENS.USDC.decimals).toBe(6);
   });
 
-  it("pins the selected cirBTC/USDC 0.01% v3 pool", () => {
-    expect(ALPHA_POOL.protocol).toBe("uniswap-v3");
-    expect(ALPHA_POOL.fee).toBe(100);
-    expect(ALPHA_POOL.tickSpacing).toBe(1);
-    expect(ALPHA_POOL.token0.address).toBe(ARC_TOKENS.cirBTC.address);
-    expect(ALPHA_POOL.token1.address).toBe(ARC_TOKENS.USDC.address);
-  });
-
   it("contains only valid distinct allowlist addresses", () => {
     const addresses = [
       UNISWAP_V3_ARC.factory.address,
       UNISWAP_V3_ARC.nonfungiblePositionManager.address,
       UNISWAP_SHARED_ARC.universalRouter.address,
       UNISWAP_SHARED_ARC.permit2.address,
-      ALPHA_POOL.address,
       ARC_TOKENS.USDC.address,
       ARC_TOKENS.cirBTC.address,
     ];

@@ -8,18 +8,12 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import {
-  ARC_CHAIN_ID,
-  ARC_TOKENS,
-  UNISWAP_V3_ARC,
-} from "./arc";
+import { ARC_CHAIN_ID, UNISWAP_V3_ARC } from "./arc";
 import type { ChainReadClient } from "./reads";
 
 const approveAbi = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
-
-export type AlphaApprovalToken = keyof Pick<typeof ARC_TOKENS, "USDC" | "cirBTC">;
 
 export type Approval = {
   chainId: typeof ARC_CHAIN_ID;
@@ -31,8 +25,6 @@ export type Approval = {
   data: Hex;
   value: 0n;
 };
-
-export type AlphaApproval = Approval & { token: AlphaApprovalToken };
 
 export type ApprovalSimulationClient = ChainReadClient & {
   estimateGas(parameters: {
@@ -71,20 +63,6 @@ export function buildApproval(input: {
   };
 }
 
-export function buildAlphaApproval(input: {
-  token: AlphaApprovalToken;
-  amount: bigint;
-}): AlphaApproval {
-  return {
-    ...buildApproval({
-      tokenAddress: ARC_TOKENS[input.token].address,
-      tokenSymbol: input.token,
-      amount: input.amount,
-    }),
-    token: input.token,
-  };
-}
-
 export function approvalPayloadHash(approval: Approval): Hex {
   return keccak256(
     encodeAbiParameters(
@@ -106,9 +84,7 @@ export function approvalPayloadHash(approval: Approval): Hex {
   );
 }
 
-export const alphaApprovalPayloadHash = approvalPayloadHash;
-
-export async function simulateAlphaApproval(input: {
+export async function simulateApproval(input: {
   client: ApprovalSimulationClient;
   owner: Address;
   approval: Approval;

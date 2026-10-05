@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { tokenWaters, type AlphaWalletSummary, type Waters } from "@stillwater/chain";
+import { tokenWaters, type WalletSummary, type Waters } from "@stillwater/chain";
 import { WaterMark } from "../components/Icons";
 import { useTokenBalance } from "../components/BalancePresets";
 import { Loading, Skeleton } from "../components/Skeleton";
@@ -20,7 +20,7 @@ type Props = {
   address: string;
   onBack?: () => void;
   wallet: ManagedWalletRecord | null;
-  summary: AlphaWalletSummary | null;
+  summary: WalletSummary | null;
   onRefresh: () => Promise<void>;
   onOpenAuth: () => void;
   onNotify: (type: "success" | "error" | "info", title: string, message?: string) => void;
@@ -97,7 +97,7 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
       </section>
     ) : (
       <DepositPage initialPoolAddress={address} initialTokenAddress={pool.token.address} pool={pool}
-        balancesKey={swaps} onBuyToken={() => setBuying(true)} wallet={wallet} summary={summary} onRefresh={onRefresh}
+        balancesKey={swaps} onBuyToken={() => setBuying(true)} wallet={wallet} onRefresh={onRefresh}
         onNotify={onNotify} onOpenAuth={onOpenAuth} />
     )}
     <AnimatePresence>

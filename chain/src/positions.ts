@@ -7,12 +7,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import {
-  ALPHA_POOL,
-  ARC_CHAIN_ID,
-  ARC_TOKENS,
-  UNISWAP_V3_ARC,
-} from "./arc";
+import { ARC_CHAIN_ID, ARC_TOKENS, UNISWAP_V3_ARC } from "./arc";
 import { SUPPORTED_UNISWAP_FEES, type DiscoveredPool } from "./pool-discovery";
 import type { ApprovalSimulationClient } from "./approvals";
 import type { ChainReadClient } from "./reads";
@@ -26,22 +21,6 @@ export const positionManagerAbi = parseAbi([
 const MIN_TICK = -887_272;
 const MAX_TICK = 887_272;
 const MAX_SLIPPAGE_BPS = 500;
-
-export type AlphaMint = {
-  chainId: typeof ARC_CHAIN_ID;
-  to: Address;
-  data: Hex;
-  value: 0n;
-  recipient: Address;
-  tickLower: number;
-  tickUpper: number;
-  amount0Desired: bigint;
-  amount1Desired: bigint;
-  amount0Min: bigint;
-  amount1Min: bigint;
-  slippageBps: number;
-  deadline: bigint;
-};
 
 export type MintPool = Pick<DiscoveredPool, "address" | "token0" | "token1" | "fee" | "tickSpacing">;
 
@@ -65,7 +44,7 @@ export type Mint = {
   deadline: bigint;
 };
 
-function buildMintInternal(input: {
+export function buildMint(input: {
   pool: MintPool;
   recipient: Address;
   tickLower: number;
@@ -141,62 +120,7 @@ function buildMintInternal(input: {
   };
 }
 
-export function buildMint(input: {
-  pool: MintPool;
-  recipient: Address;
-  tickLower: number;
-  tickUpper: number;
-  amount0Desired: bigint;
-  amount1Desired: bigint;
-  slippageBps: number;
-  deadline: bigint;
-  amount0Min?: bigint;
-  amount1Min?: bigint;
-}): Mint {
-  return buildMintInternal(input);
-}
-
-export function buildAlphaMint(input: {
-  recipient: Address;
-  tickLower: number;
-  tickUpper: number;
-  amountCirBtc: bigint;
-  amountUsdc: bigint;
-  slippageBps: number;
-  deadline: bigint;
-  amountCirBtcMin?: bigint;
-  amountUsdcMin?: bigint;
-}): AlphaMint {
-  const mint = buildMintInternal({
-    pool: ALPHA_POOL,
-    recipient: input.recipient,
-    tickLower: input.tickLower,
-    tickUpper: input.tickUpper,
-    amount0Desired: input.amountCirBtc,
-    amount1Desired: input.amountUsdc,
-    amount0Min: input.amountCirBtcMin,
-    amount1Min: input.amountUsdcMin,
-    slippageBps: input.slippageBps,
-    deadline: input.deadline,
-  });
-  return {
-    chainId: mint.chainId,
-    to: mint.to,
-    data: mint.data,
-    value: mint.value,
-    recipient: mint.recipient,
-    tickLower: mint.tickLower,
-    tickUpper: mint.tickUpper,
-    amount0Desired: mint.amount0Desired,
-    amount1Desired: mint.amount1Desired,
-    amount0Min: mint.amount0Min,
-    amount1Min: mint.amount1Min,
-    slippageBps: mint.slippageBps,
-    deadline: mint.deadline,
-  };
-}
-
-export function mintPayloadHash(mint: Pick<Mint, "chainId" | "to" | "recipient" | "data"> | AlphaMint): Hex {
+export function mintPayloadHash(mint: Pick<Mint, "chainId" | "to" | "recipient" | "data">): Hex {
   return keccak256(
     encodeAbiParameters(
       [
@@ -209,8 +133,6 @@ export function mintPayloadHash(mint: Pick<Mint, "chainId" | "to" | "recipient" 
     ),
   );
 }
-
-export const alphaMintPayloadHash = mintPayloadHash;
 
 export async function simulateMint(input: {
   client: ApprovalSimulationClient;
@@ -262,46 +184,6 @@ export async function simulateMint(input: {
   };
 }
 
-export async function simulateAlphaMint(input: {
-  client: ApprovalSimulationClient;
-  owner: Address;
-  mint: AlphaMint;
-  blockNumber: bigint;
-}) {
-  const simulation = await simulateMint({
-    client: input.client,
-    owner: input.owner,
-    mint: {
-      chainId: input.mint.chainId,
-      to: input.mint.to,
-      data: input.mint.data,
-      value: input.mint.value,
-      recipient: input.mint.recipient,
-      token0: ALPHA_POOL.token0.address,
-      token1: ALPHA_POOL.token1.address,
-      fee: ALPHA_POOL.fee,
-      tickSpacing: ALPHA_POOL.tickSpacing,
-      tickLower: input.mint.tickLower,
-      tickUpper: input.mint.tickUpper,
-      amount0Desired: input.mint.amount0Desired,
-      amount1Desired: input.mint.amount1Desired,
-      amount0Min: input.mint.amount0Min,
-      amount1Min: input.mint.amount1Min,
-      slippageBps: input.mint.slippageBps,
-      deadline: input.mint.deadline,
-    },
-    blockNumber: input.blockNumber,
-  });
-  return {
-    blockNumber: simulation.blockNumber,
-    gasEstimate: simulation.gasEstimate,
-    tokenId: simulation.tokenId,
-    liquidity: simulation.liquidity,
-    amountCirBtc: simulation.amount0,
-    amountUsdc: simulation.amount1,
-  };
-}
-
 /** A position Stillwater may act on: owned by the managed wallet, in a supported USDC pool. */
 export async function verifyV3Position(input: {
   client: ChainReadClient;
@@ -346,26 +228,4 @@ export async function verifyV3Position(input: {
     liquidity: String(positionValue[7]),
     blockNumber: input.blockNumber.toString(),
   };
-}
-
-export function alphaPositionImportPayloadHash(input: {
-  owner: Address;
-  tokenId: bigint;
-}): Hex {
-  return keccak256(
-    encodeAbiParameters(
-      [
-        { type: "uint256" },
-        { type: "address" },
-        { type: "address" },
-        { type: "uint256" },
-      ],
-      [
-        BigInt(ARC_CHAIN_ID),
-        UNISWAP_V3_ARC.nonfungiblePositionManager.address,
-        getAddress(input.owner),
-        input.tokenId,
-      ],
-    ),
-  );
 }

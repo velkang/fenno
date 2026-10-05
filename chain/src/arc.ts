@@ -154,18 +154,6 @@ export const UNISWAP_SHARED_ARC = {
   },
 } as const satisfies Record<string, VerifiedContract>;
 
-export const ALPHA_POOL = {
-  protocol: "uniswap-v3",
-  address: getAddress("0x82916BeE18fcef517b26c72d7CB5F13694E1Db41"),
-  bytecodeHash:
-    "0xba38545defface0c20f10c45bc5b78bcdf30aac6a805583e6a3d424200f4fc89" as Hex,
-  codeSize: 22_142,
-  token0: ARC_TOKENS.cirBTC,
-  token1: ARC_TOKENS.USDC,
-  fee: 100,
-  tickSpacing: 1,
-} as const;
-
 export const ERC20_INTERFACE_USDC_CODE = {
   address: ARC_TOKENS.USDC.address,
   codeSize: 1_798,

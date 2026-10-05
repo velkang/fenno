@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { ALPHA_POOL, ARC_TOKENS, UNISWAP_V3_ARC, type ChainReadClient } from "@stillwater/chain";
+import { ARC_TOKENS, UNISWAP_V3_ARC, type ChainReadClient } from "@stillwater/chain";
 import { hashOpaqueValue, type AuthStore } from "../src/auth";
 import { createApp, type Bindings } from "../src";
 
@@ -32,8 +32,8 @@ describe("wallet summary", () => {
     const statement = {
       bind: vi.fn().mockReturnThis(),
       first: vi.fn().mockResolvedValue({ id: "wallet-1", address: managedAddress }),
-      all: vi.fn().mockResolvedValue({ results: [{ token0_address: ALPHA_POOL.token0.address,
-        token1_address: ALPHA_POOL.token1.address, fee: ALPHA_POOL.fee }] }),
+      all: vi.fn().mockResolvedValue({ results: [{ token0_address: "0x2222222222222222222222222222222222222222",
+        token1_address: ARC_TOKENS.USDC.address, fee: 3_000 }] }),
     };
     const env = {
       DB: { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database,
@@ -84,14 +84,10 @@ describe("wallet summary", () => {
             -60, 60, 1_000n, 0n, 0n, 0n, 0n];
         }
         if (functionName === "slot0") return [1n << 96n, 0, 0, 0, 0, 0, true];
-        if (functionName === "token0") return ALPHA_POOL.token0.address;
-        if (functionName === "token1") return ALPHA_POOL.token1.address;
-        if (functionName === "fee") return ALPHA_POOL.fee;
-        if (functionName === "tickSpacing") return ALPHA_POOL.tickSpacing;
         if (functionName === "getPool") return "0x4444444444444444444444444444444444444444";
         if (functionName === "decimals") return 18;
         if (functionName === "symbol") return "MEME";
-        return 0n; // liquidity, balances and allowances
+        return 0n; // balances
       },
       simulateContract: async () => ({ result: [0n, 0n] }),
     };

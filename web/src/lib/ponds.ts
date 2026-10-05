@@ -1,5 +1,5 @@
 import { zeroAddress } from "viem";
-import { positionAmounts, tickToPrice, type AlphaWalletSummary, type V3Position } from "@stillwater/chain";
+import { positionAmounts, tickToPrice, type WalletSummary, type V3Position } from "@stillwater/chain";
 import type { AutomationRun, PricedPool, V4Position } from "./api-client";
 import { runFailureMessage } from "./automation";
 import { poolSpotPrice } from "../pages/ExplorePage";
@@ -67,7 +67,7 @@ export function pondFromV4(position: V4Position): Pond {
 }
 
 /** The wallet's v3 positions, from the wallet summary. */
-export function pondsFromSummary(summary: AlphaWalletSummary | null): Pond[] {
+export function pondsFromSummary(summary: WalletSummary | null): Pond[] {
   return (summary?.positions ?? []).map((position) => ({
     key: `v3:${position.tokenId}`, tokenId: position.tokenId,
     ...measure({ ...position, fees: { amount0: position.claimable0.raw, amount1: position.claimable1.raw } }),

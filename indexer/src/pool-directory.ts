@@ -1,4 +1,4 @@
-import { ALPHA_POOL, ARC_TOKENS, SUPPORTED_UNISWAP_FEES, UNISWAP_V3_ARC } from "@stillwater/chain";
+import { ARC_TOKENS, SUPPORTED_UNISWAP_FEES, UNISWAP_V3_ARC } from "@stillwater/chain";
 import { decodeEventLog, getAddress, pad, parseAbi, toEventSelector, toFunctionSelector, zeroAddress,
   type Address, type Hex } from "viem";
 import { encodeAddressArg, rawCall, word, wordAddress, type RawRpcClient, type RpcLog } from "./directory-scan";
@@ -97,8 +97,6 @@ export const v3Directory: ProtocolDirectory = {
   stateColumns: ["sqrt_price_x96", "tick", "liquidity", "usdc_reserve", "block_number", "updated_at"],
   usedBy: [{ table: "mint_intents", column: "pool_address" }, { table: "approval_intents", column: "pool_address" },
     { table: "swap_intents", column: "pool_address" }],
-  // The cirBTC pool's older intents carry no pool address, so it is kept by name.
-  pinned: [ALPHA_POOL.address],
   emitter: FACTORY,
   creationTopics: (token) => token
     ? [[POOL_CREATED, topic(token), topic(USDC)], [POOL_CREATED, topic(USDC), topic(token)]]

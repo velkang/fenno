@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { AlphaWalletSummary, Waters } from "@stillwater/chain";
+import type { WalletSummary, Waters } from "@stillwater/chain";
 import { api, ApiError, type AuthUser, type ManagedWalletRecord } from "../lib/api-client";
 import { Koi } from "../components/Icons";
 import { pondFromV4, pondHeadline, pondsFromSummary, tomoNotes, type TomoNote } from "../lib/ponds";
@@ -12,7 +12,7 @@ import { useV4Ponds } from "../components/pond/useV4Ponds";
 type Props = {
   user: AuthUser | null;
   wallet: ManagedWalletRecord | null;
-  summary: AlphaWalletSummary | null;
+  summary: WalletSummary | null;
   onRefresh: () => Promise<void>;
   onNotify: (type: "success" | "error" | "info", title: string, message?: string) => void;
   onOpenPositions: () => void;

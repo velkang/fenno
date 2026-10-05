@@ -3,11 +3,10 @@ import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { SPRING } from "../lib/motion";
 import { formatUnits, getAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import {
-  ALPHA_POOL,
+  ARC_TOKENS,
   bandTicks,
   pairedAmount,
   tickToPrice,
-  type AlphaWalletSummary,
   type DiscoveredPool,
 } from "@stillwater/chain";
 import { useAppKit } from "@reown/appkit/react";
@@ -39,10 +38,8 @@ type Props = {
   /** Opens a way to buy the pool's token; offered in place of the presets when none is held. */
   onBuyToken?: () => void;
   wallet: ManagedWalletRecord | null;
-  summary: AlphaWalletSummary | null;
   onRefresh: () => Promise<void>;
   onNotify: (type: "success" | "error" | "info", title: string, message?: string) => void;
-  onOpenApproveModal?: (token: "USDC" | "cirBTC") => void;
   onOpenAuth?: () => void;
 };
 
@@ -94,7 +91,6 @@ export const DepositPage: React.FC<Props> = ({
   balancesKey,
   onBuyToken,
   wallet,
-  summary,
   onRefresh,
   onNotify,
   onOpenAuth,
@@ -104,7 +100,7 @@ export const DepositPage: React.FC<Props> = ({
 
   // Search & Token selection omnibar state
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTokenAddress, setSelectedTokenAddress] = useState<string>(ALPHA_POOL.token0.address);
+  const [selectedTokenAddress, setSelectedTokenAddress] = useState<string>(initialTokenAddress ?? "");
   const [discovering, setDiscovering] = useState(false);
   const [discovery, setDiscovery] = useState<TokenPoolDiscovery | null>(null);
   const [selectedPoolAddress, setSelectedPoolAddress] = useState("");
@@ -114,7 +110,7 @@ export const DepositPage: React.FC<Props> = ({
     if (!initialTokenAddress || !initialPoolAddress || v4Pool) return;
     if (!wallet && pool) {
       // Signed out: the public pool record is enough to show the form; balances are zero.
-      const usdc = { address: ALPHA_POOL.token1.address, symbol: "USDC", decimals: 6, balance: "0" };
+      const usdc = { address: ARC_TOKENS.USDC.address, symbol: "USDC", decimals: 6, balance: "0" };
       const token = { address: getAddress(pool.token.address), symbol: pool.token.symbol, decimals: pool.token.decimals, balance: "0" };
       const [first, second] = pool.token0.toLowerCase() === token.address.toLowerCase() ? [token, usdc] : [usdc, token];
       setDiscovery({ token, usdc, liability: "0", pools: [{ address: getAddress(pool.address), token0: first, token1: second,
@@ -160,10 +156,6 @@ export const DepositPage: React.FC<Props> = ({
   const [progress, setProgress] = useState<string | null>(null);
   const [v4Balances, setV4Balances] = useState<{ token: string; usdc: string } | null>(null);
 
-  const isCanonical = !v4Pool && selectedTokenAddress.toLowerCase() === ALPHA_POOL.token0.address.toLowerCase()
-    && (!initialPoolAddress || initialPoolAddress.toLowerCase() === ALPHA_POOL.address.toLowerCase());
-  const canonicalPool = summary?.pool;
-
   const activeCustomPool = useMemo<DiscoveredPool | undefined>(
     () => discovery?.pools.find((p) => p.address.toLowerCase() === selectedPoolAddress.toLowerCase()),
     [discovery, selectedPoolAddress],
@@ -173,48 +165,41 @@ export const DepositPage: React.FC<Props> = ({
   // token0 is always the listed token and token1 always USDC, whatever the pool's own order.
   const token0 = useMemo(() => {
     if (v4Pool) return { ...v4Pool.token, name: v4Pool.token.symbol };
-    if (isCanonical) return { symbol: "cirBTC", name: "Circulating Bitcoin", decimals: 8, address: ALPHA_POOL.token0.address };
     if (discovery?.token) return { ...discovery.token, name: discovery.token.symbol };
     return { symbol: "TOKEN", name: "Arc Custom Token", decimals: 18, address: selectedTokenAddress };
-  }, [v4Pool, isCanonical, discovery, selectedTokenAddress]);
+  }, [v4Pool, discovery, selectedTokenAddress]);
 
   const token1 = useMemo(() => {
     if (v4Pool) return { symbol: "USDC", decimals: v4NativeUsdc ? 18 : 6,
-      address: v4NativeUsdc ? zeroAddress : ALPHA_POOL.token1.address };
-    if (isCanonical) return { symbol: "USDC", decimals: 6, address: ALPHA_POOL.token1.address };
+      address: v4NativeUsdc ? zeroAddress : ARC_TOKENS.USDC.address };
     return discovery?.usdc ?? { symbol: "USDC", decimals: 6, address: "" };
-  }, [v4Pool, v4NativeUsdc, isCanonical, discovery]);
+  }, [v4Pool, v4NativeUsdc, discovery]);
 
-  const poolAddress = v4Pool ? v4Pool.address : isCanonical ? ALPHA_POOL.address : activeCustomPool?.address ?? "";
+  const poolAddress = v4Pool ? v4Pool.address : activeCustomPool?.address ?? "";
   const usdcIsPoolToken0 = v4Pool
     ? v4Pool.token0.toLowerCase() !== v4Pool.token.address.toLowerCase()
-    : !isCanonical && activeCustomPool?.token0.address.toLowerCase() === token1.address.toLowerCase();
-  const poolFee = v4Pool ? v4Pool.fee : isCanonical ? ALPHA_POOL.fee : activeCustomPool?.fee;
+    : activeCustomPool?.token0.address.toLowerCase() === token1.address.toLowerCase();
+  const poolFee = v4Pool ? v4Pool.fee : activeCustomPool?.fee;
   const feeTier = formatFeeTier(poolFee);
   const rangeWidth = STRATEGIES.find((entry) => entry.key === strategy)?.label ?? "±10%";
 
   // Current spot tick & price
   const currentTick = useMemo(() => {
     if (v4Pool) return v4Pool.tick;
-    if (isCanonical) return canonicalPool?.tick ?? 67648;
     return activeCustomPool?.tick ?? 0;
-  }, [v4Pool, isCanonical, canonicalPool, activeCustomPool]);
+  }, [v4Pool, activeCustomPool]);
 
   const tickSpacing = useMemo(() => {
     if (v4Pool) return v4Pool.tickSpacing;
-    if (isCanonical) return canonicalPool?.tickSpacing ?? 1;
     return activeCustomPool?.tickSpacing ?? 60;
-  }, [v4Pool, isCanonical, canonicalPool, activeCustomPool]);
+  }, [v4Pool, activeCustomPool]);
 
   const spotPrice = useMemo(() => {
-    if (isCanonical && canonicalPool?.token1PerToken0) {
-      return Number(canonicalPool.token1PerToken0);
-    }
     const computed = usdcIsPoolToken0
       ? 1 / tickToPrice(currentTick, token1.decimals, token0.decimals)
       : tickToPrice(currentTick, token0.decimals, token1.decimals);
     return Number.isFinite(computed) && computed > 0 ? computed : 0;
-  }, [isCanonical, canonicalPool, currentTick, token0.decimals, token1.decimals, usdcIsPoolToken0]);
+  }, [currentTick, token0.decimals, token1.decimals, usdcIsPoolToken0]);
 
   // Range boundaries based on strategy preset
   const { minPrice, maxPrice, tickLower, tickUpper } = useMemo(() => bandTicks({
@@ -234,14 +219,14 @@ export const DepositPage: React.FC<Props> = ({
       const find = (address: string) => result.allowances.find((entry) =>
         entry.token.toLowerCase() === address.toLowerCase())?.balance ?? "0";
       setV4Balances({ token: find(v4Pool.token.address),
-        usdc: v4NativeUsdc ? result.nativeBalance : find(ALPHA_POOL.token1.address) });
+        usdc: v4NativeUsdc ? result.nativeBalance : find(ARC_TOKENS.USDC.address) });
     }).catch(() => { if (current) setV4Balances(null); });
     return () => { current = false; };
   }, [v4Pool, v4NativeUsdc, wallet?.id, executing, balancesKey]);
 
   // Wallet balances in raw units, for display and shortfall checks.
-  const rawBalance0 = v4Pool ? v4Balances?.token : isCanonical ? summary?.balances?.cirBtc?.raw : discovery?.token?.balance;
-  const rawBalance1 = v4Pool ? v4Balances?.usdc : isCanonical ? summary?.balances?.usdc?.raw : discovery?.usdc?.balance;
+  const rawBalance0 = v4Pool ? v4Balances?.token : discovery?.token?.balance;
+  const rawBalance1 = v4Pool ? v4Balances?.usdc : discovery?.usdc?.balance;
   const balance0 = rawBalance0 ? formatRaw(rawBalance0, token0.decimals) : "0";
   const balance1 = rawBalance1 ? formatRaw(rawBalance1, token1.decimals) : "0";
 
@@ -275,13 +260,6 @@ export const DepositPage: React.FC<Props> = ({
   };
 
   const resolveAddress = async (addr: string) => {
-    if (addr.toLowerCase() === ALPHA_POOL.token0.address.toLowerCase()) {
-      setSelectedTokenAddress(ALPHA_POOL.token0.address);
-      setDiscovery(null);
-      setDiscoveryError(null);
-      return;
-    }
-
     setDiscovering(true);
     setDiscoveryError(null);
     try {
@@ -325,9 +303,8 @@ export const DepositPage: React.FC<Props> = ({
       { side: "token1" as const, symbol: token1.symbol, amount: raw1 ?? 0n, address: token1.address },
     ].filter((entry) => entry.amount > 0n);
     if (v4Pool) return sides.filter((entry) => entry.address.toLowerCase() !== zeroAddress);
-    const allowance = (side: "token0" | "token1") => BigInt((isCanonical
-      ? side === "token0" ? summary?.allowances?.positionManager?.cirBtc?.raw : summary?.allowances?.positionManager?.usdc?.raw
-      : side === "token0" ? discovery?.token?.allowance : discovery?.usdc?.allowance) ?? "0");
+    const allowance = (side: "token0" | "token1") =>
+      BigInt((side === "token0" ? discovery?.token?.allowance : discovery?.usdc?.allowance) ?? "0");
     return sides.filter((entry) => allowance(entry.side) < entry.amount);
   };
 
@@ -344,10 +321,6 @@ export const DepositPage: React.FC<Props> = ({
 
   // Approves the maximum so later positions in this pool skip the approval.
   const approveV3 = async (side: "token0" | "token1") => {
-    if (isCanonical) {
-      const res = await api.prepareApproval(side === "token0" ? "cirBTC" : "USDC", maxUint256.toString(), crypto.randomUUID());
-      return executeAndWait(res.intentId);
-    }
     if (!discovery || !activeCustomPool) throw new Error("Pool is not loaded yet.");
     const res = await api.prepareTokenApproval({
       tokenAddress: side === "token0" ? discovery.token.address : discovery.usdc.address,
@@ -370,10 +343,6 @@ export const DepositPage: React.FC<Props> = ({
     }
     const common = { tickLower, tickUpper, slippageBps: 100,
       deadline: String(Math.floor(Date.now() / 1000) + 1800), idempotencyKey: crypto.randomUUID() };
-    if (isCanonical) {
-      const res = await api.prepareMint({ ...common, amountCirBtc: amountToken, amountUsdc });
-      return executeAndWait(res.intentId);
-    }
     if (!activeCustomPool) throw new Error("Pool is not loaded yet.");
     const res = await api.prepareTokenMint({ ...common, tokenAddress: token0.address,
       poolAddress: activeCustomPool.address, amountToken, amountUsdc });
@@ -470,7 +439,7 @@ export const DepositPage: React.FC<Props> = ({
 
   const approvals = reviewing ? approvalsNeeded() : [];
 
-  if (initialPoolAddress && !v4Pool && !isCanonical && !activeCustomPool) {
+  if (initialPoolAddress && !v4Pool && !activeCustomPool) {
     if (discoveryError) return <p className={`${DISCOVERY_STATE} text-danger`} role="alert">{discoveryError}</p>;
     return <Loading label="Loading the pool and your range…"
       className="grid grid-cols-[minmax(0,1fr)_minmax(320px,420px)] items-start gap-[clamp(24px,3vw,40px)] max-[1040px]:grid-cols-1">
@@ -635,7 +604,7 @@ export const DepositPage: React.FC<Props> = ({
                 </button>
               ) : (
                 <button type="submit" form="deposit-form" className={PRIMARY_ACTION}
-                  disabled={reviewing || !hasAmounts || !!short0 || !!short1 || (!v4Pool && !isCanonical && !activeCustomPool)}>
+                  disabled={reviewing || !hasAmounts || !!short0 || !!short1 || (!v4Pool && !activeCustomPool)}>
                   {reviewing ? "Reviewing" : "Review pond"}
                 </button>
               )}

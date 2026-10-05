@@ -4,9 +4,9 @@ import {
   ARC_CHAIN_ID,
   ARC_TOKENS,
   UNISWAP_V3_ARC,
-  alphaApprovalPayloadHash,
-  buildAlphaApproval,
-  simulateAlphaApproval,
+  approvalPayloadHash,
+  buildApproval,
+  simulateApproval,
   type ApprovalSimulationClient,
 } from "../src";
 
@@ -15,9 +15,9 @@ const approveAbi = parseAbi([
 ]);
 const owner = "0x1111111111111111111111111111111111111111" as const;
 
-describe("alpha approvals", () => {
-  it("builds only an exact approval to the pinned position manager", () => {
-    const approval = buildAlphaApproval({ token: "USDC", amount: 1_500_000n });
+describe("approvals", () => {
+  it("builds an exact approval to the position manager unless told otherwise", () => {
+    const approval = buildApproval({ tokenAddress: ARC_TOKENS.USDC.address, tokenSymbol: "USDC", amount: 1_500_000n });
     const decoded = decodeFunctionData({ abi: approveAbi, data: approval.data });
 
     expect(approval).toMatchObject({
@@ -32,11 +32,11 @@ describe("alpha approvals", () => {
       UNISWAP_V3_ARC.nonfungiblePositionManager.address,
       1_500_000n,
     ]);
-    expect(alphaApprovalPayloadHash(approval)).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(approvalPayloadHash(approval)).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
   it.each([0n, -1n])("rejects unsafe approval amount %s", (amount) => {
-    expect(() => buildAlphaApproval({ token: "USDC", amount })).toThrow(
+    expect(() => buildApproval({ tokenAddress: ARC_TOKENS.USDC.address, amount })).toThrow(
       "Approval amount is outside uint256 range",
     );
   });
@@ -53,9 +53,9 @@ describe("alpha approvals", () => {
         return 45_000n;
       },
     } as unknown as ApprovalSimulationClient;
-    const approval = buildAlphaApproval({ token: "cirBTC", amount: 10n });
+    const approval = buildApproval({ tokenAddress: ARC_TOKENS.cirBTC.address, amount: 10n });
 
-    const result = await simulateAlphaApproval({
+    const result = await simulateApproval({
       client,
       owner,
       approval,

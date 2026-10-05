@@ -28,8 +28,8 @@ describe("position action construction", () => {
     const action = buildIncreaseLiquidity({
       tokenId: 7n,
       recipient: owner,
-      amountCirBtc: 1_000n,
-      amountUsdc: 2_000n,
+      amount0: 1_000n,
+      amount1: 2_000n,
       slippageBps: 100,
       deadline: 2_000_000_000n,
     });
@@ -61,8 +61,8 @@ describe("position action construction", () => {
       tokenId: 7n,
       recipient: owner,
       liquidity: 500n,
-      expectedCirBtc: 100n,
-      expectedUsdc: 200n,
+      expected0: 100n,
+      expected1: 200n,
       slippageBps: 100,
       deadline: 2_000_000_000n,
     });
@@ -78,8 +78,8 @@ describe("position action construction", () => {
     const action = buildIncreaseLiquidity({
       tokenId: 7n,
       recipient: owner,
-      amountCirBtc: 100n,
-      amountUsdc: 200n,
+      amount0: 100n,
+      amount1: 200n,
       slippageBps: 0,
       deadline: 2_000_000_000n,
     });
@@ -104,8 +104,8 @@ describe("position action construction", () => {
       gasEstimate: "225000",
       output: {
         liquidity: "300",
-        amountCirBtc: "90",
-        amountUsdc: "180",
+        amount0: "90",
+        amount1: "180",
       },
     });
   });

@@ -1,10 +1,13 @@
 import {
   ARC_CHAIN_ID,
-  alphaApprovalPayloadHash,
-  buildAlphaApproval,
+  PERMIT2_APPROVAL_SECONDS,
+  arcV4ApprovalPayloadHash,
+  buildArcV4Approval,
+  v4PoolId,
 } from "@stillwater/chain";
 import {
   keccak256,
+  zeroAddress,
   parseTransaction,
   recoverTransactionAddress,
   type Hex,
@@ -94,13 +97,21 @@ async function fixture() {
     signCalls.push(circleWalletId);
     return account.signTransaction(transaction);
   };
-  const approval = buildAlphaApproval({ token: "USDC", amount: 1_000_000n });
+  // A Permit2 approval for a native-USDC pool: a v4 intent needing only pool and token reads.
+  const token = "0x2222222222222222222222222222222222222222" as const;
+  const key = { currency0: zeroAddress, currency1: token, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const pool = { ...key, id: v4PoolId(key), sqrtPriceX96: (2n ** 96n).toString(),
+    tick: 0, liquidity: "1000000", lpFee: 3000 };
+  const stored = { pool, token, tokenDecimals: 18, stage: "permit2" as const, amount: 1_000_000n,
+    expiration: BigInt(Math.floor(now / 1_000) + PERMIT2_APPROVAL_SECONDS) };
+  const approval = buildArcV4Approval({ ...stored, poolId: pool.id });
   const intent: LoadedMainnetIntent = {
     intentId: "approval-mainnet",
-    kind: "erc20_approval",
+    kind: "v4_approval",
     status: "pending",
     expiresAt: now + 60_000,
-    payloadHash: alphaApprovalPayloadHash(approval),
+    payloadHash: arcV4ApprovalPayloadHash(approval),
+    v4Approval: { ...stored, spender: approval.spender },
     wallet: { address: wallet.address, state: "active" },
     transaction: {
       chainId: ARC_CHAIN_ID,
@@ -116,7 +127,9 @@ async function fixture() {
 function rpc(overrides: Partial<MainnetExecutionRpc> = {}): MainnetExecutionRpc {
   return {
     getBalance: async () => 0n,
-    readContract: async () => { throw new Error("not used"); },
+    readContract: (async ({ functionName }: { functionName: string }) =>
+      functionName === "getSlot0" ? [2n ** 96n, 0, 0, 3000] : functionName === "decimals" ? 18 : 1_000_000n
+    ) as MainnetExecutionRpc["readContract"],
     simulateContract: async () => { throw new Error("not used"); },
     getBlock: async () => ({ number: 100n, hash: blockHash }),
     getCode: async () => undefined,
@@ -169,7 +182,7 @@ describe("mainnet executor", () => {
       chainId: ARC_CHAIN_ID,
       nonce: 7,
       gas: 60_000n,
-      to: intent.transaction.to,
+      to: intent.transaction.to.toLowerCase(),
       data: intent.transaction.data,
     }));
     expect(parsed.value ?? 0n).toBe(0n);

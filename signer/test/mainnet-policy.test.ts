@@ -3,10 +3,8 @@ import { zeroAddress } from "viem";
 import {
   ARC_CHAIN_ID,
   ARC_TOKENS,
-  alphaApprovalPayloadHash,
   approvalPayloadHash,
   buildApproval,
-  buildAlphaApproval,
   buildCollectAll,
   buildFullWithdrawal,
   buildIncreaseLiquidity,
@@ -36,11 +34,12 @@ import {
 const now = 2_000_000_000_000;
 const wallet = "0x1111111111111111111111111111111111111111" as const;
 const other = "0x2222222222222222222222222222222222222222" as const;
+const usdcPool = "0x3333333333333333333333333333333333333333" as const;
 
 function request(
   overrides: Partial<MainnetPolicyRequest> = {},
 ): MainnetPolicyRequest {
-  const approval = buildAlphaApproval({ token: "USDC", amount: 1_000_000n });
+  const approval = buildApproval({ tokenAddress: ARC_TOKENS.USDC.address, tokenSymbol: "USDC", amount: 1_000_000n });
   return {
     now,
     emergencyStop: false,
@@ -49,7 +48,7 @@ function request(
       kind: "erc20_approval",
       status: "pending",
       expiresAt: now + 60_000,
-      payloadHash: alphaApprovalPayloadHash(approval),
+      payloadHash: approvalPayloadHash(approval),
     },
     transaction: {
       chainId: ARC_CHAIN_ID,
@@ -57,6 +56,7 @@ function request(
       data: approval.data,
       value: 0n,
     },
+    approval: { tokenAddress: ARC_TOKENS.USDC.address, poolAddress: usdcPool, poolTokenAddress: other },
     simulation: {
       success: true,
       blockNumber: 100n,
@@ -229,8 +229,8 @@ describe("mainnet signer policy", () => {
     const action = buildIncreaseLiquidity({
       tokenId: 7n,
       recipient: wallet,
-      amountCirBtc: 100n,
-      amountUsdc: 200n,
+      amount0: 100n,
+      amount1: 200n,
       slippageBps: 100,
       deadline: BigInt(Math.floor(now / 1_000) + 600),
     });
@@ -256,8 +256,8 @@ describe("mainnet signer policy", () => {
       tokenId: 7n,
       recipient: wallet,
       liquidity: 500n,
-      expectedCirBtc: 100n,
-      expectedUsdc: 200n,
+      expected0: 100n,
+      expected1: 200n,
       slippageBps: 100,
       deadline: BigInt(Math.floor(now / 1_000) + 600),
     });
@@ -274,8 +274,8 @@ describe("mainnet signer policy", () => {
         tokenId: 7n,
         owner: wallet,
         liquidity: 500n,
-        expectedCirBtc: 100n,
-        expectedUsdc: 200n,
+        expected0: 100n,
+        expected1: 200n,
       },
     });
     expect(validateMainnetIntent(withdrawal)).toEqual({
@@ -345,6 +345,13 @@ describe("mainnet signer policy", () => {
     expect(validateMainnetIntent(mintRequest)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
     expect(validateMainnetIntent({ ...mintRequest,
       mintPool: { ...mintRequest.mintPool!, fee: 500 } }))
+      .toEqual({ allowed: false, reason: "POOL_NOT_ALLOWED" });
+    expect(validateMainnetIntent({ ...mintRequest, mintPool: undefined }))
+      .toEqual({ allowed: false, reason: "POOL_NOT_ALLOWED" });
+  });
+
+  it("refuses an approval that names no pool", () => {
+    expect(validateMainnetIntent(request({ approval: undefined })))
       .toEqual({ allowed: false, reason: "POOL_NOT_ALLOWED" });
   });
 });

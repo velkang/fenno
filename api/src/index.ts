@@ -3,7 +3,6 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { BaseError, ContractFunctionRevertedError, createPublicClient, encodeFunctionData, getAddress, http, isAddress, parseAbi, verifyTypedData, zeroAddress, type Address, type Hex } from "viem";
 import {
   ARC_CHAIN_ID,
-  ALPHA_POOL,
   ARC_TOKENS,
   ARC_WATERS,
   UNISWAP_V3_ARC,
@@ -17,12 +16,9 @@ import {
   arcV4PositionActionPayloadHash,
   readArcV4Position,
   v4MintedTokenIds,
-  alphaPositionImportPayloadHash,
   arc,
   arcRpcTransport,
-  buildAlphaApproval,
   buildApproval,
-  buildAlphaMint,
   buildMint,
   buildArcV4Mint,
   buildArcV4Approval,
@@ -39,15 +35,14 @@ import {
   canSpendArcUsdc,
   maxArcUsdcAmount,
   managerAbi,
-  readAlphaWalletSummary,
+  readWalletSummary,
   quoteSwap,
   quoteArcV4Swap,
   readArcV4Pool,
   readArcV4PositionFees,
   discoverArcTokenPools,
   positionActionPayloadHash,
-  simulateAlphaApproval,
-  simulateAlphaMint,
+  simulateApproval,
   simulateMint,
   simulatePositionAction,
   swapPayloadHash,
@@ -56,7 +51,6 @@ import {
   withdrawalPayloadHash,
   withdrawalTypes,
   verifyV3Position,
-  type AlphaApprovalToken,
   type ApprovalSimulationClient,
   type ChainReadClient,
   type Mint,
@@ -715,7 +709,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       }) as unknown as ChainReadClient);
     try {
       return context.json({
-        summary: await readAlphaWalletSummary(client, wallet.address, { pools }),
+        summary: await readWalletSummary(client, wallet.address, { pools }),
       });
     } catch (error) {
       console.error("Arc wallet summary read failed", error);
@@ -754,8 +748,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })) as PoolDiscoveryClient;
     const unique = [...new Map(rows.results.map((row) => [row.address.toLowerCase(), row])).values()];
     const assets = await Promise.all(unique.map(async (row) => {
-      if (!isAddress(row.address) || row.address.toLowerCase() === ARC_TOKENS.USDC.address.toLowerCase() ||
-        row.address.toLowerCase() === ARC_TOKENS.cirBTC.address.toLowerCase()) return null;
+      if (!isAddress(row.address) || row.address.toLowerCase() === ARC_TOKENS.USDC.address.toLowerCase()) return null;
       try {
         const raw = await client.readContract({ address: getAddress(row.address), abi: swapTokenAbi,
           functionName: "balanceOf", args: [wallet.address] });
@@ -1339,28 +1332,24 @@ export function createApp(dependencies: AppDependencies = {}) {
 
   app.post("/v1/wallets/approvals/prepare", async (context) => {
     const body = record(await jsonBody(context));
-    const legacyToken = body.token === "USDC" || body.token === "cirBTC"
-      ? body.token
-      : null;
-    let suppliedTokenAddress: Address | undefined;
-    let suppliedPoolAddress: Address | undefined;
-    let suppliedPoolTokenAddress: Address | undefined;
+    let suppliedTokenAddress: Address;
+    let suppliedPoolAddress: Address;
+    let suppliedPoolTokenAddress: Address;
     const approvalSpender = body.spender === "swap"
       ? UNISWAP_SWAP_ARC.swapRouter02 : UNISWAP_V3_ARC.nonfungiblePositionManager.address;
-    if (legacyToken === null) {
-      if (typeof body.tokenAddress !== "string" || typeof body.poolAddress !== "string") {
-        throw new AuthError("TOKEN_NOT_ALLOWED", 400);
-      }
-      try {
-        suppliedTokenAddress = getAddress(body.tokenAddress);
-        suppliedPoolAddress = getAddress(body.poolAddress);
-        suppliedPoolTokenAddress = getAddress(
-          suppliedTokenAddress === ARC_TOKENS.USDC.address
-            ? body.poolTokenAddress as string : body.tokenAddress,
-        );
-      } catch {
-        throw new AuthError("INVALID_TOKEN_ADDRESS", 400);
-      }
+    // Every approval is for a pool: the token being approved, and the pool's token.
+    if (typeof body.tokenAddress !== "string" || typeof body.poolAddress !== "string") {
+      throw new AuthError("TOKEN_NOT_ALLOWED", 400);
+    }
+    try {
+      suppliedTokenAddress = getAddress(body.tokenAddress);
+      suppliedPoolAddress = getAddress(body.poolAddress);
+      suppliedPoolTokenAddress = getAddress(
+        suppliedTokenAddress === ARC_TOKENS.USDC.address
+          ? body.poolTokenAddress as string : body.tokenAddress,
+      );
+    } catch {
+      throw new AuthError("INVALID_TOKEN_ADDRESS", 400);
     }
     if (
       typeof body.amount !== "string" ||
@@ -1386,42 +1375,37 @@ export function createApp(dependencies: AppDependencies = {}) {
       return context.json({ error: "WALLET_NOT_ACTIVE" }, 409);
     }
 
-    let genericToken: Awaited<ReturnType<typeof discoverArcTokenPools>>["token"] | undefined;
-    if (legacyToken === null) {
-      const client = (
-        dependencies.createChainClient?.(context.env) ??
-        createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })
-      ) as unknown as PoolDiscoveryClient;
-      try {
-        const discovery = await discoverArcTokenPools({
-          client,
-          tokenAddress: suppliedPoolTokenAddress!,
-          owner: wallet.address,
-        });
-        const selected = discovery.pools.find((pool) => pool.address === suppliedPoolAddress);
-        if (!selected) throw new AuthError("POOL_NOT_ALLOWED", 422);
-        genericToken = suppliedTokenAddress === ARC_TOKENS.USDC.address
-          ? discovery.usdc : discovery.token;
-      } catch (error) {
-        if (error instanceof AuthError) throw error;
-        throw new AuthError("POOL_DISCOVERY_FAILED", 422);
-      }
+    let approvedToken: Awaited<ReturnType<typeof discoverArcTokenPools>>["token"];
+    const discoveryClient = (
+      dependencies.createChainClient?.(context.env) ??
+      createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })
+    ) as unknown as PoolDiscoveryClient;
+    try {
+      const discovery = await discoverArcTokenPools({
+        client: discoveryClient,
+        tokenAddress: suppliedPoolTokenAddress,
+        owner: wallet.address,
+      });
+      const selected = discovery.pools.find((pool) => pool.address === suppliedPoolAddress);
+      if (!selected) throw new AuthError("POOL_NOT_ALLOWED", 422);
+      approvedToken = suppliedTokenAddress === ARC_TOKENS.USDC.address ? discovery.usdc : discovery.token;
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw new AuthError("POOL_DISCOVERY_FAILED", 422);
     }
 
     let approval;
     try {
-      approval = legacyToken !== null
-        ? buildAlphaApproval({ token: legacyToken as AlphaApprovalToken, amount: BigInt(body.amount) })
-        : buildApproval({
-            tokenAddress: suppliedTokenAddress!,
-            tokenSymbol: genericToken!.symbol,
-            amount: BigInt(body.amount as string),
-            spender: approvalSpender,
-          });
+      approval = buildApproval({
+        tokenAddress: suppliedTokenAddress,
+        tokenSymbol: approvedToken.symbol,
+        amount: BigInt(body.amount as string),
+        spender: approvalSpender,
+      });
     } catch {
       throw new AuthError("INVALID_APPROVAL_AMOUNT", 400);
     }
-    const approvalToken = legacyToken ?? genericToken!.symbol;
+    const approvalToken = approvedToken.symbol;
 
     const timestamp = now();
     const intentId = `approval_${crypto.randomUUID()}`;
@@ -1498,9 +1482,9 @@ export function createApp(dependencies: AppDependencies = {}) {
         ARC_CHAIN_ID,
         approvalToken,
         approval.tokenAddress,
-        genericToken?.decimals ?? null,
-        suppliedPoolAddress ?? null,
-        suppliedPoolTokenAddress ?? null,
+        approvedToken.decimals,
+        suppliedPoolAddress,
+        suppliedPoolTokenAddress,
         approval.spender,
         approval.amount.toString(),
         approval.data,
@@ -1522,7 +1506,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       if (block.number === null || block.hash === null) {
         throw new Error("Arc safe block unavailable");
       }
-      const simulation = await simulateAlphaApproval({
+      const simulation = await simulateApproval({
         client: client as ApprovalRouteClient,
         owner: wallet.address,
         approval,
@@ -1544,7 +1528,7 @@ export function createApp(dependencies: AppDependencies = {}) {
         status: "pending",
         token: approvalToken,
         tokenAddress: approval.tokenAddress,
-        poolAddress: suppliedPoolAddress ?? null,
+        poolAddress: suppliedPoolAddress,
         spender: approval.spender,
         amount: approval.amount.toString(),
         transaction: {
@@ -1791,12 +1775,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     const body = record(await jsonBody(context));
     const integerString = (value: unknown) =>
       typeof value === "string" && /^[1-9][0-9]*$/.test(value);
-    const genericMint = body.tokenAddress !== undefined || body.poolAddress !== undefined;
     if (
-      (!genericMint && !integerString(body.amountCirBtc)) ||
-      (genericMint && !integerString(body.amountToken)) ||
+      !integerString(body.amountToken) ||
       !integerString(body.amountUsdc) ||
-      (genericMint && (typeof body.tokenAddress !== "string" || typeof body.poolAddress !== "string")) ||
+      typeof body.tokenAddress !== "string" || typeof body.poolAddress !== "string" ||
       typeof body.tickLower !== "number" ||
       typeof body.tickUpper !== "number" ||
       typeof body.slippageBps !== "number" ||
@@ -1807,18 +1789,16 @@ export function createApp(dependencies: AppDependencies = {}) {
     ) {
       throw new AuthError("INVALID_MINT_REQUEST", 400);
     }
-    let requestedTokenAddress: Address | undefined;
-    let requestedPoolAddress: Address | undefined;
-    if (genericMint) {
-      try {
-        requestedTokenAddress = getAddress(body.tokenAddress as string);
-        requestedPoolAddress = getAddress(body.poolAddress as string);
-      } catch {
-        throw new AuthError("INVALID_TOKEN_ADDRESS", 400);
-      }
-      if (requestedTokenAddress === ARC_TOKENS.USDC.address) {
-        throw new AuthError("TOKEN_NOT_ALLOWED", 400);
-      }
+    let requestedTokenAddress: Address;
+    let requestedPoolAddress: Address;
+    try {
+      requestedTokenAddress = getAddress(body.tokenAddress);
+      requestedPoolAddress = getAddress(body.poolAddress);
+    } catch {
+      throw new AuthError("INVALID_TOKEN_ADDRESS", 400);
+    }
+    if (requestedTokenAddress === ARC_TOKENS.USDC.address) {
+      throw new AuthError("TOKEN_NOT_ALLOWED", 400);
     }
     const deadline = BigInt(body.deadline as string);
     const nowSeconds = BigInt(Math.floor(now() / 1_000));
@@ -1835,26 +1815,25 @@ export function createApp(dependencies: AppDependencies = {}) {
       return context.json({ error: "WALLET_NOT_ACTIVE" }, 409);
     }
 
-    let selectedPool: Awaited<ReturnType<typeof discoverArcTokenPools>>["pools"][number] | undefined;
-    let discoveredToken: Awaited<ReturnType<typeof discoverArcTokenPools>>["token"] | undefined;
-    if (genericMint) {
-      const discoveryClient = (
-        dependencies.createChainClient?.(context.env) ??
-        createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })
-      ) as unknown as PoolDiscoveryClient;
-      try {
-        const discovery = await discoverArcTokenPools({
-          client: discoveryClient,
-          tokenAddress: requestedTokenAddress!,
-          owner: wallet.address,
-        });
-        selectedPool = discovery.pools.find((pool) => pool.address === requestedPoolAddress);
-        if (!selectedPool) throw new AuthError("POOL_NOT_ALLOWED", 422);
-        discoveredToken = discovery.token;
-      } catch (error) {
-        if (error instanceof AuthError) throw error;
-        throw new AuthError("POOL_DISCOVERY_FAILED", 422);
-      }
+    let selectedPool: Awaited<ReturnType<typeof discoverArcTokenPools>>["pools"][number];
+    let discoveredToken: Awaited<ReturnType<typeof discoverArcTokenPools>>["token"];
+    const discoveryClient = (
+      dependencies.createChainClient?.(context.env) ??
+      createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })
+    ) as unknown as PoolDiscoveryClient;
+    try {
+      const discovery = await discoverArcTokenPools({
+        client: discoveryClient,
+        tokenAddress: requestedTokenAddress,
+        owner: wallet.address,
+      });
+      const found = discovery.pools.find((pool) => pool.address === requestedPoolAddress);
+      if (!found) throw new AuthError("POOL_NOT_ALLOWED", 422);
+      selectedPool = found;
+      discoveredToken = discovery.token;
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw new AuthError("POOL_DISCOVERY_FAILED", 422);
     }
 
     const idempotencyKeyHash = await hashOpaqueValue(body.idempotencyKey);
@@ -1872,46 +1851,19 @@ export function createApp(dependencies: AppDependencies = {}) {
     const intentId = `mint_${crypto.randomUUID()}`;
     const timestamp = now();
     const slippageBps = body.slippageBps as number;
-    const amountCirBtcDesired = BigInt((genericMint ? body.amountToken : body.amountCirBtc) as string);
+    const amountTokenDesired = BigInt(body.amountToken as string);
     const amountUsdcDesired = BigInt(body.amountUsdc as string);
     const tickLower = body.tickLower as number;
     const tickUpper = body.tickUpper as number;
+    // The request names the token and USDC amounts; the pool lists its tokens in its own order.
+    const tokenIsZero = selectedPool.token0.address === requestedTokenAddress;
+    const amount0Desired = tokenIsZero ? amountTokenDesired : amountUsdcDesired;
+    const amount1Desired = tokenIsZero ? amountUsdcDesired : amountTokenDesired;
 
-    const amount0Desired = genericMint
-      ? selectedPool!.token0.address === requestedTokenAddress
-        ? amountCirBtcDesired : amountUsdcDesired
-      : amountCirBtcDesired;
-    const amount1Desired = genericMint
-      ? selectedPool!.token0.address === requestedTokenAddress
-        ? amountUsdcDesired : amountCirBtcDesired
-      : amountUsdcDesired;
-
-    let probeMint;
+    let probeMint: Mint;
     try {
-      probeMint = genericMint
-        ? buildMint({
-            pool: selectedPool!,
-            recipient: wallet.address,
-            tickLower,
-            tickUpper,
-            amount0Desired,
-            amount1Desired,
-            slippageBps,
-            deadline,
-            amount0Min: 0n,
-            amount1Min: 0n,
-          })
-        : buildAlphaMint({
-            recipient: wallet.address,
-            tickLower,
-            tickUpper,
-            amountCirBtc: amountCirBtcDesired,
-            amountUsdc: amountUsdcDesired,
-            slippageBps,
-            deadline,
-            amountCirBtcMin: 0n,
-            amountUsdcMin: 0n,
-          });
+      probeMint = buildMint({ pool: selectedPool, recipient: wallet.address, tickLower, tickUpper,
+        amount0Desired, amount1Desired, slippageBps, deadline, amount0Min: 0n, amount1Min: 0n });
     } catch {
       throw new AuthError("INVALID_MINT_REQUEST", 400);
     }
@@ -1923,59 +1875,31 @@ export function createApp(dependencies: AppDependencies = {}) {
       getBalance(input: { address: Address }): Promise<bigint>;
       estimateFeesPerGas(): Promise<{ maxFeePerGas: bigint }>;
     };
+    const poolColumns = [
+      requestedTokenAddress, discoveredToken.symbol, discoveredToken.decimals, selectedPool.address,
+      selectedPool.token0.address, selectedPool.token1.address, selectedPool.fee, selectedPool.tickSpacing,
+    ] as const;
 
     try {
       const block = await client.getBlock({ blockTag: "safe" });
       if (block.number === null || block.hash === null) throw new Error("No safe block");
 
-      const simulation = genericMint
-        ? await simulateMint({ client, owner: wallet.address, mint: probeMint as Mint, blockNumber: block.number })
-        : await simulateAlphaMint({ client, owner: wallet.address, mint: probeMint as ReturnType<typeof buildAlphaMint>, blockNumber: block.number });
-
-      const simulatedAmount0 = genericMint
-        ? BigInt((simulation as Awaited<ReturnType<typeof simulateMint>>).amount0)
-        : BigInt((simulation as Awaited<ReturnType<typeof simulateAlphaMint>>).amountCirBtc);
-      const simulatedAmount1 = genericMint
-        ? BigInt((simulation as Awaited<ReturnType<typeof simulateMint>>).amount1)
-        : BigInt((simulation as Awaited<ReturnType<typeof simulateAlphaMint>>).amountUsdc);
-      const effectiveSlippageBps = BigInt(slippageBps);
-      const slippageFactor = 10_000n - effectiveSlippageBps;
+      const simulation = await simulateMint({ client, owner: wallet.address, mint: probeMint, blockNumber: block.number });
+      const simulatedAmount0 = BigInt(simulation.amount0);
+      const simulatedAmount1 = BigInt(simulation.amount1);
+      const slippageFactor = 10_000n - BigInt(slippageBps);
       const amount0Min = (simulatedAmount0 * slippageFactor) / 10_000n;
       const amount1Min = (simulatedAmount1 * slippageFactor) / 10_000n;
-
-      const mint = genericMint
-        ? buildMint({
-            pool: selectedPool!,
-            recipient: wallet.address,
-            tickLower,
-            tickUpper,
-            amount0Desired: simulatedAmount0,
-            amount1Desired: simulatedAmount1,
-            slippageBps: Number(effectiveSlippageBps),
-            deadline,
-            amount0Min,
-            amount1Min,
-          })
-        : buildAlphaMint({
-            recipient: wallet.address,
-            tickLower,
-            tickUpper,
-            amountCirBtc: simulatedAmount0,
-            amountUsdc: simulatedAmount1,
-            slippageBps: Number(effectiveSlippageBps),
-            deadline,
-            amountCirBtcMin: amount0Min,
-            amountUsdcMin: amount1Min,
-          });
+      const mint = buildMint({ pool: selectedPool, recipient: wallet.address, tickLower, tickUpper,
+        amount0Desired: simulatedAmount0, amount1Desired: simulatedAmount1, slippageBps, deadline,
+        amount0Min, amount1Min });
 
       const [nativeBalance, fees] = await Promise.all([
         client.getBalance({ address: wallet.address }),
         client.estimateFeesPerGas(),
       ]);
       const reserve = (BigInt(simulation.gasEstimate) * 120n * fees.maxFeePerGas + 99n) / 100n;
-      const usdcForMint = genericMint
-        ? (selectedPool!.token0.address === ARC_TOKENS.USDC.address ? mint.amount0Desired : mint.amount1Desired)
-        : simulatedAmount1;
+      const usdcForMint = tokenIsZero ? mint.amount1Desired : mint.amount0Desired;
       if (!canSpendArcUsdc(nativeBalance, usdcForMint, reserve)) {
         throw new AuthError("INSUFFICIENT_USDC_AFTER_FEES", 422);
       }
@@ -1994,10 +1918,10 @@ export function createApp(dependencies: AppDependencies = {}) {
       await context.env.DB.prepare(
         `INSERT INTO mint_intents (
           intent_id, chain_id, position_manager, recipient, tick_lower, tick_upper,
-          amount_cirbtc_desired, amount_usdc_desired, amount_cirbtc_min,
-          amount_usdc_min, slippage_bps, deadline, calldata, simulation_block,
+          amount0_desired, amount1_desired, amount0_min,
+          amount1_min, slippage_bps, deadline, calldata, simulation_block,
           simulation_block_hash, gas_estimate, simulated_token_id, simulated_liquidity,
-          simulated_amount_cirbtc, simulated_amount_usdc, created_at,
+          simulated_amount0, simulated_amount1, created_at,
           token_address, token_symbol, token_decimals, pool_address,
           token0_address, token1_address, fee, tick_spacing
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)`,
@@ -2010,14 +1934,7 @@ export function createApp(dependencies: AppDependencies = {}) {
           mint.data, Number(block.number), block.hash,
           simulation.gasEstimate, simulation.tokenId, simulation.liquidity,
           simulatedAmount0.toString(), simulatedAmount1.toString(), timestamp,
-          genericMint ? requestedTokenAddress : ARC_TOKENS.cirBTC.address,
-          genericMint ? discoveredToken?.symbol : ARC_TOKENS.cirBTC.symbol,
-          genericMint ? discoveredToken?.decimals : ARC_TOKENS.cirBTC.decimals,
-          genericMint ? selectedPool?.address : ALPHA_POOL.address,
-          genericMint ? selectedPool?.token0.address : ALPHA_POOL.token0.address,
-          genericMint ? selectedPool?.token1.address : ALPHA_POOL.token1.address,
-          genericMint ? selectedPool?.fee : ALPHA_POOL.fee,
-          genericMint ? selectedPool?.tickSpacing : ALPHA_POOL.tickSpacing,
+          ...poolColumns,
         )
         .run();
 
@@ -2034,17 +1951,13 @@ export function createApp(dependencies: AppDependencies = {}) {
           recipient: mint.recipient,
           tickLower: mint.tickLower,
           tickUpper: mint.tickUpper,
-          amountCirBtcMin: mint.amount0Min.toString(),
-          amountUsdcMin: mint.amount1Min.toString(),
           amount0Min: mint.amount0Min.toString(),
           amount1Min: mint.amount1Min.toString(),
-          ...(genericMint ? {
-            tokenAddress: requestedTokenAddress,
-            poolAddress: selectedPool?.address,
-            token0: selectedPool?.token0.address,
-            token1: selectedPool?.token1.address,
-            fee: selectedPool?.fee,
-          } : {}),
+          tokenAddress: requestedTokenAddress,
+          poolAddress: selectedPool.address,
+          token0: selectedPool.token0.address,
+          token1: selectedPool.token1.address,
+          fee: selectedPool.fee,
           deadline: mint.deadline.toString(),
         },
         simulation: { ...simulation, blockHash: block.hash },
@@ -2065,8 +1978,8 @@ export function createApp(dependencies: AppDependencies = {}) {
       await context.env.DB.prepare(
         `INSERT INTO mint_intents (
           intent_id, chain_id, position_manager, recipient, tick_lower, tick_upper,
-          amount_cirbtc_desired, amount_usdc_desired, amount_cirbtc_min,
-          amount_usdc_min, slippage_bps, deadline, calldata, created_at,
+          amount0_desired, amount1_desired, amount0_min,
+          amount1_min, slippage_bps, deadline, calldata, created_at,
           token_address, token_symbol, token_decimals, pool_address,
           token0_address, token1_address, fee, tick_spacing
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)`,
@@ -2075,115 +1988,9 @@ export function createApp(dependencies: AppDependencies = {}) {
           probeMint.tickUpper, probeMint.amount0Desired.toString(),
           probeMint.amount1Desired.toString(), probeMint.amount0Min.toString(),
           probeMint.amount1Min.toString(), probeMint.slippageBps, probeMint.deadline.toString(),
-          probeMint.data, timestamp,
-          genericMint ? requestedTokenAddress : ARC_TOKENS.cirBTC.address,
-          genericMint ? discoveredToken?.symbol : ARC_TOKENS.cirBTC.symbol,
-          genericMint ? discoveredToken?.decimals : ARC_TOKENS.cirBTC.decimals,
-          genericMint ? selectedPool?.address : ALPHA_POOL.address,
-          genericMint ? selectedPool?.token0.address : ALPHA_POOL.token0.address,
-          genericMint ? selectedPool?.token1.address : ALPHA_POOL.token1.address,
-          genericMint ? selectedPool?.fee : ALPHA_POOL.fee,
-          genericMint ? selectedPool?.tickSpacing : ALPHA_POOL.tickSpacing)
+          probeMint.data, timestamp, ...poolColumns)
         .run();
       return context.json({ error: "MINT_SIMULATION_FAILED", intentId }, 422);
-    }
-  });
-
-  app.post("/v1/wallets/positions/import", async (context) => {
-    const body = record(await jsonBody(context));
-    if (
-      typeof body.tokenId !== "string" ||
-      !/^[1-9][0-9]*$/.test(body.tokenId) ||
-      typeof body.idempotencyKey !== "string" ||
-      body.idempotencyKey.length < 16 ||
-      body.idempotencyKey.length > 200
-    ) {
-      throw new AuthError("INVALID_POSITION_IMPORT", 400);
-    }
-    const wallet = await context.env.DB.prepare(
-      "SELECT id, address, state FROM managed_wallets WHERE user_id = ?1",
-    )
-      .bind(context.get("user").id)
-      .first<{ id: string; address: Address; state: string }>();
-    if (!wallet) return context.json({ error: "WALLET_NOT_FOUND" }, 404);
-    if (wallet.state !== "active" && wallet.state !== "paused") {
-      return context.json({ error: "WALLET_NOT_IMPORTABLE" }, 409);
-    }
-    const tokenId = BigInt(body.tokenId);
-    const kind = "position_import";
-    const payloadHash = alphaPositionImportPayloadHash({
-      owner: wallet.address,
-      tokenId,
-    });
-    const idempotencyKeyHash = await hashOpaqueValue(body.idempotencyKey);
-    const timestamp = now();
-    const intentId = `import_${crypto.randomUUID()}`;
-    await context.env.DB.prepare(
-      `INSERT OR IGNORE INTO wallet_intents (
-        id, wallet_id, kind, payload_hash, status, expires_at, created_at,
-        updated_at, idempotency_key_hash
-      ) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6, ?7)`,
-    )
-      .bind(intentId, wallet.id, kind, payloadHash, timestamp + 10 * 60 * 1_000,
-        timestamp, idempotencyKeyHash)
-      .run();
-    const stored = await context.env.DB.prepare(
-      `SELECT id, payload_hash, status FROM wallet_intents
-       WHERE wallet_id = ?1 AND kind = ?2 AND idempotency_key_hash = ?3`,
-    )
-      .bind(wallet.id, kind, idempotencyKeyHash)
-      .first<{ id: string; payload_hash: string; status: string }>();
-    if (!stored) throw new Error("Import intent insert was not persisted");
-    if (stored.payload_hash !== payloadHash) {
-      return context.json({ error: "IDEMPOTENCY_KEY_REUSED" }, 409);
-    }
-    if (stored.id !== intentId) {
-      return context.json({ intentId: stored.id, status: stored.status, replayed: true });
-    }
-
-    const client = (
-      dependencies.createChainClient?.(context.env) ??
-      createPublicClient({ chain: arc, transport: http(context.env.ARC_RPC_URL), batch: { multicall: true } })
-    ) as unknown as ApprovalRouteClient;
-    try {
-      const block = await client.getBlock({ blockTag: "safe" });
-      if (block.number === null || block.hash === null) throw new Error("No safe block");
-      const position = await verifyV3Position({
-        client,
-        owner: wallet.address,
-        tokenId,
-        blockNumber: block.number,
-      });
-      await context.env.DB.batch([
-        context.env.DB.prepare(
-          `INSERT INTO position_imports (
-            intent_id, wallet_id, token_id, tick_lower, tick_upper, liquidity,
-            verified_block, verified_block_hash, created_at
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
-        ).bind(intentId, wallet.id, position.tokenId, position.tickLower,
-          position.tickUpper, position.liquidity, Number(block.number),
-          block.hash, timestamp),
-        context.env.DB.prepare(
-          `UPDATE wallet_intents SET status = 'confirmed', updated_at = ?2
-           WHERE id = ?1 AND status = 'pending'`,
-        ).bind(intentId, now()),
-      ]);
-      return context.json({
-        intentId,
-        status: "confirmed",
-        position: { ...position, blockHash: block.hash },
-      }, 201);
-    } catch {
-      console.warn("Position import verification rejected", intentId);
-      await context.env.DB.prepare(
-        `UPDATE wallet_intents SET status = 'rejected',
-          failure_reason = 'POSITION_IMPORT_VERIFICATION_FAILED', updated_at = ?2
-         WHERE id = ?1 AND status = 'pending'`,
-      ).bind(intentId, now()).run();
-      return context.json({
-        error: "POSITION_IMPORT_VERIFICATION_FAILED",
-        intentId,
-      }, 422);
     }
   });
 
@@ -2244,19 +2051,18 @@ export function createApp(dependencies: AppDependencies = {}) {
       !Number.isInteger(body.slippageBps)
     )) throw new AuthError("INVALID_POSITION_ACTION", 400);
 
-    // The CirBtc/Usdc field names predate other pools: they carry the position's
-    // token0 and token1 amounts, whichever tokens those are.
+    // Amounts are the position's token0 and token1 amounts, whichever tokens those are.
     let action;
-    let expectedCirBtcRecord: string | null = null;
-    let expectedUsdcRecord: string | null = null;
+    let expected0Record: string | null = null;
+    let expected1Record: string | null = null;
     try {
       if (actionKind === "increase") {
-        if (!unsigned(body.amountCirBtc) || !unsigned(body.amountUsdc)) throw new Error();
+        if (!unsigned(body.amount0) || !unsigned(body.amount1)) throw new Error();
         const effectiveSlippageBps = Math.max(body.slippageBps as number, 500);
         action = buildIncreaseLiquidity({
           tokenId, recipient: wallet.address,
-          amountCirBtc: BigInt(body.amountCirBtc as string),
-          amountUsdc: BigInt(body.amountUsdc as string),
+          amount0: BigInt(body.amount0 as string),
+          amount1: BigInt(body.amount1 as string),
           slippageBps: effectiveSlippageBps, deadline,
         });
       } else if (actionKind === "collect") {
@@ -2267,15 +2073,15 @@ export function createApp(dependencies: AppDependencies = {}) {
           : positive(body.liquidity) ? BigInt(body.liquidity as string) : -1n;
         if (liquidity <= 0n || liquidity > BigInt(position.liquidity)) throw new Error();
 
-        let expectedCirBtc = 0n;
-        let expectedUsdc = 0n;
+        let expected0 = 0n;
+        let expected1 = 0n;
         const hasExpected =
-          unsigned(body.expectedCirBtc) && unsigned(body.expectedUsdc) &&
-          (BigInt(body.expectedCirBtc as string) > 0n || BigInt(body.expectedUsdc as string) > 0n);
+          unsigned(body.expected0) && unsigned(body.expected1) &&
+          (BigInt(body.expected0 as string) > 0n || BigInt(body.expected1 as string) > 0n);
 
         if (hasExpected) {
-          expectedCirBtc = BigInt(body.expectedCirBtc as string);
-          expectedUsdc = BigInt(body.expectedUsdc as string);
+          expected0 = BigInt(body.expected0 as string);
+          expected1 = BigInt(body.expected1 as string);
         } else {
           // Probe-simulate decreaseLiquidity with 0 min amounts to discover exact tokens returned
           const probeAction = {
@@ -2303,19 +2109,19 @@ export function createApp(dependencies: AppDependencies = {}) {
             action: probeAction,
             blockNumber: block.number,
           });
-          const output = probeSimulation.output as { amountCirBtc: string; amountUsdc: string };
-          expectedCirBtc = BigInt(output.amountCirBtc);
-          expectedUsdc = BigInt(output.amountUsdc);
+          const output = probeSimulation.output as { amount0: string; amount1: string };
+          expected0 = BigInt(output.amount0);
+          expected1 = BigInt(output.amount1);
         }
 
-        expectedCirBtcRecord = expectedCirBtc.toString();
-        expectedUsdcRecord = expectedUsdc.toString();
+        expected0Record = expected0.toString();
+        expected1Record = expected1.toString();
 
         const effectiveSlippageBps = Math.max(body.slippageBps as number, 500);
         const parameters = {
           tokenId, recipient: wallet.address, liquidity,
-          expectedCirBtc,
-          expectedUsdc,
+          expected0,
+          expected1,
           slippageBps: effectiveSlippageBps, deadline,
         };
         action = actionKind === "withdraw"
@@ -2364,8 +2170,8 @@ export function createApp(dependencies: AppDependencies = {}) {
         verifiedLiquidity: position.liquidity,
         slippageBps: action.kind === "collect" ? null : body.slippageBps,
         deadline: action.kind === "collect" ? null : deadline.toString(),
-        expectedCirBtc: expectedCirBtcRecord,
-        expectedUsdc: expectedUsdcRecord,
+        expected0: expected0Record,
+        expected1: expected1Record,
       }), timestamp).run();
 
     try {

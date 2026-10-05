@@ -1,25 +1,20 @@
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, type Address } from "viem";
 import { expect, it } from "vitest";
-import {
-  ALPHA_POOL,
-  arc,
-  readAlphaPoolState,
-  type ChainReadClient,
-} from "../src";
+import { arc, readWalletSummary, type ChainReadClient } from "../src";
 
 it.skipIf(process.env.LIVE_ARC_RPC !== "true")(
-  "reads the pinned alpha pool from Arc mainnet",
+  "reads a wallet summary from Arc mainnet",
   async () => {
     const client = createPublicClient({
       chain: arc,
       transport: http(arc.rpcUrls.default.http[0]),
+      batch: { multicall: true },
     }) as unknown as ChainReadClient;
 
-    const pool = await readAlphaPoolState(client);
+    const summary = await readWalletSummary(client, "0x000000000000000000000000000000000000dEaD" as Address);
 
-    expect(pool.address).toBe(ALPHA_POOL.address);
-    expect(pool.liquidity).not.toBe("0");
-    expect(Number(pool.token1PerToken0)).toBeGreaterThan(0);
+    expect(Number(summary.balances.nativeUsdc.formatted)).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(summary.positions)).toBe(true);
   },
   30_000,
 );

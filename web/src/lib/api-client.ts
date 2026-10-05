@@ -1,4 +1,4 @@
-import type { AlphaWalletSummary, DiscoveredPool, DiscoveredToken, Waters } from "@stillwater/chain";
+import type { WalletSummary, DiscoveredPool, DiscoveredToken, Waters } from "@stillwater/chain";
 
 export type AuthUser = {
   id: string;
@@ -238,7 +238,7 @@ export const api = {
   },
 
   async getWalletSummary() {
-    return request<{ summary: AlphaWalletSummary }>("/v1/wallets/summary");
+    return request<{ summary: WalletSummary }>("/v1/wallets/summary");
   },
 
   async getWalletAssets() {
@@ -284,19 +284,6 @@ export const api = {
   },
 
   // Intents
-  async prepareApproval(token: "USDC" | "cirBTC", amount: string, idempotencyKey: string) {
-    return request<{
-      intentId: string;
-      status: string;
-      approval: { token: string; amount: string; spender: string };
-      simulation: { gasEstimate: string; blockNumber: string };
-      existing?: boolean;
-    }>("/v1/wallets/approvals/prepare", {
-      method: "POST",
-      body: JSON.stringify({ token, amount, idempotencyKey }),
-    });
-  },
-
   async prepareTokenApproval(params: {
     tokenAddress: string;
     poolAddress: string;
@@ -355,32 +342,6 @@ export const api = {
     );
   },
 
-  async prepareMint(params: {
-    tickLower: number;
-    tickUpper: number;
-    amountCirBtc: string;
-    amountUsdc: string;
-    slippageBps: number;
-    deadline: string;
-    idempotencyKey: string;
-  }) {
-    return request<{
-      intentId: string;
-      status: string;
-      simulation: {
-        gasEstimate: string;
-        tokenId: string;
-        liquidity: string;
-        amountCirBtc: string;
-        amountUsdc: string;
-      };
-      existing?: boolean;
-    }>("/v1/wallets/positions/mint/prepare", {
-      method: "POST",
-      body: JSON.stringify(params),
-    });
-  },
-
   async prepareTokenMint(params: {
     tokenAddress: string;
     poolAddress: string;
@@ -426,12 +387,12 @@ export const api = {
     kind: "increase" | "decrease" | "collect" | "withdraw";
     action?: "increase" | "decrease" | "collect" | "withdraw";
     tokenId: string;
-    // The CirBtc/Usdc names predate other pools: these are the position's token0 and token1 amounts.
-    amountCirBtc?: string;
-    amountUsdc?: string;
+    // The position's token0 and token1 amounts, whichever tokens those are.
+    amount0?: string;
+    amount1?: string;
     liquidity?: string;
-    expectedCirBtc?: string;
-    expectedUsdc?: string;
+    expected0?: string;
+    expected1?: string;
     slippageBps?: number;
     deadline?: string;
     idempotencyKey: string;

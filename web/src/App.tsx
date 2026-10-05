@@ -15,7 +15,7 @@ import {
 } from './components/IntentActionModal'
 import { ToastContainer, type ToastMessage } from './components/Toast'
 import { api, type AuthUser, type ManagedWalletRecord } from './lib/api-client'
-import type { AlphaWalletSummary, Waters } from '@stillwater/chain'
+import type { WalletSummary, Waters } from '@stillwater/chain'
 
 const WALLET_POLL_INTERVAL_MS = 60_000
 
@@ -114,7 +114,7 @@ export const App: React.FC = () => {
   // State
   const [user, setUser] = useState<AuthUser | null>(null)
   const [wallet, setWallet] = useState<ManagedWalletRecord | null>(null)
-  const [summary, setSummary] = useState<AlphaWalletSummary | null>(null)
+  const [summary, setSummary] = useState<WalletSummary | null>(null)
   const [modal, setModal] = useState<ModalType>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
 

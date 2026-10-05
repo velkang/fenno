@@ -7,7 +7,6 @@ import {
   type Hex,
 } from "viem";
 import {
-  ALPHA_POOL,
   ARC_CHAIN_ID,
   ARC_TOKENS,
   UNISWAP_V3_ARC,
@@ -26,7 +25,6 @@ import {
   type Swap,
   withdrawalPayloadHash,
   type UsdcWithdrawal,
-  type AlphaMint,
   type ArcV4Mint,
   type ArcV4Approval,
   type ArcV4Swap,
@@ -96,8 +94,8 @@ export type MainnetPolicyRequest = {
     tokenId: bigint;
     owner: Address;
     liquidity: bigint;
-    expectedCirBtc?: bigint;
-    expectedUsdc?: bigint;
+    expected0?: bigint;
+    expected1?: bigint;
   };
   withdrawal?: {
     transaction: UsdcWithdrawal;
@@ -303,13 +301,8 @@ export function validateMainnetIntent(
   }
 
   if (request.intent.kind === "erc20_approval") {
-    if (request.approval && !request.approval.poolAddress) return reject("POOL_NOT_ALLOWED");
-    if (request.approval
-      ? !same(request.transaction.to, request.approval.tokenAddress)
-      : !same(request.transaction.to, ARC_TOKENS.USDC.address) &&
-        !same(request.transaction.to, ARC_TOKENS.cirBTC.address)) {
-      return reject("TOKEN_NOT_ALLOWED");
-    }
+    if (!request.approval?.poolAddress) return reject("POOL_NOT_ALLOWED");
+    if (!same(request.transaction.to, request.approval.tokenAddress)) return reject("TOKEN_NOT_ALLOWED");
     let decoded;
     try {
       decoded = decodeFunctionData({ abi: approveAbi, data: request.transaction.data });
@@ -319,13 +312,13 @@ export function validateMainnetIntent(
     const [spender, amount] = decoded.args;
     if (!same(spender, UNISWAP_V3_ARC.nonfungiblePositionManager.address) &&
       !(same(spender, UNISWAP_SWAP_ARC.swapRouter02) &&
-        request.approval?.poolAddress && request.approval.poolTokenAddress)) {
+        request.approval.poolTokenAddress)) {
       return reject("SPENDER_NOT_ALLOWED");
     }
     if (amount <= 0n) return reject("APPROVAL_AMOUNT_INVALID");
     const hash = approvalPayloadHash({
       chainId: ARC_CHAIN_ID,
-      tokenSymbol: request.approval ? "TOKEN" : same(request.transaction.to, ARC_TOKENS.USDC.address) ? "USDC" : "cirBTC",
+      tokenSymbol: "TOKEN",
       tokenAddress: request.transaction.to,
       spender,
       amount,
@@ -352,10 +345,8 @@ export function validateMainnetIntent(
     if (decoded.functionName !== "mint") return reject("SELECTOR_NOT_ALLOWED");
     const parameters = decoded.args[0];
     const pool = request.mintPool;
-    if (pool
-      ? !same(parameters.token0, pool.token0) || !same(parameters.token1, pool.token1) || parameters.fee !== pool.fee
-      : !same(parameters.token0, ALPHA_POOL.token0.address) ||
-        !same(parameters.token1, ALPHA_POOL.token1.address) || parameters.fee !== ALPHA_POOL.fee) {
+    if (!pool || !same(parameters.token0, pool.token0) || !same(parameters.token1, pool.token1) ||
+      parameters.fee !== pool.fee) {
       return reject("POOL_NOT_ALLOWED");
     }
     if (!same(parameters.recipient, request.wallet.address)) {
@@ -363,8 +354,8 @@ export function validateMainnetIntent(
     }
     if (
       parameters.tickLower >= parameters.tickUpper ||
-      parameters.tickLower % (pool?.tickSpacing ?? ALPHA_POOL.tickSpacing) !== 0 ||
-      parameters.tickUpper % (pool?.tickSpacing ?? ALPHA_POOL.tickSpacing) !== 0
+      parameters.tickLower % pool.tickSpacing !== 0 ||
+      parameters.tickUpper % pool.tickSpacing !== 0
     ) return reject("TICK_RANGE_INVALID");
     if (
       !validMin(parameters.amount0Min, parameters.amount0Desired) ||
@@ -376,22 +367,13 @@ export function validateMainnetIntent(
     if (!validDeadline(parameters.deadline, request.now)) {
       return reject("TRANSACTION_DEADLINE_EXPIRED");
     }
-    const mint: AlphaMint = {
+    const hash = mintPayloadHash({
       chainId: ARC_CHAIN_ID,
       to: request.transaction.to,
-      data: request.transaction.data,
-      value: 0n,
       recipient: parameters.recipient,
-      tickLower: parameters.tickLower,
-      tickUpper: parameters.tickUpper,
-      amount0Desired: parameters.amount0Desired,
-      amount1Desired: parameters.amount1Desired,
-      amount0Min: parameters.amount0Min,
-      amount1Min: parameters.amount1Min,
-      slippageBps: 0,
-      deadline: parameters.deadline,
-    };
-    return mintPayloadHash(mint) === request.intent.payloadHash
+      data: request.transaction.data,
+    });
+    return hash === request.intent.payloadHash
       ? { allowed: true, reason: "POLICY_ALLOWED" }
       : reject("PAYLOAD_HASH_MISMATCH");
   }
@@ -430,10 +412,10 @@ export function validateMainnetIntent(
         return reject("TRANSACTION_DEADLINE_EXPIRED");
       }
       if (
-        request.position!.expectedCirBtc === undefined ||
-        request.position!.expectedUsdc === undefined ||
-        !validMin(decrease.args[0].amount0Min, request.position!.expectedCirBtc) ||
-        !validMin(decrease.args[0].amount1Min, request.position!.expectedUsdc)
+        request.position!.expected0 === undefined ||
+        request.position!.expected1 === undefined ||
+        !validMin(decrease.args[0].amount0Min, request.position!.expected0) ||
+        !validMin(decrease.args[0].amount1Min, request.position!.expected1)
       ) return reject("SLIPPAGE_EXCEEDS_POLICY");
     } catch {
       return reject("WITHDRAWAL_SEQUENCE_INVALID");
@@ -472,10 +454,10 @@ export function validateMainnetIntent(
         return reject("LIQUIDITY_EXCEEDS_POSITION");
       }
       if (
-        request.position!.expectedCirBtc === undefined ||
-        request.position!.expectedUsdc === undefined ||
-        !validMin(parameters.amount0Min, request.position!.expectedCirBtc) ||
-        !validMin(parameters.amount1Min, request.position!.expectedUsdc)
+        request.position!.expected0 === undefined ||
+        request.position!.expected1 === undefined ||
+        !validMin(parameters.amount0Min, request.position!.expected0) ||
+        !validMin(parameters.amount1Min, request.position!.expected1)
       ) return reject("SLIPPAGE_EXCEEDS_POLICY");
       const decrease = decoded.args[0] as unknown as { deadline: bigint };
       if (!validDeadline(decrease.deadline, request.now)) {
