@@ -325,6 +325,7 @@ export const DepositPage: React.FC<Props> = ({
     const res = await api.prepareTokenApproval({
       tokenAddress: side === "token0" ? discovery.token.address : discovery.usdc.address,
       poolAddress: activeCustomPool.address,
+      poolTokenAddress: discovery.token.address,
       amount: maxUint256.toString(),
       idempotencyKey: crypto.randomUUID(),
     });
