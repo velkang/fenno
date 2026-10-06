@@ -16,6 +16,7 @@ import { fade } from '../lib/motion'
 import { runFailureMessage, useAutomationRuns, useMandates } from '../lib/automation'
 import { RecentreDialog } from '../components/pond/RecentreDialog'
 import { CareDialog } from '../components/pond/CareDialog'
+import { CloseDialog } from '../components/pond/CloseDialog'
 import { RecentRuns } from '../components/pond/RecentRuns'
 
 type Props = {
@@ -57,6 +58,7 @@ export function PositionsPage({
   const [collecting, setCollecting] = useState(false)
   const [recentring, setRecentring] = useState<Pond | null>(null)
   const [caring, setCaring] = useState<Pond | null>(null)
+  const [closing, setClosing] = useState<Pond | null>(null)
   const { mandates, refresh: refreshMandates } = useMandates(wallet)
   const automation = useAutomationRuns(wallet, (run) => {
     if (run.status === 'done') {
@@ -106,14 +108,11 @@ export function PositionsPage({
       return
     }
     if (!pond.v4) return
-    if (
-      action === 'close' &&
-      !window.confirm(
-        `Close your ${pond.pair} pond? Both tokens and any fees it gathered go back to your Stillwater wallet.`,
-      )
-    )
+    if (action === 'close') {
+      setClosing(pond)
       return
-    await v4.run(pond.v4, action === 'close' ? 'withdraw' : 'collect')
+    }
+    await v4.run(pond.v4, 'collect')
   }
 
   const collectAll = async () => {
@@ -198,6 +197,20 @@ export function PositionsPage({
         </p>
       ) : null}
       <RecentRuns runs={automation.runs} ponds={ponds} />
+      <AnimatePresence>
+        {closing?.v4 ? (
+          <CloseDialog
+            key={closing.key}
+            pair={closing.pair}
+            onCancel={() => setClosing(null)}
+            onConfirm={() => {
+              const position = closing.v4!
+              setClosing(null)
+              void v4.run(position, 'withdraw')
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
       <AnimatePresence>
         {caring ? (
           <CareDialog
