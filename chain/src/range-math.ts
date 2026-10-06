@@ -160,3 +160,49 @@ export function usdcValue(input: {
   }
   return null;
 }
+
+// A swap may lose at most this much to price impact (beyond the pool's own fee).
+export const MAX_PRICE_IMPACT_BPS = 500;
+// A pool where less USDC than this moves the price 2% is almost empty: its price can't be trusted.
+export const MIN_POOL_DEPTH_USD = 5;
+
+/**
+ * How much worse a swap fills than the pool's current price after the pool's fee, in basis
+ * points: 0 when it fills at that price, close to 10,000 when the pool can barely fill it.
+ */
+export function priceImpactBps(input: {
+  sqrtPriceX96: string;
+  /** Selling currency0 for currency1. */
+  zeroForOne: boolean;
+  amountIn: bigint;
+  amountOut: bigint;
+  /** The pool's fee in millionths (3,000 is 0.3%). */
+  feePips: number;
+}): number {
+  const price = (Number(input.sqrtPriceX96) / 2 ** 96) ** 2; // raw currency1 per raw currency0
+  const afterFee = Number(input.amountIn) * (1 - input.feePips / 1_000_000);
+  const fair = input.zeroForOne ? afterFee * price : afterFee / price;
+  if (!(fair > 0)) return 10_000;
+  return Math.min(10_000, Math.max(0, Math.round((1 - Number(input.amountOut) / fair) * 10_000)));
+}
+
+/**
+ * The dollars of USDC that move a pool's price by `move` (2% unless given), from the
+ * liquidity at the current price. 0 when the pool has no USDC side or no price.
+ */
+export function poolDepthUsd(
+  pool: { currency0: Address; currency1: Address; sqrtPriceX96: string; liquidity: string },
+  move = 0.02,
+): number {
+  const isUsdc = (currency: Address) =>
+    currency.toLowerCase() === zeroAddress || currency.toLowerCase() === ARC_TOKENS.USDC.address.toLowerCase();
+  const sqrtPrice = Number(pool.sqrtPriceX96) / 2 ** 96;
+  const liquidity = Number(pool.liquidity);
+  if (!(sqrtPrice > 0)) return 0;
+  const step = Math.sqrt(1 + move) - 1;
+  const usdc = isUsdc(pool.currency0) ? pool.currency0 : isUsdc(pool.currency1) ? pool.currency1 : null;
+  if (!usdc) return 0;
+  // USDC as currency0 moves 1/sqrtPrice; as currency1 it moves sqrtPrice.
+  const raw = usdc === pool.currency0 ? (liquidity / sqrtPrice) * step : liquidity * sqrtPrice * step;
+  return raw / 10 ** (usdc.toLowerCase() === zeroAddress ? 18 : ARC_TOKENS.USDC.decimals);
+}

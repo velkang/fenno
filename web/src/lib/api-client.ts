@@ -186,7 +186,7 @@ export const api = {
   async quoteV4Swap(params: { poolId: string; tokenIn: string; amountIn: string; slippageBps: number }) {
     return request<{ expectedAmountOut: string; minimumAmountOut: string; tokenOut: string;
       allowance: { erc20: string; permit2: string; expiration: string } | null;
-      nativeBalance: string }>("/v1/wallets/v4/swaps/quote", {
+      nativeBalance: string; priceImpactBps: number }>("/v1/wallets/v4/swaps/quote", {
       method: "POST", body: JSON.stringify(params),
     });
   },
@@ -321,6 +321,7 @@ export const api = {
       amountIn: string;
       expectedAmountOut: string;
       minimumAmountOut: string;
+      priceImpactBps: number;
       allowance: string;
       nativeBalance: string;
       blockNumber: string;

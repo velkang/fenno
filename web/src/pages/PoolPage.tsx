@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { tokenWaters, type WalletSummary, type Waters } from "@stillwater/chain";
 import { WaterMark } from "../components/Icons";
+import { AlmostEmptyBadge, isAlmostEmpty, ProtocolBadge } from "../components/PoolBadges";
 import { useTokenBalance } from "../components/BalancePresets";
 import { Loading, Skeleton } from "../components/Skeleton";
 import { fade, slideFromRight } from "../lib/motion";
@@ -62,6 +63,8 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
   const fee = pool.fee === 0x800000 ? "a varying share" : `${(pool.fee / 10_000).toFixed(2)}%`;
   // Nobody provides liquidity yet: there's no real price to add at, and nothing to trade against.
   const empty = BigInt(pool.liquidity || "0") === 0n;
+  // So little is in it that pennies move the price: buying or adding there would be taken advantage of.
+  const thin = !empty && isAlmostEmpty(pool);
 
   // Fades in where the skeleton was.
   return <motion.div {...fade} className="mx-auto w-full max-w-[1280px] text-ink">
@@ -76,19 +79,25 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
       <div className="flex flex-wrap items-center justify-end gap-3 max-[900px]:justify-start">
         <span className={`inline-flex min-h-11 items-center gap-2.5 rounded-full border px-4 text-[1.02rem] font-semibold whitespace-nowrap ${tier.tone}`}>
           <WaterMark tier={tierId} className="h-4 w-9" />{tier.label}</span>
+        <ProtocolBadge v4={pool.protocol === "uniswap-v4"} size="large" />
+        {thin ? <AlmostEmptyBadge size="large" /> : null}
         {/* Holding none? The amounts form offers "Buy" in place of the presets instead. */}
-        {!empty && wallet && tokenBalance !== undefined && tokenBalance > 0n ? <button type="button" onClick={() => setBuying(true)}
+        {!empty && !thin && wallet && tokenBalance !== undefined && tokenBalance > 0n ? <button type="button" onClick={() => setBuying(true)}
           className="min-h-11 rounded-full border border-line px-5 text-[1.02rem] font-semibold text-ink hover:bg-tint">
           Buy more {pool.token.symbol}
         </button> : null}
       </div>
     </div>
-    {empty ? (
+    {empty || thin ? (
       <section aria-labelledby="empty-pool-title" className="flex max-w-[680px] flex-col items-start gap-4 rounded-[28px] border border-line bg-card p-8">
-        <h2 id="empty-pool-title" className="text-[1.5rem] font-semibold">Nobody is trading in this pool yet</h2>
+        <h2 id="empty-pool-title" className="text-[1.5rem] font-semibold">
+          {empty ? "Nobody is trading in this pool yet" : "This pool is almost empty"}</h2>
         <p className="text-[1.1rem] leading-relaxed text-ink-muted">
-          It has no liquidity, so there&apos;s no real price to add at and no trades to earn from. Stillwater only adds
-          to pools that are already trading. Pick another pool for {pool.token.symbol}, or check back later.
+          {empty
+            ? <>It has no liquidity, so there&apos;s no real price to add at and no trades to earn from. Stillwater only adds
+              to pools that are already trading. Pick another pool for {pool.token.symbol}, or check back later.</>
+            : <>So little is in it that a small trade moves its price a lot. Anyone watching can take most of a
+              trade or a new position here, so Stillwater won&apos;t buy or add in this pool. Pick another pool for {pool.token.symbol}.</>}
         </p>
         {onBack ? <button type="button" onClick={onBack}
           className="min-h-12 whitespace-nowrap rounded-full bg-accent px-6 text-[1.05rem] font-semibold text-on-accent hover:bg-accent-hover">

@@ -26,6 +26,7 @@ import {
   swapErrorMessage,
   type SwapQuote,
 } from '../lib/swap-actions'
+import { AlmostEmptyBadge, isAlmostEmpty, ProtocolBadge } from '../components/PoolBadges'
 
 const CARD =
   'flex flex-col gap-5 rounded-[28px] border border-line bg-card p-[clamp(20px,2.6vw,36px)]'
@@ -269,8 +270,10 @@ export function SwapPage({
           </h2>
           {pool ? (
             <div className="flex flex-col gap-2 rounded-[22px] bg-sage px-7 py-6">
-              <strong className="text-[2.1rem] leading-tight font-semibold">
+              <strong className="flex flex-wrap items-center gap-3 text-[2.1rem] leading-tight font-semibold">
                 {pool.token.symbol} / USDC
+                <ProtocolBadge v4={pool.protocol === 'uniswap-v4'} />
+                {isAlmostEmpty(pool) ? <AlmostEmptyBadge /> : null}
               </strong>
               <span className={NOTE_TEXT}>
                 Fee {formatFeeTier(pool.fee)} · {pool.token.symbol} is $
@@ -304,8 +307,10 @@ export function SwapPage({
                       setSearch('')
                     }}
                   >
-                    <strong className="font-semibold">
+                    <strong className="flex flex-wrap items-center gap-2.5 font-semibold">
                       {candidate.token.symbol} / USDC
+                      <ProtocolBadge v4={candidate.protocol === 'uniswap-v4'} />
+                      {isAlmostEmpty(candidate) ? <AlmostEmptyBadge /> : null}
                     </strong>
                     <span className={NOTE_TEXT}>
                       Fee {formatFeeTier(candidate.fee)} ·{' '}
@@ -422,6 +427,14 @@ export function SwapPage({
                   {amountText(quote.minimumAmountOut)} {receiveSymbol}
                 </dd>
               </div>
+              {quote.priceImpactBps !== undefined ? (
+                <div className={DETAIL_ROW}>
+                  <dt className="text-ink-muted">Price moves by</dt>
+                  <dd className={`${DETAIL_VALUE} ${quote.priceImpactBps >= 100 ? 'text-rest' : ''}`}>
+                    {(quote.priceImpactBps / 100).toFixed(2)}%
+                  </dd>
+                </div>
+              ) : null}
               <div className={DETAIL_ROW}>
                 <dt className="text-ink-muted">Pool fee</dt>
                 <dd className={DETAIL_VALUE}>{formatFeeTier(pool?.fee)}</dd>

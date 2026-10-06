@@ -7,6 +7,7 @@ import { ARC_TOKENS, tokenWaters, type Waters } from "@stillwater/chain";
 import { IconSearch } from "../components/Icons";
 import { usdcDecimals as poolUsdcDecimals } from "../lib/swap-actions";
 import { Loading, Skeleton } from "../components/Skeleton";
+import { AlmostEmptyBadge, isAlmostEmpty, ProtocolBadge } from "../components/PoolBadges";
 
 export const PAGE_TITLE = "text-[clamp(2.2rem,4.5vw,3.5rem)] leading-[1.1] font-semibold tracking-[-.02em]";
 export const PAGE_INTRO = "mt-2 max-w-[760px] text-[1.2rem] leading-relaxed text-ink-muted";
@@ -156,6 +157,8 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
                     <span className="flex flex-wrap items-center gap-2.5">
                       <strong className="overflow-hidden font-semibold text-ellipsis whitespace-nowrap">{pool.token.symbol} / USDC</strong>
                       <span className={`rounded-full border px-2.5 py-0.5 text-[.78rem] font-semibold whitespace-nowrap ${tier.tone}`}>{tier.label}</span>
+                      <ProtocolBadge v4={pool.protocol === "uniswap-v4"} />
+                      {isAlmostEmpty(pool) ? <AlmostEmptyBadge /> : null}
                     </span>
                     <small className="font-mono text-[.85rem] text-ink-muted">Token {pool.token.address.slice(0, 6)}…{pool.token.address.slice(-4)}
                       {pool.hooks && pool.hooks.toLowerCase() !== zeroAddress ? " · Has extra pool rules" : ""}</small>

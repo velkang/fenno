@@ -6,7 +6,9 @@ import { ensureV4Allowance } from "./v4-actions";
 // Swaps look the same for every pool; only the API calls differ between Uniswap v3 and v4.
 
 export type SwapDirection = "buy" | "sell";
-export type SwapQuote = { amountIn: string; expectedAmountOut: string; minimumAmountOut: string; allowance?: string };
+export type SwapQuote = { amountIn: string; expectedAmountOut: string; minimumAmountOut: string; allowance?: string;
+  /** How much worse than the pool's price the trade fills, after its fee, in hundredths of a percent. */
+  priceImpactBps?: number };
 
 const SLIPPAGE_BPS = 100;
 
@@ -33,12 +35,13 @@ export async function quotePoolSwap(pool: PublicPool, direction: SwapDirection, 
   if (isV4(pool)) {
     const quote = await api.quoteV4Swap({ poolId: pool.address, tokenIn: v4TokenIn(pool, direction),
       amountIn: amountIn.toString(), slippageBps: SLIPPAGE_BPS });
-    return { amountIn: amountIn.toString(), expectedAmountOut: quote.expectedAmountOut, minimumAmountOut: quote.minimumAmountOut };
+    return { amountIn: amountIn.toString(), expectedAmountOut: quote.expectedAmountOut, minimumAmountOut: quote.minimumAmountOut,
+      priceImpactBps: quote.priceImpactBps };
   }
   const quote = await api.quoteSwap({ tokenAddress: pool.token.address, poolAddress: pool.address,
     direction, amountIn: amountIn.toString(), slippageBps: SLIPPAGE_BPS });
   return { amountIn: quote.amountIn, expectedAmountOut: quote.expectedAmountOut,
-    minimumAmountOut: quote.minimumAmountOut, allowance: quote.allowance };
+    minimumAmountOut: quote.minimumAmountOut, allowance: quote.allowance, priceImpactBps: quote.priceImpactBps };
 }
 
 // Approves the maximum once if the allowance is short (later swaps skip the approval),
@@ -88,11 +91,12 @@ const SWAP_ERRORS: Record<string, string> = {
   V4_QUOTE_STALE: "The price changed. Review the new quote.",
   V4_APPROVAL_REQUIRED: "Approval expired. Review the swap again.",
   INSUFFICIENT_USDC_AFTER_FEES: "Not enough USDC for this swap and its fee.",
+  PRICE_IMPACT_TOO_HIGH: "This pool is too thin for that amount: the price would move more than 5% against you. Try a smaller amount or another pool.",
 };
 
 // Codes where another pool for the same token might work.
 export const POOL_UNUSABLE_ERRORS = new Set(["POOL_NOT_AVAILABLE", "POOL_QUOTE_UNAVAILABLE", "V4_QUOTE_TOO_SMALL",
-  "V4_SWAP_SIMULATION_FAILED"]);
+  "V4_SWAP_SIMULATION_FAILED", "PRICE_IMPACT_TOO_HIGH"]);
 
 export function swapErrorMessage(code: string) {
   return SWAP_ERRORS[code] ?? code;

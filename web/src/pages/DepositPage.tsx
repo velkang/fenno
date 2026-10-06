@@ -394,7 +394,9 @@ export const DepositPage: React.FC<Props> = ({
       onNotify("error", "Position not opened", empty
         ? "Nobody is trading in this pool right now, so it can't take a position. Nothing was sent."
         : msg === "V4_MINT_SIMULATION_FAILED" || msg === "V4_POOL_NOT_EXECUTABLE"
-          ? "This pool can't take new positions. Nothing was sent." : msg);
+          ? "This pool can't take new positions. Nothing was sent."
+          : msg === "POOL_TOO_THIN"
+            ? "This pool holds almost nothing, so its price can't be trusted. Nothing was sent." : msg);
       // A failed step can still have cost a network fee: show current balances now.
       void onRefresh();
     } finally {

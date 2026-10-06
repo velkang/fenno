@@ -1,6 +1,6 @@
 import { zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { ARC_TOKENS, BANDS, bandTicks, positionAmounts, rebalanceSwap, tickToPrice, usdcValue } from "../src";
+import { ARC_TOKENS, BANDS, bandTicks, poolDepthUsd, positionAmounts, priceImpactBps, rebalanceSwap, tickToPrice, usdcValue } from "../src";
 
 const token = "0x2222222222222222222222222222222222222222" as const;
 const Q96 = 2n ** 96n;
@@ -92,5 +92,38 @@ describe("value of a v4 deposit in USDC", () => {
       amount0: 1n, amount1: 1n })).toBeNull();
     expect(usdcValue({ pool: { currency0: zeroAddress, currency1: token, sqrtPriceX96: "0" },
       amount0: 1n, amount1: 1n })).toBeNull();
+  });
+});
+
+describe("price impact of a swap", () => {
+  it("is nothing when the swap fills at the pool's price after its fee", () => {
+    expect(priceImpactBps({ sqrtPriceX96: Q96.toString(), zeroForOne: true, amountIn: 1_000_000n,
+      amountOut: 997_000n, feePips: 3_000 })).toBe(0);
+    expect(priceImpactBps({ sqrtPriceX96: Q96.toString(), zeroForOne: false, amountIn: 1_000_000n,
+      amountOut: 900_000n, feePips: 3_000 })).toBe(973);
+  });
+
+  it("is nearly everything when an almost empty pool is asked for a dollar", () => {
+    // cirBTC at $85,600 is 856 raw USDC per raw cirBTC; 1.1 USDC bought 10 sats instead of about 1,267.
+    const sqrtPriceX96 = BigInt(Math.round(Math.sqrt(856) * 2 ** 96)).toString();
+    expect(priceImpactBps({ sqrtPriceX96, zeroForOne: false, amountIn: 1_100_000n, amountOut: 10n, feePips: 13_800 }))
+      .toBeGreaterThan(9_900);
+  });
+});
+
+describe("depth of a pool near its price", () => {
+  it("is the USDC that moves the price 2%, whichever side USDC is on", () => {
+    expect(poolDepthUsd({ currency0: token, currency1: ARC_TOKENS.USDC.address, sqrtPriceX96: Q96.toString(),
+      liquidity: (10n ** 12n).toString() })).toBeCloseTo(9_950.4, 0);
+    expect(poolDepthUsd({ currency0: zeroAddress, currency1: token, sqrtPriceX96: Q96.toString(),
+      liquidity: (10n ** 24n).toString() })).toBeCloseTo(9_950.4, 0);
+  });
+
+  it("is next to nothing for an almost empty pool, and zero without USDC or a price", () => {
+    expect(poolDepthUsd({ currency0: token, currency1: ARC_TOKENS.USDC.address, sqrtPriceX96: Q96.toString(),
+      liquidity: "352" })).toBeLessThan(0.01);
+    expect(poolDepthUsd({ currency0: token, currency1: "0x3333333333333333333333333333333333333333",
+      sqrtPriceX96: Q96.toString(), liquidity: "1000000" })).toBe(0);
+    expect(poolDepthUsd({ currency0: zeroAddress, currency1: token, sqrtPriceX96: "0", liquidity: "1000000" })).toBe(0);
   });
 });

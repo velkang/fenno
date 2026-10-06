@@ -16,6 +16,8 @@ const RUN_FAILURES: Record<string, string> = {
   MANDATE_VALUE_EXCEEDS_LIMIT: "The new band would have been bigger than allowed.",
   V4_MINT_SIMULATION_FAILED: "The pool wouldn't take the new band.",
   V4_POOL_NOT_EXECUTABLE: "The pool couldn't swap right now.",
+  PRICE_IMPACT_TOO_HIGH: "The pool was too thin to swap without losing more than 5%.",
+  POOL_TOO_THIN: "The pool holds almost nothing, so opening a band there wasn't safe.",
   AUTOMATION_UNAVAILABLE: "Re-centring isn't available right now.",
   AUTOMATION_NOT_CONFIGURED: "Re-centring isn't set up yet.",
   // Reasons a re-centre can't start.

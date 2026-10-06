@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { reveal } from "../../lib/motion";
 import { formatUsd, type Pond } from "../../lib/ponds";
+import { ProtocolBadge } from "../PoolBadges";
 
 export type PondAction = "collect" | "close" | "add" | "remove" | "recentre" | "care";
 
@@ -51,6 +52,7 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, r
             <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,.8fr)_minmax(0,.7fr)_auto] items-center gap-4 py-6 text-[1.2rem] max-[760px]:grid-cols-[minmax(0,1fr)_auto] max-[760px]:gap-y-2">
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
                 {pond.pair}
+                <ProtocolBadge v4={!!pond.v4} />
                 {cared?.has(pond.key) ? (
                   <span className="whitespace-nowrap rounded-full bg-tint px-2.5 py-0.5 text-[.85rem] font-medium text-ink-muted">
                     {cared.get(pond.key) === "autopilot" ? "Tomo: autopilot" : "Tomo: asks first"}

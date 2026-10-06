@@ -479,35 +479,48 @@ describe("token pool discovery route", () => {
         if (functionName === "getLiquidity") return 1_000_000n;
         throw new Error(`Unexpected ${functionName}`);
       },
-      async simulateContract() { return { result: [1000n, 100_000n] }; },
+      // At one raw token per raw USDC, 0.3% fee: what a pool filling at its price returns.
+      async simulateContract() { return { result: [quotedOut, 100_000n] }; },
       async getBalance() { return 10n ** 18n; },
       async call() { return { data: "0x" }; },
       async estimateGas() { return 100_000n; },
       async estimateFeesPerGas() { return { maxFeePerGas: 1_000_000_000n }; },
     } as unknown as ChainReadClient;
+    let quotedOut = 99_700n;
     const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787", ARC_RPC_URL: "https://rpc.mainnet.arc.io" } satisfies Bindings;
     const app = createApp({ createAuthStore: () => authStore, createChainClient: () => chainClient });
     const headers = { cookie: `stillwater_session=${sessionToken}`, "content-type": "application/json" };
-    const request = { poolId, tokenIn: zeroAddress, amountIn: "100000000000000000", slippageBps: 100 };
+    const request = { poolId, tokenIn: zeroAddress, amountIn: "100000", slippageBps: 100 };
     const quote = await app.request("/v1/wallets/v4/swaps/quote", {
       method: "POST", headers, body: JSON.stringify(request),
     }, env);
     expect(quote.status).toBe(200);
-    expect(await quote.json()).toMatchObject({ expectedAmountOut: "1000", minimumAmountOut: "990" });
+    expect(await quote.json()).toMatchObject({ expectedAmountOut: "99700", minimumAmountOut: "98703",
+      priceImpactBps: 0 });
     const stale = await app.request("/v1/wallets/v4/swaps/prepare", {
       method: "POST", headers, body: JSON.stringify({ ...request,
-        minimumAmountOut: "900", idempotencyKey: "v4-test-idempotency-1" }),
+        minimumAmountOut: "90000", idempotencyKey: "v4-test-idempotency-1" }),
     }, env);
     expect(stale.status).toBe(422);
     expect(await stale.json()).toEqual({ error: "V4_QUOTE_STALE" });
     const prepared = await app.request("/v1/wallets/v4/swaps/prepare", {
       method: "POST", headers, body: JSON.stringify({ ...request,
-        minimumAmountOut: "990", idempotencyKey: "v4-test-idempotency-2" }),
+        minimumAmountOut: "98703", idempotencyKey: "v4-test-idempotency-2" }),
     }, env);
     expect(prepared.status).toBe(201);
-    expect(await prepared.json()).toMatchObject({ minimumAmountOut: "990" });
+    expect(await prepared.json()).toMatchObject({ minimumAmountOut: "98703" });
     expect(writes).toHaveLength(2);
     expect(writes[1]).toContain("INSERT INTO v4_swap_intents");
+
+    // A pool that can only fill a sliver of the trade: refused before anything is prepared.
+    quotedOut = 900n;
+    for (const path of ["/v1/wallets/v4/swaps/quote", "/v1/wallets/v4/swaps/prepare"]) {
+      const response = await app.request(path, { method: "POST", headers, body: JSON.stringify({ ...request,
+        minimumAmountOut: "891", idempotencyKey: "v4-test-idempotency-3" }) }, env);
+      expect(response.status, path).toBe(422);
+      expect(await response.json()).toEqual({ error: "PRICE_IMPACT_TOO_HIGH" });
+    }
+    expect(writes).toHaveLength(2);
   });
 
   it("returns compatibility data for a pasted CA without a safety decision", async () => {

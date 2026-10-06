@@ -97,10 +97,14 @@ export {
 } from "./pool-discovery";
 export {
   BANDS,
+  MAX_PRICE_IMPACT_BPS,
+  MIN_POOL_DEPTH_USD,
   alignTick,
   bandTicks,
   pairedAmount,
+  poolDepthUsd,
   positionAmounts,
+  priceImpactBps,
   priceToTick,
   rebalanceSwap,
   tickToPrice,

@@ -34,6 +34,10 @@ import {
   buildSwap,
   canSpendArcUsdc,
   maxArcUsdcAmount,
+  MAX_PRICE_IMPACT_BPS,
+  MIN_POOL_DEPTH_USD,
+  poolDepthUsd,
+  priceImpactBps,
   managerAbi,
   readWalletSummary,
   quoteSwap,
@@ -872,8 +876,12 @@ export function createApp(dependencies: AppDependencies = {}) {
       throw new AuthError("TOKEN_READ_FAILED", 502);
     }
     if (balance < amountIn) throw new AuthError("INSUFFICIENT_TOKEN_BALANCE", 422);
+    // An almost empty pool fills a trade at a ruinous price: refuse before anything is prepared.
+    const impactBps = priceImpactBps({ sqrtPriceX96: pool.sqrtPriceX96, zeroForOne: tokenIn === pool.token0.address,
+      amountIn, amountOut: quoted.amountOut, feePips: pool.fee });
+    if (impactBps > MAX_PRICE_IMPACT_BPS) throw new AuthError("PRICE_IMPACT_TOO_HIGH", 422);
     return { wallet, client, blockNumber: block.number, discovery, pool,
-      tokenIn, tokenOut, amountIn, quoted, allowance, nativeBalance };
+      tokenIn, tokenOut, amountIn, quoted, allowance, nativeBalance, impactBps };
   }
 
   app.post("/v1/wallets/swaps/quote", async (context) => {
@@ -891,6 +899,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       minimumAmountOut: (swap.quoted.amountOut * BigInt(10_000 - slippageBps) / 10_000n).toString(),
       allowance: swap.allowance.toString(),
       nativeBalance: swap.nativeBalance.toString(),
+      priceImpactBps: swap.impactBps,
       blockNumber: swap.blockNumber.toString(),
     });
   });
@@ -1147,6 +1156,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     } catch {
       throw new AuthError("V4_POOL_NOT_EXECUTABLE", 422);
     }
+    // An almost empty pool fills a trade at a ruinous price: refuse before anything is prepared.
+    const impactBps = priceImpactBps({ sqrtPriceX96: pool.sqrtPriceX96, zeroForOne: tokenIn === pool.currency0,
+      amountIn, amountOut: quoted.amountOut, feePips: pool.lpFee });
+    if (impactBps > MAX_PRICE_IMPACT_BPS) throw new AuthError("PRICE_IMPACT_TOO_HIGH", 422);
     const tokenOut = tokenIn === pool.currency0 ? pool.currency1 : pool.currency0;
     const [nativeBalance, tokenBalance, allowance] = await Promise.all([
       client.getBalance({ address: wallet.address, blockNumber: safe.number }),
@@ -1160,7 +1173,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       throw new AuthError("INSUFFICIENT_TOKEN_BALANCE", 422);
     }
     return { wallet, client, safe, pool, tokenIn, tokenOut, amountIn, quoted,
-      nativeBalance, allowance };
+      nativeBalance, allowance, impactBps };
   }
 
   app.post("/v1/wallets/v4/swaps/quote", async (context) => {
@@ -1175,6 +1188,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       amountIn: swap.amountIn.toString(), expectedAmountOut: swap.quoted.amountOut.toString(),
       minimumAmountOut: minimumAmountOut.toString(),
       nativeBalance: swap.nativeBalance.toString(),
+      priceImpactBps: swap.impactBps,
       allowance: swap.allowance ? { erc20: swap.allowance.erc20.toString(),
         permit2: swap.allowance.permit2.toString(), expiration: swap.allowance.expiration.toString() } : null,
       blockNumber: swap.safe.number!.toString() });
@@ -1609,6 +1623,8 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (!pool || pool.id.toLowerCase() !== row.pool_id.toLowerCase() || BigInt(pool.liquidity) <= 0n) {
       throw new AuthError("POOL_NOT_AVAILABLE", 422);
     }
+    // An almost empty pool's price can be pushed anywhere for pennies; a new band there gets arbitraged.
+    if (poolDepthUsd(pool) < MIN_POOL_DEPTH_USD) throw new AuthError("POOL_TOO_THIN", 422);
     let mint;
     try {
       mint = buildArcV4Mint({ pool, tokenDecimals: row.token_decimals, recipient: wallet.address,
@@ -1831,6 +1847,11 @@ export function createApp(dependencies: AppDependencies = {}) {
       });
       const found = discovery.pools.find((pool) => pool.address === requestedPoolAddress);
       if (!found) throw new AuthError("POOL_NOT_ALLOWED", 422);
+      // An almost empty pool's price can be pushed anywhere for pennies; a new band there gets arbitraged.
+      if (poolDepthUsd({ currency0: found.token0.address, currency1: found.token1.address,
+        sqrtPriceX96: found.sqrtPriceX96, liquidity: found.liquidity }) < MIN_POOL_DEPTH_USD) {
+        throw new AuthError("POOL_TOO_THIN", 422);
+      }
       selectedPool = found;
       discoveredToken = discovery.token;
     } catch (error) {
