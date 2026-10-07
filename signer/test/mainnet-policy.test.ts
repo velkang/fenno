@@ -11,6 +11,8 @@ import {
   buildMint,
   buildSwap,
   buildUsdcWithdrawal,
+  buildTokenWithdrawal,
+  tokenWithdrawalPayloadHash,
   buildArcV4Mint,
   buildArcV4Approval,
   buildArcV4Swap,
@@ -305,6 +307,32 @@ describe("mainnet signer policy", () => {
       .toEqual({ allowed: false, reason: "OWNER_SIGNATURE_INVALID" });
     expect(validateMainnetIntent({ ...exit, transaction: { ...exit.transaction, data: "0x" } }))
       .toEqual({ allowed: false, reason: "WITHDRAWAL_CONTEXT_MISMATCH" });
+  });
+
+  it("allows owner-authorized token exits while paused and during an emergency stop", () => {
+    const token = "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0" as const;
+    const transfer = buildTokenWithdrawal({ wallet, token, recipient: other, amount: 2_545n,
+      nonce: `0x${"33".repeat(32)}`, expiresAt: BigInt(Math.floor(now / 1_000) + 120) });
+    const signature = `0x${"44".repeat(65)}` as const;
+    const exit = request({
+      wallet: { address: wallet, state: "paused" },
+      emergencyStop: true,
+      intent: { kind: "token_withdrawal", status: "pending", expiresAt: now + 60_000,
+        payloadHash: tokenWithdrawalPayloadHash(transfer, signature) },
+      transaction: { chainId: ARC_CHAIN_ID, to: transfer.to, data: transfer.data, value: 0n },
+      tokenWithdrawal: { transaction: transfer, signature, signatureValid: true },
+    });
+    expect(validateMainnetIntent(exit)).toEqual({ allowed: true, reason: "POLICY_ALLOWED" });
+    expect(validateMainnetIntent({ ...exit, tokenWithdrawal: { ...exit.tokenWithdrawal!, signatureValid: false } }))
+      .toEqual({ allowed: false, reason: "OWNER_SIGNATURE_INVALID" });
+    // The signed token is the only contract the transfer may call.
+    expect(validateMainnetIntent({ ...exit, transaction: { ...exit.transaction, to: ARC_TOKENS.USDC.address } }))
+      .toEqual({ allowed: false, reason: "WITHDRAWAL_CONTEXT_MISMATCH" });
+    expect(validateMainnetIntent({ ...exit, transaction: { ...exit.transaction, data: "0x" } }))
+      .toEqual({ allowed: false, reason: "WITHDRAWAL_CONTEXT_MISMATCH" });
+    // A USDC authorization can't stand in for a token one.
+    expect(validateMainnetIntent({ ...exit, tokenWithdrawal: undefined }))
+      .toEqual({ allowed: false, reason: "OWNER_SIGNATURE_INVALID" });
   });
 
   it("checks single-pool swap output, deadline, and exact calldata", () => {

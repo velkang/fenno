@@ -126,6 +126,12 @@ export async function executeMainnetIntent(input: {
       throw new MainnetExecutionError("INSUFFICIENT_USDC_AFTER_FEES", 422);
     }
   }
+  // A token withdrawal moves no USDC, but the network fee is still paid in it.
+  if (loaded.kind === "token_withdrawal") {
+    if (!input.rpc.getBalance) throw new MainnetExecutionError("WITHDRAWAL_BALANCE_UNAVAILABLE", 503);
+    const balance = await input.rpc.getBalance({ address: loaded.wallet.address });
+    if (balance < gasLimit * fees.maxFeePerGas) throw new MainnetExecutionError("INSUFFICIENT_USDC_AFTER_FEES", 422);
+  }
   if ((loaded.kind === "v4_position_mint" || loaded.kind === "v4_single_pool_swap") &&
       loaded.transaction.value > 0n) {
     if (!input.rpc.getBalance) {

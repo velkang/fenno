@@ -14,6 +14,9 @@ import {
   withdrawalDomain,
   withdrawalMessage,
   withdrawalTypes,
+  tokenWithdrawalMessage,
+  tokenWithdrawalTypes,
+  type TokenWithdrawal,
   type UsdcWithdrawal,
   verifyV3Position,
   verifyArcPoolAddress,
@@ -88,6 +91,11 @@ export type LoadedMainnetIntent = {
     ownerAddress: Address;
     signature: Hex;
   };
+  tokenWithdrawal?: {
+    transaction: TokenWithdrawal;
+    ownerAddress: Address;
+    signature: Hex;
+  };
   swap?: { transaction: Swap; tokenAddress: Address; tokenDecimals: number };
   /** The Circle wallet that signs for this Stillwater wallet. */
   custody?: CustodyWallet;
@@ -157,6 +165,7 @@ export async function evaluateLoadedMainnetIntent(input: {
 
   let position: MainnetPolicyRequest["position"];
   let withdrawal: MainnetPolicyRequest["withdrawal"];
+  let tokenWithdrawal: MainnetPolicyRequest["tokenWithdrawal"];
   let swap: MainnetPolicyRequest["swap"];
   let v4Mint: MainnetPolicyRequest["v4Mint"];
   let v4Approval: MainnetPolicyRequest["v4Approval"];
@@ -288,6 +297,21 @@ export async function evaluateLoadedMainnetIntent(input: {
         signatureValid,
       };
     }
+    if (loaded.tokenWithdrawal) {
+      const signatureValid = await verifyTypedData({
+        address: loaded.tokenWithdrawal.ownerAddress,
+        domain: withdrawalDomain,
+        types: tokenWithdrawalTypes,
+        primaryType: "TokenWithdrawal",
+        message: tokenWithdrawalMessage(loaded.tokenWithdrawal.transaction),
+        signature: loaded.tokenWithdrawal.signature,
+      });
+      tokenWithdrawal = {
+        transaction: loaded.tokenWithdrawal.transaction,
+        signature: loaded.tokenWithdrawal.signature,
+        signatureValid,
+      };
+    }
     if (loaded.approvalPool) {
       if (!input.client.getCode) throw new Error("Pool verification unavailable");
       await verifyArcPoolAddress({
@@ -408,6 +432,7 @@ export async function evaluateLoadedMainnetIntent(input: {
     v4PositionAction,
     position,
     withdrawal,
+    tokenWithdrawal,
     swap,
     simulation: {
       success: true,

@@ -31,6 +31,10 @@ import {
   buildFullWithdrawal,
   buildIncreaseLiquidity,
   buildUsdcWithdrawal,
+  buildTokenWithdrawal,
+  tokenWithdrawalMessage,
+  tokenWithdrawalPayloadHash,
+  tokenWithdrawalTypes,
   buildSwap,
   canSpendArcUsdc,
   maxArcUsdcAmount,
@@ -971,9 +975,13 @@ export function createApp(dependencies: AppDependencies = {}) {
       typeof body.amount !== "string" || !/^[1-9][0-9]*$/.test(body.amount) ||
       typeof body.nonce !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(body.nonce) ||
       typeof body.signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(body.signature) ||
-      typeof body.expiresAt !== "number" || !Number.isSafeInteger(body.expiresAt)) {
+      typeof body.expiresAt !== "number" || !Number.isSafeInteger(body.expiresAt) ||
+      (body.token !== undefined && (typeof body.token !== "string" || !isAddress(body.token)))) {
       throw new AuthError("INVALID_WITHDRAWAL", 400);
     }
+    // Any token but USDC: the owner signs which token too. USDC keeps its own format and fee reserve.
+    const otherToken = typeof body.token === "string" && getAddress(body.token) !== ARC_TOKENS.USDC.address
+      ? getAddress(body.token) : null;
     const timestamp = now();
     if (body.expiresAt <= Math.floor(timestamp / 1_000) + 30 ||
       body.expiresAt > Math.floor(timestamp / 1_000) + 5 * 60) {
@@ -989,26 +997,28 @@ export function createApp(dependencies: AppDependencies = {}) {
     if (wallet.state !== "active" && wallet.state !== "paused") {
       return context.json({ error: "WALLET_NOT_ACTIONABLE" }, 409);
     }
+    const request = {
+      wallet: wallet.address,
+      recipient: getAddress(body.recipient),
+      amount: BigInt(body.amount),
+      nonce: body.nonce as Hex,
+      expiresAt: BigInt(body.expiresAt),
+    };
     let withdrawal;
+    let tokenWithdrawal;
     try {
-      withdrawal = buildUsdcWithdrawal({
-        wallet: wallet.address,
-        recipient: getAddress(body.recipient),
-        amount: BigInt(body.amount),
-        nonce: body.nonce as Hex,
-        expiresAt: BigInt(body.expiresAt),
-      });
+      if (otherToken) tokenWithdrawal = buildTokenWithdrawal({ ...request, token: otherToken });
+      else withdrawal = buildUsdcWithdrawal(request);
     } catch {
       throw new AuthError("INVALID_WITHDRAWAL", 400);
     }
-    const validSignature = await verifyTypedData({
-      address: wallet.owner_address,
-      domain: withdrawalDomain,
-      types: withdrawalTypes,
-      primaryType: "UsdcWithdrawal",
-      message: withdrawalMessage(withdrawal),
-      signature: body.signature as Hex,
-    }).catch(() => false);
+    const transfer = (tokenWithdrawal ?? withdrawal)!;
+    const validSignature = await (tokenWithdrawal
+      ? verifyTypedData({ address: wallet.owner_address, domain: withdrawalDomain, types: tokenWithdrawalTypes,
+        primaryType: "TokenWithdrawal", message: tokenWithdrawalMessage(tokenWithdrawal), signature: body.signature as Hex })
+      : verifyTypedData({ address: wallet.owner_address, domain: withdrawalDomain, types: withdrawalTypes,
+        primaryType: "UsdcWithdrawal", message: withdrawalMessage(withdrawal!), signature: body.signature as Hex }))
+      .catch(() => false);
     if (!validSignature) throw new AuthError("WITHDRAWAL_SIGNATURE_INVALID", 403);
     const existing = await context.env.DB.prepare(
       `SELECT wi.id, wi.status FROM usdc_withdrawal_intents uwi
@@ -1021,32 +1031,42 @@ export function createApp(dependencies: AppDependencies = {}) {
         getBalance(input: { address: Address }): Promise<bigint>;
         estimateFeesPerGas(): Promise<{ maxFeePerGas: bigint }>;
       };
+    if (tokenWithdrawal) {
+      const held = await client.readContract({ address: tokenWithdrawal.token, abi: swapTokenAbi,
+        functionName: "balanceOf", args: [wallet.address] }).catch(() => null);
+      if (typeof held !== "bigint") return context.json({ error: "TOKEN_READ_FAILED" }, 502);
+      if (held < tokenWithdrawal.amount) return context.json({ error: "INSUFFICIENT_TOKEN_BALANCE" }, 422);
+    }
     const [balance, gas, fees] = await Promise.all([
-      client.getBalance({ address: withdrawal.wallet }),
-      client.estimateGas({ account: withdrawal.wallet, to: withdrawal.to,
-        data: withdrawal.data, value: 0n }),
+      client.getBalance({ address: transfer.wallet }),
+      client.estimateGas({ account: transfer.wallet, to: transfer.to,
+        data: transfer.data, value: 0n }),
       client.estimateFeesPerGas(),
     ]);
     const feeReserve = (gas * 120n * fees.maxFeePerGas + 99n) / 100n;
-    if (!canSpendArcUsdc(balance, withdrawal.amount, feeReserve)) {
+    // The network fee is paid in USDC either way; a USDC withdrawal must leave enough for it.
+    if (!canSpendArcUsdc(balance, withdrawal?.amount ?? 0n, feeReserve)) {
       return context.json({ error: "INSUFFICIENT_USDC_AFTER_FEES" }, 422);
     }
     const intentId = `withdrawal_${crypto.randomUUID()}`;
-    const payloadHash = withdrawalPayloadHash(withdrawal, body.signature as Hex);
+    const payloadHash = tokenWithdrawal
+      ? tokenWithdrawalPayloadHash(tokenWithdrawal, body.signature as Hex)
+      : withdrawalPayloadHash(withdrawal!, body.signature as Hex);
     await context.env.DB.batch([
       context.env.DB.prepare(
         `INSERT INTO wallet_intents
          (id, wallet_id, kind, payload_hash, status, expires_at, created_at, updated_at)
-         VALUES (?1, ?2, 'usdc_withdrawal', ?3, 'pending', ?4, ?5, ?5)`,
-      ).bind(intentId, wallet.id, payloadHash, body.expiresAt * 1_000, timestamp),
+         VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6)`,
+      ).bind(intentId, wallet.id, tokenWithdrawal ? "token_withdrawal" : "usdc_withdrawal", payloadHash,
+        body.expiresAt * 1_000, timestamp),
       context.env.DB.prepare(
         `INSERT INTO usdc_withdrawal_intents
          (intent_id, chain_id, recipient, amount, owner_address, owner_signature,
-          nonce, signature_expires_at, calldata, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-      ).bind(intentId, ARC_CHAIN_ID, withdrawal.recipient, withdrawal.amount.toString(),
-        wallet.owner_address, body.signature, withdrawal.nonce, body.expiresAt,
-        withdrawal.data, timestamp),
+          nonce, signature_expires_at, calldata, created_at, token_address)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+      ).bind(intentId, ARC_CHAIN_ID, transfer.recipient, transfer.amount.toString(),
+        wallet.owner_address, body.signature, transfer.nonce, body.expiresAt,
+        transfer.data, timestamp, tokenWithdrawal?.token ?? null),
     ]);
     return context.json({ intentId, status: "pending", gasEstimate: gas.toString(),
       feeReserve: feeReserve.toString() }, 201);

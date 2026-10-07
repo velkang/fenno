@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { zeroAddress, type Address } from "viem";
 import { ARC_TOKENS, UNISWAP_V3_ARC, v4PoolId } from "@stillwater/chain";
 import type { Decider } from "../src/decide/provider";
@@ -77,6 +77,28 @@ describe("the watcher", () => {
     expect(writes.find((write) => write.sql.includes("INSERT INTO automation_runs"))!.args[3]).toBe("running");
     expect(result.start).toMatchObject({ walletId: "wallet-1", walletAddress: wallet, mandateId: "mandate-1",
       tokenId: "7", kind: "rebalance", band: "wide", revokeMandate: false });
+  });
+
+  it("logs every answer the model gives, holds included, with its reason and what it saw", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const hold: Decision = { action: "hold", band: null, reason: "Just below the band; give it a few hours.", confidence: "medium" };
+    const { db } = setup({ mode: "autopilot", band: "agent" });
+    await watchWallet("wallet-1", { memories: {} }, { db, chain, now: NOW, deciders: { primary: decider(hold) } });
+    const [label, line] = info.mock.calls.find(([text]) => text === "Automation decision")!;
+    expect(label).toBe("Automation decision");
+    expect(JSON.parse(line as string)).toMatchObject({ mandateId: "mandate-1", poolId, trigger: "daily_review",
+      provider: "claude", action: "hold", reason: hold.reason, confidence: "medium", priceIs: "inside" });
+    info.mockRestore();
+  });
+
+  it("logs why it didn't ask when something called for it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const { db } = setup({ mode: "autopilot", band: "agent" }, { id: "run-1", status: "proposed", created_at: NOW - 60_000,
+      started_at: null, finished_at: null });
+    await watchWallet("wallet-1", { memories: {} }, { db, chain, now: NOW, deciders: { primary: decider(recentre) } });
+    const [, line] = info.mock.calls.find(([text]) => text === "Automation not asking")!;
+    expect(JSON.parse(line as string)).toMatchObject({ mandateId: "mandate-1", trigger: "daily_review", openRun: true });
+    info.mockRestore();
   });
 
   it("records nothing when the model holds or gives no answer, and remembers that it asked", async () => {

@@ -3,6 +3,7 @@ import { formatUnits, getAddress, isAddress, parseUnits, toHex } from 'viem'
 import { useAccount, useChainId, useSignTypedData } from 'wagmi'
 import {
   ARC_CHAIN_ID,
+  tokenWithdrawalTypes,
   withdrawalDomain,
   withdrawalTypes,
   type WalletSummary,
@@ -67,6 +68,9 @@ export function WalletPanel({
   const [assets, setAssets] = useState<
     Array<{ address: string; symbol: string; decimals: number; raw: string }>
   >([])
+  // What to withdraw: USDC (empty), or another token the wallet holds, by address.
+  const [assetAddress, setAssetAddress] = useState('')
+  const token = assets.find((asset) => asset.address === assetAddress) ?? null
   // A withdrawal still confirming when the page was left is picked up again here.
   const { pending: pendingAttempt, track } = usePendingAttempt(
     wallet ? `stillwater_withdrawal_attempt_${wallet.id}` : null,
@@ -93,14 +97,18 @@ export function WalletPanel({
     isAddress(recipient) &&
     recipient.toLowerCase() !== wallet?.address.toLowerCase() &&
     recipient.toLowerCase() !== '0x0000000000000000000000000000000000000000'
+  const symbol = token?.symbol ?? 'USDC'
+  const decimals = token?.decimals ?? 6
   let parsedAmount = 0n
   try {
-    parsedAmount = parseUnits(amount, 6)
+    parsedAmount = parseUnits(amount, decimals)
   } catch {
     /* pending input */
   }
+  // USDC keeps back the network fee; another token can all go, as the fee is paid in USDC.
+  const available = token ? BigInt(token.raw) : maximum
   const validAmount =
-    parsedAmount > 0n && maximum !== null && parsedAmount <= maximum
+    parsedAmount > 0n && available !== null && parsedAmount <= available
 
   useEffect(() => {
     if (!open || !wallet || !isAddress(recipient)) {
@@ -150,7 +158,11 @@ export function WalletPanel({
     api
       .getWalletAssets()
       .then((result) => {
-        if (current) setAssets(result.assets)
+        if (!current) return
+        setAssets(result.assets)
+        // A token that has all gone (withdrawn, swapped) falls back to USDC.
+        setAssetAddress((selected) =>
+          result.assets.some((asset) => asset.address === selected) ? selected : '')
       })
       .catch(() => {
         if (current) setAssets([])
@@ -173,19 +185,29 @@ export function WalletPanel({
     try {
       const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)))
       const expiresAt = Math.floor(Date.now() / 1_000) + 5 * 60
-      const signature = await signTypedDataAsync({
-        domain: withdrawalDomain,
-        types: withdrawalTypes,
-        primaryType: 'UsdcWithdrawal',
-        message: {
-          wallet: getAddress(wallet.address),
-          recipient: getAddress(recipient),
-          amount: parsedAmount,
-          nonce,
-          expiresAt: BigInt(expiresAt),
-        },
-      })
-      const prepared = await api.prepareUsdcWithdrawal({
+      const message = {
+        wallet: getAddress(wallet.address),
+        recipient: getAddress(recipient),
+        amount: parsedAmount,
+        nonce,
+        expiresAt: BigInt(expiresAt),
+      }
+      // A token's signature names the token, so it can't be used to move anything else.
+      const signature = token
+        ? await signTypedDataAsync({
+            domain: withdrawalDomain,
+            types: tokenWithdrawalTypes,
+            primaryType: 'TokenWithdrawal',
+            message: { ...message, token: getAddress(token.address) },
+          })
+        : await signTypedDataAsync({
+            domain: withdrawalDomain,
+            types: withdrawalTypes,
+            primaryType: 'UsdcWithdrawal',
+            message,
+          })
+      const prepared = await api.prepareWithdrawal({
+        ...(token ? { token: token.address } : {}),
         recipient,
         amount: parsedAmount.toString(),
         nonce,
@@ -197,7 +219,7 @@ export function WalletPanel({
       onNotify(
         'success',
         'Withdrawal complete',
-        `${amount} USDC sent.`,
+        `${amount} ${symbol} sent.`,
       )
       setAmount('')
       setRecipient('')
@@ -209,7 +231,11 @@ export function WalletPanel({
         'Withdrawal failed',
         error instanceof ApiError &&
           error.code === 'INSUFFICIENT_USDC_AFTER_FEES'
-          ? 'Not enough USDC for the fee. Try less.'
+          ? token
+            ? 'Not enough USDC for the network fee. Add a little USDC first.'
+            : 'Not enough USDC for the fee. Try less.'
+          : error instanceof ApiError && error.code === 'INSUFFICIENT_TOKEN_BALANCE'
+            ? `You don't hold that much ${symbol}.`
           : error instanceof Error
             ? error.message
             : 'Try again.',
@@ -364,6 +390,28 @@ export function WalletPanel({
                   else setReview(true)
                 }}
               >
+                {assets.length > 0 ? (
+                  <fieldset className="grid gap-2">
+                    <legend className="mb-2 text-[.98rem] text-ink-muted">What to withdraw</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ address: '', symbol: 'USDC' }, ...assets].map((option) => (
+                        <button
+                          key={option.address || 'usdc'}
+                          type="button"
+                          aria-pressed={assetAddress === option.address}
+                          onClick={() => {
+                            setAssetAddress(option.address)
+                            setAmount('')
+                            setReview(false)
+                          }}
+                          className="min-h-11 whitespace-nowrap rounded-full border border-line px-4 text-[1rem] font-medium text-ink hover:bg-tint aria-pressed:border-accent aria-pressed:bg-feed-soft aria-pressed:font-semibold"
+                        >
+                          {option.symbol}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                ) : null}
                 <label className={FIELD_LABEL}>
                   Recipient address
                   <input
@@ -382,7 +430,7 @@ export function WalletPanel({
                   />
                 </label>
                 <label className={FIELD_LABEL}>
-                  Amount in USDC
+                  Amount in {symbol}
                   <input
                     className={FIELD_INPUT}
                     name="withdraw-amount"
@@ -399,19 +447,19 @@ export function WalletPanel({
                 <button
                   type="button"
                   className="min-h-11 justify-self-start text-[1rem] font-semibold text-link disabled:opacity-50"
-                  disabled={maximum === null}
+                  disabled={available === null}
                   onClick={() => {
-                    setAmount(formatUnits(maximum ?? 0n, 6))
+                    setAmount(formatUnits(available ?? 0n, decimals))
                     setReview(false)
                   }}
                 >
-                  Use all after the network fee
+                  {token ? `Use all ${token.symbol}` : 'Use all after the network fee'}
                 </button>
                 {review && validRecipient && validAmount ? (
                   <p
                     className={`${MUTED_TEXT} rounded-[18px] bg-sage p-4 wrap-anywhere`}
                   >
-                    Send {amount} USDC to{' '}
+                    Send {amount} {symbol} to{' '}
                     <code className="text-ink">{getAddress(recipient)}</code>
                     .{' '}
                   </p>
@@ -448,9 +496,11 @@ export function WalletPanel({
                   </p>
                 ) : null}
                 <p className={MUTED_TEXT}>
-                  {feeReserve === null
-                    ? 'Enter a recipient to estimate the network-fee reserve.'
-                    : `Estimated fee reserve: ${formatUnits(feeReserve, 18)} USDC.`}
+                  {token
+                    ? `The network fee is paid from your USDC${feeReserve === null ? '' : `, about ${formatUnits(feeReserve, 18)} USDC`}.`
+                    : feeReserve === null
+                      ? 'Enter a recipient to estimate the network-fee reserve.'
+                      : `Estimated fee reserve: ${formatUnits(feeReserve, 18)} USDC.`}
                 </p>
               </form>
             )}

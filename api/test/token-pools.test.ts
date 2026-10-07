@@ -1,5 +1,6 @@
 import { ContractFunctionRevertedError, encodeEventTopics, getAddress, parseAbi, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   ARC_TOKENS,
   ARC_WATERS,
@@ -8,6 +9,8 @@ import {
   UNISWAP_V4_ARC,
   v4PositionManagerReadAbi,
   v4PoolId,
+  tokenWithdrawalTypes,
+  withdrawalDomain,
   type ChainReadClient,
 } from "@stillwater/chain";
 import { hashOpaqueValue, type AuthStore } from "../src/auth";
@@ -43,6 +46,57 @@ describe("token pool discovery route", () => {
     const { maximum } = await response.json() as { maximum: string };
     const prepareReserve = (49_121n * 120n * maxFeePerGas + 99n) / 100n;
     expect(canSpendArcUsdc(balance, BigInt(maximum), prepareReserve)).toBe(true);
+  });
+
+  it("prepares a withdrawal of another token only with the owner's signature for it", async () => {
+    const sessionToken = "token-withdrawal-session";
+    const sessionHash = await hashOpaqueValue(sessionToken);
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const wallet = getAddress("0x4444444444444444444444444444444444444444");
+    const authStore = { findSessionUser: async (value: string) =>
+      value === sessionHash ? { id: "user-1", ownerAddress: ownerAccount.address } : null } as unknown as AuthStore;
+    const writes: Array<{ sql: string; args: unknown[] }> = [];
+    const db = {
+      prepare(sql: string) { const statement = { sql, args: [] as unknown[],
+        bind(...args: unknown[]) { statement.args = args; return statement; },
+        async first() { return sql.includes("FROM managed_wallets")
+          ? { id: "wallet-1", address: wallet, state: "paused", owner_address: ownerAccount.address } : null; } };
+        return statement; },
+      async batch(statements: Array<{ sql: string; args: unknown[] }>) { writes.push(...statements); return []; },
+    } as unknown as D1Database;
+    const chainClient = {
+      async getBalance() { return 10n ** 17n; }, // 0.1 USDC for the network fee
+      async readContract() { return 2_545n; }, // the wallet's token balance
+      async estimateGas() { return 50_000n; },
+      async estimateFeesPerGas() { return { maxFeePerGas: 40_000_000_000n }; },
+    } as unknown as ChainReadClient;
+    const env = { DB: db, SIGNER: {} as Fetcher, AUTH_URI: "http://localhost:8787" } satisfies Bindings;
+    const app = createApp({ createAuthStore: () => authStore, createChainClient: () => chainClient, now: () => 2_000_000_000_000 });
+    const message = { wallet, token, recipient: owner, amount: 2_545n, nonce: `0x${"55".repeat(32)}` as const,
+      expiresAt: 2_000_000_120n };
+    const signature = await ownerAccount.signTypedData({ domain: withdrawalDomain, types: tokenWithdrawalTypes,
+      primaryType: "TokenWithdrawal", message });
+    const prepare = (body: Record<string, unknown>) => app.request("/v1/wallets/withdrawals/prepare", { method: "POST",
+      headers: { cookie: `stillwater_session=${sessionToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ token, recipient: owner, amount: "2545", nonce: message.nonce, expiresAt: 2_000_000_120,
+        signature, ...body }) }, env);
+
+    // A paused wallet can still take its money out.
+    const prepared = await prepare({});
+    expect(prepared.status).toBe(201);
+    const [intent, detail] = writes;
+    expect(intent!.args).toContain("token_withdrawal");
+    expect(detail!.sql).toContain("INSERT INTO usdc_withdrawal_intents");
+    expect(detail!.args).toContain(token);
+
+    // The same signature can't move a different token or a larger amount, and the balance must cover it.
+    expect((await prepare({ token: getAddress("0x5555555555555555555555555555555555555555") })).status).toBe(403);
+    expect((await prepare({ amount: "2546" })).status).toBe(403);
+    const tooMuch = await ownerAccount.signTypedData({ domain: withdrawalDomain, types: tokenWithdrawalTypes,
+      primaryType: "TokenWithdrawal", message: { ...message, amount: 2_546n } });
+    const short = await prepare({ amount: "2546", signature: tooMuch });
+    expect(short.status).toBe(422);
+    expect(await short.json()).toEqual({ error: "INSUFFICIENT_TOKEN_BALANCE" });
   });
 
   it("returns the signed-in wallet's live balance of any token", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { zeroAddress, type Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   ARC_CHAIN_ID,
   ARC_TOKENS,
@@ -11,7 +12,12 @@ import {
   arcV4PositionActionPayloadHash,
   arcV4SwapPayloadHash,
   buildCollectAll,
+  buildTokenWithdrawal,
   positionActionPayloadHash,
+  tokenWithdrawalMessage,
+  tokenWithdrawalPayloadHash,
+  tokenWithdrawalTypes,
+  withdrawalDomain,
   v4PoolId,
 } from "@stillwater/chain";
 import {
@@ -197,6 +203,27 @@ describe("mainnet audit-only evaluator", () => {
     expect((await evaluate("0x4444444444444444444444444444444444444444")).reasonCode)
       .toBe("MANDATE_POOL_NOT_ALLOWED");
   });
+  it("lets a token leave only with the owner's own signature for it, even during an emergency stop", async () => {
+    const owner = privateKeyToAccount(generatePrivateKey());
+    const transfer = buildTokenWithdrawal({ wallet, token: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0",
+      recipient: "0x2222222222222222222222222222222222222222", amount: 2_545n,
+      nonce: `0x${"66".repeat(32)}`, expiresAt: BigInt(Math.floor(now / 1_000) + 120) });
+    const evaluate = async (signer: typeof owner) => {
+      const signature = await signer.signTypedData({ domain: withdrawalDomain, types: tokenWithdrawalTypes,
+        primaryType: "TokenWithdrawal", message: tokenWithdrawalMessage(transfer) });
+      return evaluateMainnetIntent({ intentId: "token-exit-1", client: client(async () => ({ data: "0x" })),
+        emergencyStop: true, now: () => now, store: new MemoryStore({
+          ...fixture(), v4Approval: undefined, intentId: "token-exit-1", kind: "token_withdrawal",
+          wallet: { address: wallet, state: "paused" },
+          payloadHash: tokenWithdrawalPayloadHash(transfer, signature),
+          transaction: { chainId: ARC_CHAIN_ID, to: transfer.to, data: transfer.data, value: 0n },
+          tokenWithdrawal: { transaction: transfer, ownerAddress: owner.address, signature },
+        }) });
+    };
+    expect((await evaluate(owner)).reasonCode).toBe("POLICY_ALLOWED");
+    expect((await evaluate(privateKeyToAccount(generatePrivateKey()))).reasonCode).toBe("OWNER_SIGNATURE_INVALID");
+  });
+
   it("re-quotes a v4 swap when ERC-20 USDC is currency1", async () => {
     const token = "0x2222222222222222222222222222222222222222" as const;
     const key = { currency0: token, currency1: ARC_TOKENS.USDC.address, fee: 10000,

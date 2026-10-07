@@ -24,6 +24,8 @@ import {
   swapRouterAbi,
   type Swap,
   withdrawalPayloadHash,
+  tokenWithdrawalPayloadHash,
+  type TokenWithdrawal,
   type UsdcWithdrawal,
   type ArcV4Mint,
   type ArcV4Approval,
@@ -59,6 +61,7 @@ export type MainnetIntentKind =
   | "position_collect"
   | "position_withdraw"
   | "usdc_withdrawal"
+  | "token_withdrawal"
   | "single_pool_swap";
 
 export type MainnetPolicyRequest = {
@@ -102,6 +105,11 @@ export type MainnetPolicyRequest = {
     signature: Hex;
     signatureValid: boolean;
   };
+  tokenWithdrawal?: {
+    transaction: TokenWithdrawal;
+    signature: Hex;
+    signatureValid: boolean;
+  };
   swap?: { transaction: Swap; tokenAddress: Address; freshAmountOut: bigint };
   simulation: {
     success: boolean;
@@ -128,7 +136,9 @@ const validDeadline = (deadline: bigint, now: number) => {
 };
 
 function validateCommon(request: MainnetPolicyRequest): MainnetPolicyDecision | null {
-  if (request.emergencyStop && request.intent.kind !== "usdc_withdrawal") return reject("EMERGENCY_STOP_ACTIVE");
+  // Taking money out is never blocked by an emergency stop.
+  const ownerExit = request.intent.kind === "usdc_withdrawal" || request.intent.kind === "token_withdrawal";
+  if (request.emergencyStop && !ownerExit) return reject("EMERGENCY_STOP_ACTIVE");
   if (request.intent.status !== "pending") return reject("INTENT_NOT_PENDING");
   if (request.intent.expiresAt <= request.now) return reject("INTENT_EXPIRED");
   if (request.transaction.chainId !== ARC_CHAIN_ID) return reject("CHAIN_NOT_ALLOWED");
@@ -146,7 +156,7 @@ function validateCommon(request: MainnetPolicyRequest): MainnetPolicyDecision | 
     request.intent.kind === "position_withdraw" ||
     request.intent.kind === "v4_position_collect" ||
     request.intent.kind === "v4_position_withdraw" ||
-    request.intent.kind === "usdc_withdrawal";
+    ownerExit;
   if (request.wallet.state !== "active" && !(exit && request.wallet.state === "paused")) {
     return reject("WALLET_NOT_SIGNABLE");
   }
@@ -173,12 +183,15 @@ export function validateMainnetIntent(
   const common = validateCommon(request);
   if (common) return common;
 
-  if (request.intent.kind === "usdc_withdrawal") {
-    const authorization = request.withdrawal;
+  if (request.intent.kind === "usdc_withdrawal" || request.intent.kind === "token_withdrawal") {
+    // A token withdrawal carries the token in what the owner signed; USDC's is always USDC.
+    const tokenExit = request.intent.kind === "token_withdrawal";
+    const authorization = tokenExit ? request.tokenWithdrawal : request.withdrawal;
     if (!authorization || !authorization.signatureValid) return reject("OWNER_SIGNATURE_INVALID");
     const withdrawal = authorization.transaction;
+    const token = tokenExit ? request.tokenWithdrawal!.transaction.token : ARC_TOKENS.USDC.address;
     if (!same(withdrawal.wallet, request.wallet.address) ||
-      !same(request.transaction.to, ARC_TOKENS.USDC.address) ||
+      !same(request.transaction.to, token) || !same(withdrawal.to, token) ||
       request.transaction.data !== withdrawal.data ||
       withdrawal.expiresAt <= BigInt(Math.floor(request.now / 1_000))) {
       return reject("WITHDRAWAL_CONTEXT_MISMATCH");
@@ -194,7 +207,10 @@ export function validateMainnetIntent(
       decoded.args[1] !== withdrawal.amount || withdrawal.amount <= 0n) {
       return reject("WITHDRAWAL_AMOUNT_OR_RECIPIENT_INVALID");
     }
-    return withdrawalPayloadHash(withdrawal, authorization.signature) === request.intent.payloadHash
+    const hash = tokenExit
+      ? tokenWithdrawalPayloadHash(request.tokenWithdrawal!.transaction, authorization.signature)
+      : withdrawalPayloadHash(withdrawal, authorization.signature);
+    return hash === request.intent.payloadHash
       ? { allowed: true, reason: "POLICY_ALLOWED" }
       : reject("PAYLOAD_HASH_MISMATCH");
   }

@@ -41,6 +41,11 @@ export {
 } from "./v4";
 export {
   buildUsdcWithdrawal,
+  buildTokenWithdrawal,
+  tokenWithdrawalMessage,
+  tokenWithdrawalPayloadHash,
+  tokenWithdrawalTypes,
+  type TokenWithdrawal,
   withdrawalDomain,
   withdrawalMessage,
   withdrawalPayloadHash,

@@ -49,7 +49,7 @@ describe("mandate policy for agent requests", () => {
   });
 
   it("rejects anything but approving, swapping, opening, collecting and closing", () => {
-    for (const kind of ["usdc_withdrawal", "position_increase", "position_decrease"] as const) {
+    for (const kind of ["usdc_withdrawal", "token_withdrawal", "position_increase", "position_decrease"] as const) {
       expect(validateMandate(request({ kind })).reason).toBe("MANDATE_KIND_NOT_ALLOWED");
     }
   });

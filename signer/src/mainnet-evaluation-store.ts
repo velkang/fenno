@@ -1,5 +1,5 @@
 import { getAddress, type Hex } from "viem";
-import { buildSwap, buildUsdcWithdrawal, UNISWAP_SHARED_ARC, UNISWAP_V4_ARC } from "@stillwater/chain";
+import { buildSwap, buildTokenWithdrawal, buildUsdcWithdrawal, UNISWAP_SHARED_ARC, UNISWAP_V4_ARC } from "@stillwater/chain";
 import type {
   LoadedMainnetIntent,
   MainnetEvaluation,
@@ -105,6 +105,8 @@ type Row = {
   withdrawal_owner_signature: Hex | null;
   withdrawal_nonce: Hex | null;
   withdrawal_expires_at: number | null;
+  /** Null for a USDC withdrawal. */
+  withdrawal_token_address: string | null;
   swap_chain_id: number | null;
   swap_calldata: Hex | null;
   swap_pool_address: string | null;
@@ -148,6 +150,7 @@ const allowedKinds = new Set<string>([
   "position_collect",
   "position_withdraw",
   "usdc_withdrawal",
+  "token_withdrawal",
   "single_pool_swap",
 ]);
 
@@ -218,6 +221,7 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
               uwi.owner_signature AS withdrawal_owner_signature,
               uwi.nonce AS withdrawal_nonce,
               uwi.signature_expires_at AS withdrawal_expires_at,
+              uwi.token_address AS withdrawal_token_address,
               si.chain_id AS swap_chain_id,
               si.calldata AS swap_calldata,
               si.pool_address AS swap_pool_address,
@@ -259,7 +263,7 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
     const target = row.approval_target ?? row.mint_target ?? row.v4a_target ?? (row.v4_pool_id ? UNISWAP_V4_ARC.positionManager : null) ??
       (row.v4s_pool_id ? UNISWAP_SHARED_ARC.universalRouter.address : null) ??
       (row.v4pa_pool_id ? UNISWAP_V4_ARC.positionManager : null) ?? row.action_target ??
-      (row.withdrawal_chain_id === null ? null : "0x3600000000000000000000000000000000000000") ??
+      (row.withdrawal_chain_id === null ? null : row.withdrawal_token_address ?? "0x3600000000000000000000000000000000000000") ??
       (row.swap_chain_id === null ? null : "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77");
     const data = row.approval_calldata ?? row.mint_calldata ?? row.v4_calldata ?? row.v4a_calldata ?? row.v4s_calldata ?? row.v4pa_calldata ?? row.action_calldata ??
       row.withdrawal_calldata ?? row.swap_calldata;
@@ -363,12 +367,27 @@ export class D1MainnetEvaluationStore implements MainnetEvaluationStore {
       tokenId: row.action_token_id === null ? undefined : BigInt(row.action_token_id),
       expected0,
       expected1,
-      withdrawal: row.withdrawal_recipient && row.withdrawal_amount &&
+      withdrawal: row.kind === "usdc_withdrawal" && row.withdrawal_recipient && row.withdrawal_amount &&
         row.withdrawal_owner_address && row.withdrawal_owner_signature &&
         row.withdrawal_nonce && row.withdrawal_expires_at
         ? {
             transaction: buildUsdcWithdrawal({
               wallet: getAddress(row.wallet_address),
+              recipient: getAddress(row.withdrawal_recipient),
+              amount: BigInt(row.withdrawal_amount),
+              nonce: row.withdrawal_nonce,
+              expiresAt: BigInt(row.withdrawal_expires_at),
+            }),
+            ownerAddress: getAddress(row.root_owner_address),
+            signature: row.withdrawal_owner_signature,
+          }
+        : undefined,
+      tokenWithdrawal: row.kind === "token_withdrawal" && row.withdrawal_token_address && row.withdrawal_recipient &&
+        row.withdrawal_amount && row.withdrawal_owner_signature && row.withdrawal_nonce && row.withdrawal_expires_at
+        ? {
+            transaction: buildTokenWithdrawal({
+              wallet: getAddress(row.wallet_address),
+              token: getAddress(row.withdrawal_token_address),
               recipient: getAddress(row.withdrawal_recipient),
               amount: BigInt(row.withdrawal_amount),
               nonce: row.withdrawal_nonce,

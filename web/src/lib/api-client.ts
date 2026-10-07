@@ -263,7 +263,9 @@ export const api = {
     return request<{ status: string }>("/v1/wallets/pause", { method: "POST" });
   },
 
-  async prepareUsdcWithdrawal(params: {
+  /** USDC, or with `token` any other token the wallet holds. */
+  async prepareWithdrawal(params: {
+    token?: string;
     recipient: string;
     amount: string;
     nonce: string;

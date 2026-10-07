@@ -82,11 +82,20 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
       memories[mandate.id] = memory;
       const trigger = triggerFor(memory, now);
       const worth = look.valueUsd + look.feesUsd;
-      if (!trigger || !deps.deciders || worth < MIN_WORTH_USD) continue;
+      if (!trigger) continue;
+      // Something called for a look: the logs say why the model wasn't asked, when it isn't.
+      const notAsking = (why: Record<string, unknown>) => console.info("Automation not asking",
+        JSON.stringify({ mandateId: mandate.id, poolId: mandate.pool_id, trigger, priceUsd: look.priceUsd, ...why }));
+      if (!deps.deciders) { notAsking({ because: "no_provider" }); continue; }
+      if (worth < MIN_WORTH_USD) { notAsking({ because: "worth_under_a_dollar", worthUsd: worth }); continue; }
 
       const runs = await recentRuns(db, mandate.id, now);
       if (!shouldAsk({ memory, trigger, now, openRun: runs.open, lastRunFinishedAt: runs.lastFinishedAt,
-        runsStartedToday: runs.startedToday, maxRunsPerDay: mandate.max_runs_per_day })) continue;
+        runsStartedToday: runs.startedToday, maxRunsPerDay: mandate.max_runs_per_day })) {
+        notAsking({ openRun: runs.open, runsStartedToday: runs.startedToday, maxRunsPerDay: mandate.max_runs_per_day,
+          lastRunFinishedAt: runs.lastFinishedAt, lastAskedAt: memory.lastAskedAt, lastTrigger: memory.lastTrigger });
+        continue;
+      }
 
       const facts: DecisionFacts = {
         trigger,
@@ -103,6 +112,15 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
       };
       const deciders = deps.reserveCall ? withBudget(deps.deciders, deps.reserveCall) : deps.deciders;
       const result = await decide(facts, deciders.primary, deciders.fallback);
+      // Every answer is logged, holds included (they leave no other trace), with what the model saw.
+      console.info("Automation decision", JSON.stringify({
+        mandateId: mandate.id, poolId: mandate.pool_id, tokenId: look.tokenId, mode: mandate.mode, trigger,
+        provider: result.provider, model: result.model,
+        ...(result.decision ? { action: result.decision.action, band: result.decision.band,
+          confidence: result.decision.confidence, reason: result.decision.reason } : { action: null, note: result.note }),
+        priceUsd: look.priceUsd, minUsd: look.minUsd, maxUsd: look.maxUsd, priceIs: look.priceIs,
+        valueUsd: look.valueUsd, feesUsd: look.feesUsd, recentreCostUsd: look.recentreCostUsd,
+      }));
       // Out of calls for today: hold, and ask again once there are calls to spare.
       if (!result.decision && result.note === "daily_limit") continue;
       memory = asked(memory, trigger, now);
