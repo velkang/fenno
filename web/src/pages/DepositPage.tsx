@@ -392,11 +392,11 @@ export const DepositPage: React.FC<Props> = ({
       // "V4 pool is invalid" comes from the mint builder when the pool has emptied meanwhile.
       const empty = msg === "V4 pool is invalid" || msg === "POOL_NOT_AVAILABLE";
       onNotify("error", "Position not opened", empty
-        ? "Nobody is trading in this pool right now, so it can't take a position. Nothing was sent."
+        ? "Nobody is trading in this pool right now. Nothing was sent."
         : msg === "V4_MINT_SIMULATION_FAILED" || msg === "V4_POOL_NOT_EXECUTABLE"
           ? "This pool can't take new positions. Nothing was sent."
           : msg === "POOL_TOO_THIN"
-            ? "This pool holds almost nothing, so its price can't be trusted. Nothing was sent." : msg);
+            ? "This pool is almost empty. Nothing was sent." : msg);
       // A failed step can still have cost a network fee: show current balances now.
       void onRefresh();
     } finally {
@@ -440,7 +440,6 @@ export const DepositPage: React.FC<Props> = ({
     setReviewing(false);
   };
 
-  const approvals = reviewing ? approvalsNeeded() : [];
 
   if (initialPoolAddress && !v4Pool && !activeCustomPool) {
     if (discoveryError) return <p className={`${DISCOVERY_STATE} text-danger`} role="alert">{discoveryError}</p>;
@@ -651,7 +650,6 @@ export const DepositPage: React.FC<Props> = ({
                       tokenSymbol={token0.symbol}
                       amountToken={amount0}
                       amountUsdc={amount1}
-                      maxTransactions={approvals.length * (v4Pool ? 2 : 1) + 1}
                       progress={progress}
                       busy={executing}
                       onConfirm={handleConfirm}

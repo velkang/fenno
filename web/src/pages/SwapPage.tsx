@@ -250,8 +250,7 @@ export function SwapPage({
             Swap
           </h1>
           <p className={PAGE_INTRO}>
-            Trade in one pool you choose. Stillwater doesn&apos;t search for a
-            better route.
+            Trade in a pool you choose.
           </p>
         </div>
       )}
@@ -422,7 +421,7 @@ export function SwapPage({
           {quote ? (
             <dl className="flex flex-col border-t border-line">
               <div className={DETAIL_ROW}>
-                <dt className="text-ink-muted">At least (1% price slip)</dt>
+                <dt className="text-ink-muted">At least</dt>
                 <dd className={DETAIL_VALUE}>
                   {amountText(quote.minimumAmountOut)} {receiveSymbol}
                 </dd>
@@ -438,10 +437,6 @@ export function SwapPage({
               <div className={DETAIL_ROW}>
                 <dt className="text-ink-muted">Pool fee</dt>
                 <dd className={DETAIL_VALUE}>{formatFeeTier(pool?.fee)}</dd>
-              </div>
-              <div className={DETAIL_ROW}>
-                <dt className="text-ink-muted">Route</dt>
-                <dd className={DETAIL_VALUE}>This pool only</dd>
               </div>
             </dl>
           ) : null}

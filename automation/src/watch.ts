@@ -20,6 +20,8 @@ export type MandateMemory = {
   lastTrigger: Trigger | null;
   /** About a day of prices, one sample per check. */
   samples: Sample[];
+  /** When the user last saved this mandate, as last seen. */
+  settingsSavedAt?: number;
 };
 
 const KEEP_SAMPLES_MS = 25 * HOUR;
@@ -31,6 +33,15 @@ const COOLDOWN_AFTER_RUN_MS = HOUR;
 export function emptyMemory(): MandateMemory {
   // Never reviewed, so the first check asks once: a first look when the user turns it on.
   return { outsideChecks: 0, lastReviewAt: 0, lastAskedAt: 0, lastTrigger: null, samples: [] };
+}
+
+/**
+ * New care settings (limit, mode, band) mean a fresh look: forget when the model was last asked,
+ * so the next check asks again instead of waiting out the hour or six hours. Prices are kept.
+ */
+export function forSettings(memory: MandateMemory, savedAt: number): MandateMemory {
+  if (memory.settingsSavedAt === savedAt) return memory;
+  return { ...memory, lastAskedAt: 0, lastReviewAt: 0, lastTrigger: null, settingsSavedAt: savedAt };
 }
 
 export function observe(memory: MandateMemory, look: { now: number; price: number; inBand: boolean }): MandateMemory {

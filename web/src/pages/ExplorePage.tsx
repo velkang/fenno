@@ -107,7 +107,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
   return <section className="mx-auto flex w-full max-w-[1280px] flex-col gap-7 pt-2 text-ink" aria-labelledby="explore-title">
     <div className="flex flex-col gap-2.5">
       <h1 id="explore-title" className={PAGE_TITLE}>Explore pools</h1>
-      <p className={PAGE_INTRO}>Every token paired with USDC on Arc, newest first. A pool created a minute ago is already here.</p>
+      <p className={PAGE_INTRO}>Every token paired with USDC on Arc, newest first.</p>
     </div>
     <div className="flex flex-wrap items-center gap-4">
       <label className="flex min-h-[60px] min-w-[min(100%,420px)] flex-1 items-center gap-3 rounded-full border border-line bg-card px-5 focus-within:border-band">

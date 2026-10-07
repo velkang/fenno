@@ -48,7 +48,11 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
 
   const limitUsd = Number(limit);
   const limitValid = Number.isInteger(limitUsd) && limitUsd >= 1 && limitUsd <= 1_000_000;
-  const tooLow = limitValid && pond.valueUsd !== null && limitUsd < pond.valueUsd * 1.1;
+  // A re-centre reopens the band with what it holds now plus its fees, and Tomo keeps 10% room for the
+  // price moving meanwhile. A limit below that would leave Tomo unable to ever re-centre this pond.
+  const heldUsd = pond.valueUsd === null ? null : pond.valueUsd + (pond.gatheredUsd ?? 0);
+  const neededUsd = heldUsd === null ? null : Math.max(1, Math.ceil(heldUsd * 1.1));
+  const tooLow = limitValid && neededUsd !== null && limitUsd < neededUsd;
 
   const save = async () => {
     setSaving(true);
@@ -76,8 +80,7 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
         <div className="flex flex-col gap-2">
           <h2 id="care-title" className="text-[1.7rem] font-semibold">Let Tomo look after your {pond.symbol} pond</h2>
           <p className="text-[1.05rem] leading-relaxed text-ink-muted">
-            Tomo checks this pond every few minutes. When the price leaves the band or the pool starts emptying, Tomo
-            decides whether to re-centre it, close it, or wait.
+            Tomo moves this pond when the price leaves its band.
           </p>
         </div>
 
@@ -126,22 +129,25 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
               </label>
             </div>
             {!limitValid ? <p role="alert" className="text-[.9rem] text-danger">Enter a whole number of dollars.</p>
-              : tooLow ? <p className="text-[.9rem] text-ink-muted">That's less than the pond holds now, so Tomo couldn't re-centre it.</p>
-              : null}
+              : tooLow ? (
+                <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[.9rem] text-danger">
+                  <span>This pond holds about ${heldUsd!.toFixed(2)}, so with a ${limitUsd} limit Tomo could never re-centre it.
+                    It needs at least ${neededUsd}.</span>
+                  <button type="button" onClick={() => setLimit(String(Math.max(neededUsd!, suggestedLimit)))}
+                    className="min-h-10 whitespace-nowrap font-semibold text-link underline underline-offset-4">
+                    Use ${Math.max(neededUsd!, suggestedLimit)}
+                  </button>
+                </div>
+              ) : null}
           </>
         ) : null}
-
-        <p className="text-[.9rem] leading-relaxed text-ink-muted">
-          Tomo can only work this pond's pool and never sends money out of your Stillwater wallet. Each step is checked
-          again before it's sent. You can turn this off any time.
-        </p>
 
         <div className="flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} disabled={saving}
             className="min-h-12 whitespace-nowrap rounded-full border border-line px-6 font-medium hover:bg-tint disabled:opacity-50">
             Cancel
           </button>
-          <button type="button" onClick={() => void save()} disabled={saving || (mode !== "off" && !limitValid)}
+          <button type="button" onClick={() => void save()} disabled={saving || (mode !== "off" && (!limitValid || tooLow))}
             className="min-h-12 whitespace-nowrap rounded-full bg-accent px-7 font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60">
             {saving ? "Saving…" : "Save"}
           </button>

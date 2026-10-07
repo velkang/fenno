@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { formatUnits, zeroAddress } from "viem";
-import { BANDS, bandTicks, positionAmounts, rebalanceSwap } from "@stillwater/chain";
+import { zeroAddress } from "viem";
+import { BANDS, bandTicks } from "@stillwater/chain";
 import { api, ApiError, type AutomationRun, type PricedPool, type RecentreBand } from "../../lib/api-client";
 import { runFailureMessage } from "../../lib/automation";
 import { fade, lift } from "../../lib/motion";
@@ -10,7 +10,7 @@ import { STRATEGIES, type StrategyKey } from "../StrategyCards";
 
 const BAND_OF: Record<StrategyKey, RecentreBand> = { conservative: "wide", balanced: "balanced", focused: "narrow" };
 
-/** A v4 or v3 position: what the preview needs to work out the new band. */
+/** A v4 or v3 position, enough to work out its new band. */
 type RecentrePosition = {
   tokenId: string;
   tickLower: number;
@@ -27,26 +27,14 @@ type Props = {
   onError: (message: string) => void;
 };
 
-const amount = (raw: bigint, decimals: number) =>
-  Number(formatUnits(raw, decimals)).toLocaleString("en-US", { maximumSignificantDigits: 6 });
-
-/** What re-centring will do, in plain steps, before anything is sent. */
-function usePlan(position: RecentrePosition, band: RecentreBand) {
+/** The new band around today's price. */
+function useNewBand(position: RecentrePosition, band: RecentreBand) {
   return useMemo(() => {
     const { pool } = position;
     const tokenIsZero = pool.token0.toLowerCase() === pool.token.address.toLowerCase();
     const usdcDecimals = [pool.token0, pool.token1].some((address) => address.toLowerCase() === zeroAddress) ? 18 : 6;
-    const { minPrice, maxPrice, tickLower, tickUpper } = bandTicks({ spotPrice: poolSpotPrice(pool),
-      spread: BANDS[band], tokenDecimals: pool.token.decimals, usdcDecimals, usdcIsPoolToken0: !tokenIsZero,
-      tickSpacing: pool.tickSpacing });
-    const held = positionAmounts(Number(position.liquidity), pool.sqrtPriceX96, position.tickLower, position.tickUpper);
-    const [token, usdc] = tokenIsZero ? [held.amount0, held.amount1] : [held.amount1, held.amount0];
-    const swap = rebalanceSwap({ sqrtPriceX96: pool.sqrtPriceX96, tickLower, tickUpper, tokenIsZero,
-      token: BigInt(Math.floor(token)), usdc: BigInt(Math.floor(usdc)) });
-    const swapText = !swap ? null : swap.from === "usdc"
-      ? `${amount(swap.amountIn, usdcDecimals)} USDC into ${pool.token.symbol}`
-      : `${amount(swap.amountIn, pool.token.decimals)} ${pool.token.symbol} into USDC`;
-    return { minPrice, maxPrice, swapText, transactions: swap ? 3 : 2 };
+    return bandTicks({ spotPrice: poolSpotPrice(pool), spread: BANDS[band], tokenDecimals: pool.token.decimals,
+      usdcDecimals, usdcIsPoolToken0: !tokenIsZero, tickSpacing: pool.tickSpacing });
   }, [position, band]);
 }
 
@@ -54,7 +42,7 @@ export function RecentreDialog({ position, resting, onClose, onStarted, onError 
   const [strategy, setStrategy] = useState<StrategyKey>("balanced");
   const [starting, setStarting] = useState(false);
   const band = BAND_OF[strategy];
-  const plan = usePlan(position, band);
+  const plan = useNewBand(position, band);
   const symbol = position.pool.token.symbol;
 
   useEffect(() => {
@@ -82,9 +70,7 @@ export function RecentreDialog({ position, resting, onClose, onStarted, onError 
         <div className="flex flex-col gap-2">
           <h2 id="recentre-title" className="text-[1.7rem] font-semibold">Re-centre your {symbol} band</h2>
           <p className="text-[1.05rem] leading-relaxed text-ink-muted">
-            {resting
-              ? "Your pond is resting because the price left its band. Re-centring moves the band around today's price so it earns again."
-              : "Re-centring moves your band around today's price."}
+            {resting ? "Move your band around today's price so it earns again." : "Move your band around today's price."}
           </p>
         </div>
 
@@ -104,18 +90,9 @@ export function RecentreDialog({ position, resting, onClose, onStarted, onError 
           </div>
         </fieldset>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-[1rem] font-semibold">What happens</span>
-          <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-[1rem] leading-relaxed">
-            <li>Close this band. Its {symbol}, USDC and fees come back to your Stillwater wallet.</li>
-            {plan.swapText ? <li>Swap about {plan.swapText}, so both sides fit the new band.</li> : null}
-            <li>Open a new band from ${formatPoolPrice(plan.minPrice)} to ${formatPoolPrice(plan.maxPrice)}.</li>
-          </ol>
-          <p className="text-[.9rem] leading-relaxed text-ink-muted">
-            {plan.transactions} transactions, plus approvals the first time, each with a small network fee. Only the
-            money from this band is used. If a step fails, the rest stop and your tokens stay in your Stillwater wallet.
-          </p>
-        </div>
+        <p className="text-[1.05rem]">
+          New band: <strong className="font-semibold tabular-nums">${formatPoolPrice(plan.minPrice)} – ${formatPoolPrice(plan.maxPrice)}</strong>
+        </p>
 
         <div className="flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} disabled={starting}

@@ -64,7 +64,6 @@ export function WalletPanel({
   const [busy, setBusy] = useState(false)
   const [review, setReview] = useState(false)
   const [maximum, setMaximum] = useState<bigint | null>(null)
-  const [feeReserve, setFeeReserve] = useState<bigint | null>(null)
   const [assets, setAssets] = useState<
     Array<{ address: string; symbol: string; decimals: number; raw: string }>
   >([])
@@ -113,7 +112,6 @@ export function WalletPanel({
   useEffect(() => {
     if (!open || !wallet || !isAddress(recipient)) {
       setMaximum(null)
-      setFeeReserve(null)
       return
     }
     let current = true
@@ -123,13 +121,11 @@ export function WalletPanel({
         .then((result) => {
           if (current) {
             setMaximum(BigInt(result.maximum))
-            setFeeReserve(BigInt(result.feeReserve))
           }
         })
         .catch(() => {
           if (current) {
             setMaximum(null)
-            setFeeReserve(null)
           }
         })
     }, 250)
@@ -316,9 +312,6 @@ export function WalletPanel({
               <strong className="text-[2.4rem] leading-tight font-semibold tabular-nums">
                 {displayBalance}
               </strong>
-              <small className={MUTED_TEXT}>
-                One balance for transactions and Arc network fees
-              </small>
             </div>
             <div className="grid gap-2.5 border-b border-line py-6">
               <span className={LABEL_TEXT}>Stillwater address</span>
@@ -368,9 +361,7 @@ export function WalletPanel({
             {tab === 'deposit' ? (
               <div className="grid gap-4 py-[22px]">
                 <p className={MUTED_TEXT}>
-                  Send Arc USDC to the Stillwater address above from your wallet
-                  or exchange. This same USDC pays network fees and funds
-                  positions.
+                  Send Arc USDC to the address above.
                 </p>
                 <a
                   className="text-[1rem] font-medium text-link underline underline-offset-4"
@@ -422,7 +413,6 @@ export function WalletPanel({
                     onChange={(event) => {
                       setRecipient(event.target.value)
                       setMaximum(null)
-                      setFeeReserve(null)
                       setReview(false)
                     }}
                     placeholder="0x…"
@@ -453,7 +443,7 @@ export function WalletPanel({
                     setReview(false)
                   }}
                 >
-                  {token ? `Use all ${token.symbol}` : 'Use all after the network fee'}
+                  {token ? `Use all ${token.symbol}` : 'Use all'}
                 </button>
                 {review && validRecipient && validAmount ? (
                   <p
@@ -495,13 +485,6 @@ export function WalletPanel({
                     Sign in again to confirm a withdrawal.
                   </p>
                 ) : null}
-                <p className={MUTED_TEXT}>
-                  {token
-                    ? `The network fee is paid from your USDC${feeReserve === null ? '' : `, about ${formatUnits(feeReserve, 18)} USDC`}.`
-                    : feeReserve === null
-                      ? 'Enter a recipient to estimate the network-fee reserve.'
-                      : `Estimated fee reserve: ${formatUnits(feeReserve, 18)} USDC.`}
-                </p>
               </form>
             )}
             {assets.length > 0 ? (

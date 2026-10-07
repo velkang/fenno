@@ -94,10 +94,8 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
           {empty ? "Nobody is trading in this pool yet" : "This pool is almost empty"}</h2>
         <p className="text-[1.1rem] leading-relaxed text-ink-muted">
           {empty
-            ? <>It has no liquidity, so there&apos;s no real price to add at and no trades to earn from. Stillwater only adds
-              to pools that are already trading. Pick another pool for {pool.token.symbol}, or check back later.</>
-            : <>So little is in it that a small trade moves its price a lot. Anyone watching can take most of a
-              trade or a new position here, so Stillwater won&apos;t buy or add in this pool. Pick another pool for {pool.token.symbol}.</>}
+            ? <>Pick another pool for {pool.token.symbol}, or check back later.</>
+            : <>You can&apos;t buy or add here. Pick another pool for {pool.token.symbol}.</>}
         </p>
         {onBack ? <button type="button" onClick={onBack}
           className="min-h-12 whitespace-nowrap rounded-full bg-accent px-6 text-[1.05rem] font-semibold text-on-accent hover:bg-accent-hover">

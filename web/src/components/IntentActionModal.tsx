@@ -299,19 +299,16 @@ export const IntentActionModal: React.FC<Props> = ({
           <form onSubmit={handlePrepare} className="flex flex-col gap-4">
             {kind === "collect" ? (
               <div className="rounded-[18px] border border-line bg-field p-4 text-[.95rem] text-ink leading-relaxed">
-                Moves the fees this position has earned, about{" "}
+                Collect about{" "}
                 <strong className="text-ink">
                   {claimableToken.formatted} {sides.token.symbol} and {claimableUsdc.formatted} USDC
                 </strong>
-                , into your Stillwater wallet. Anything you took out with Remove some comes along too. Your position stays open and keeps earning.
+                . Your position keeps earning.
               </div>
             ) : null}
 
             {kind === "increase" ? (
               <>
-                <p className="text-[.95rem] text-ink-muted leading-relaxed">
-                  Adds more money to this position, keeping its current price range. Enter one amount and we match the other so both go in at the right ratio.
-                </p>
                 {amountField(primarySide)}
                 {toggleBar}
                 {amountField(primarySide === "token" ? "usdc" : "token")}
@@ -352,7 +349,7 @@ export const IntentActionModal: React.FC<Props> = ({
                   {removalPercent(actionLiquidity, position.liquidity) !== null
                     ? `You'll take out about ${removalPercent(actionLiquidity, position.liquidity)}% of this position. `
                     : "Pick how much to take out. "}
-                  The {sides.token.symbol} and USDC you take out are held in the position until you press Collect fees, which moves them to your Stillwater wallet. To empty and close the position in one step, use Close position instead.
+                  It reaches your wallet when you press Collect fees.
                 </p>
                 <button
                   type="button"
@@ -379,10 +376,7 @@ export const IntentActionModal: React.FC<Props> = ({
 
             {kind === "withdraw" ? (
               <div className="rounded-[18px] border border-line bg-field p-4 text-[.95rem] text-ink leading-relaxed">
-                Takes everything out of this position, including your {sides.token.symbol}, your USDC and any fees not yet collected, and moves it all into your Stillwater wallet. The position is then closed for good and stops earning.
-                <p className="mt-2 text-[.85rem] text-ink-muted">
-                  Technical details: one transaction that removes all liquidity, collects everything, and burns position #{position.tokenId}.
-                </p>
+                Your {sides.token.symbol}, USDC and fees go back to your wallet.
               </div>
             ) : null}
 

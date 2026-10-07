@@ -16,6 +16,7 @@ import {
   HOUR,
   asked,
   emptyMemory,
+  forSettings,
   observe,
   priceAgo,
   shouldAsk,
@@ -40,6 +41,7 @@ type Mandate = {
   band: "wide" | "balanced" | "narrow" | "agent";
   max_position_usd: number;
   max_runs_per_day: number;
+  updated_at: number;
 };
 
 const DAY = 24 * HOUR;
@@ -65,14 +67,16 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
   const wallet = await db.prepare("SELECT id, address, state FROM managed_wallets WHERE id = ?1")
     .bind(walletId).first<{ id: string; address: Address; state: string }>();
   const mandates = wallet?.state === "active" ? (await db.prepare(
-    `SELECT id, pool_id, mode, band, max_position_usd, max_runs_per_day FROM automation_mandates
+    `SELECT id, pool_id, mode, band, max_position_usd, max_runs_per_day, updated_at FROM automation_mandates
      WHERE wallet_id = ?1 AND status = 'active'`,
   ).bind(walletId).all<Mandate>()).results ?? [] : [];
   if (!wallet || mandates.length === 0) return { state: { memories: {} }, stop: true };
 
   // Forget mandates that ended; keep the rest.
   const memories: Record<string, MandateMemory> = {};
-  for (const mandate of mandates) memories[mandate.id] = input.memories[mandate.id] ?? emptyMemory();
+  for (const mandate of mandates) {
+    memories[mandate.id] = forSettings(input.memories[mandate.id] ?? emptyMemory(), mandate.updated_at);
+  }
 
   for (const mandate of mandates) {
     try {

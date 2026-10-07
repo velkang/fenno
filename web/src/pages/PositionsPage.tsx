@@ -236,7 +236,7 @@ export function PositionsPage({
             onClose={() => setRecentring(null)}
             onStarted={() => {
               setRecentring(null)
-              onNotify('info', 'Re-centring started', 'This takes a few minutes. You can leave this page.')
+              onNotify('info', 'Re-centring started')
               void automation.refresh()
             }}
             onError={(message) => onNotify('error', 'Couldn’t re-centre', message)}

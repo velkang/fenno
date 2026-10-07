@@ -28,7 +28,7 @@ export function CloseDialog({ pair, onCancel, onConfirm }: Props) {
         <div className="flex flex-col gap-2">
           <h2 id="close-title" className="text-[1.7rem] font-semibold">Close your {pair} pond?</h2>
           <p id="close-text" className="text-[1.05rem] leading-relaxed text-ink-muted">
-            Both tokens and any fees it gathered go back to your Stillwater wallet. It stops earning once it&apos;s closed.
+            Your tokens and fees go back to your wallet.
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-3">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN, HOUR, emptyMemory, observe, priceAgo, shouldAsk, triggerFor, type MandateMemory } from "../src/watch";
+import { MIN, HOUR, emptyMemory, forSettings, observe, priceAgo, shouldAsk, triggerFor, type MandateMemory } from "../src/watch";
 
 const NOW = 2_000_000_000_000;
 const look = (memory: MandateMemory, minutesFromNow: number, price: number, inBand: boolean) =>
@@ -58,5 +58,23 @@ describe("when the agent holds back", () => {
     expect(shouldAsk({ ...base, memory: { ...sameAgain, lastAskedAt: NOW - 7 * HOUR } })).toBe(true);
     const different = { ...memory, lastAskedAt: NOW - 2 * HOUR, lastTrigger: "daily_review" as const };
     expect(shouldAsk({ ...base, memory: different })).toBe(true);
+  });
+});
+
+describe("when the user changes Tomo's care", () => {
+  it("looks again at the next check instead of waiting out the hour or six hours", () => {
+    const saved = 1_000;
+    const held: MandateMemory = { ...emptyMemory(), lastAskedAt: NOW - 30 * MIN, lastReviewAt: NOW - 30 * MIN,
+      lastTrigger: "price_left_band", outsideChecks: 3, samples: [{ at: NOW - HOUR, price: 1 }], settingsSavedAt: saved };
+    // The same settings as last time: nothing changes.
+    expect(forSettings(held, saved)).toEqual(held);
+    // Remembered from before settings were tracked: counts as a change, once.
+    expect(forSettings({ ...held, settingsSavedAt: undefined }, saved)).toMatchObject({ lastAskedAt: 0, settingsSavedAt: saved });
+    const changed = forSettings(held, saved + 1);
+    expect(changed).toMatchObject({ lastAskedAt: 0, lastReviewAt: 0, lastTrigger: null, settingsSavedAt: saved + 1,
+      outsideChecks: 3 });
+    expect(changed.samples).toEqual(held.samples);
+    expect(shouldAsk({ memory: changed, trigger: "price_left_band", now: NOW, openRun: false, lastRunFinishedAt: null,
+      runsStartedToday: 0, maxRunsPerDay: 2 })).toBe(true);
   });
 });
