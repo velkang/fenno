@@ -50,14 +50,33 @@ describe("when the agent holds back", () => {
     expect(shouldAsk({ ...base, memory, lastRunFinishedAt: NOW - 2 * HOUR })).toBe(true);
   });
 
-  it("not more than once an hour, and not about the same thing more than every six hours", () => {
+  it("not more than once an hour, and a daily review not more than every six hours", () => {
     const asked = { ...memory, lastAskedAt: NOW - 30 * MIN, lastTrigger: "daily_review" as const };
     expect(shouldAsk({ ...base, memory: asked })).toBe(false);
-    const sameAgain = { ...memory, lastAskedAt: NOW - 2 * HOUR, lastTrigger: "price_left_band" as const };
-    expect(shouldAsk({ ...base, memory: sameAgain })).toBe(false);
-    expect(shouldAsk({ ...base, memory: { ...sameAgain, lastAskedAt: NOW - 7 * HOUR } })).toBe(true);
+    const review = { ...base, trigger: "daily_review" as const };
+    const reviewedAgo = (ago: number) => ({ ...memory, lastAskedAt: NOW - ago, lastTrigger: "daily_review" as const });
+    expect(shouldAsk({ ...review, memory: reviewedAgo(2 * HOUR) })).toBe(false);
+    expect(shouldAsk({ ...review, memory: reviewedAgo(7 * HOUR) })).toBe(true);
     const different = { ...memory, lastAskedAt: NOW - 2 * HOUR, lastTrigger: "daily_review" as const };
     expect(shouldAsk({ ...base, memory: different })).toBe(true);
+  });
+
+  it("asks again every hour while the price stays out of the band", () => {
+    const outside = (ago: number) => ({ ...memory, lastAskedAt: NOW - ago, lastTrigger: "price_left_band" as const });
+    expect(shouldAsk({ ...base, memory: outside(30 * MIN) })).toBe(false);
+    expect(shouldAsk({ ...base, memory: outside(70 * MIN) })).toBe(true);
+  });
+
+  it("asks at once if the price has moved another half a band further out since it last asked", () => {
+    // Band $100-$110 (half a band is $5); last asked at $95, $5 below it.
+    const band = { minUsd: 100, maxUsd: 110 };
+    const lastAsked = { ...memory, lastAskedAt: NOW - 10 * MIN, lastTrigger: "price_left_band" as const, lastAskedPrice: 95 };
+    expect(shouldAsk({ ...base, memory: lastAsked, priceUsd: 93, band })).toBe(false);
+    expect(shouldAsk({ ...base, memory: lastAsked, priceUsd: 90, band })).toBe(true);
+    // Back towards the band is no reason to ask sooner.
+    expect(shouldAsk({ ...base, memory: lastAsked, priceUsd: 99, band })).toBe(false);
+    // Still not while a run is going.
+    expect(shouldAsk({ ...base, memory: lastAsked, priceUsd: 90, band, openRun: true })).toBe(false);
   });
 });
 

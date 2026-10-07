@@ -22,6 +22,8 @@ export type MandateMemory = {
   samples: Sample[];
   /** When the user last saved this mandate, as last seen. */
   settingsSavedAt?: number;
+  /** The price when the model was last asked. */
+  lastAskedPrice?: number;
 };
 
 const KEEP_SAMPLES_MS = 25 * HOUR;
@@ -64,18 +66,35 @@ export function shouldAsk(input: {
   lastRunFinishedAt: number | null;
   runsStartedToday: number;
   maxRunsPerDay: number;
+  /** The price now and the position's band, to tell whether the price has moved further out. */
+  priceUsd?: number;
+  band?: { minUsd: number; maxUsd: number };
 }): boolean {
   const { memory, trigger, now } = input;
   if (input.openRun || input.runsStartedToday >= input.maxRunsPerDay) return false;
   if (input.lastRunFinishedAt !== null && now - input.lastRunFinishedAt < COOLDOWN_AFTER_RUN_MS) return false;
+  // A price running further away is worth asking about at once, even after a "hold".
+  if (trigger === "price_left_band" && movedFurtherOut(memory, input.priceUsd, input.band)) return true;
   if (now - memory.lastAskedAt < MIN_ASK_GAP_MS) return false;
-  if (trigger === memory.lastTrigger && now - memory.lastAskedAt < SAME_TRIGGER_GAP_MS) return false;
+  // While out of the band, the hourly gap is enough; a daily review needn't repeat for six hours.
+  if (trigger === "daily_review" && trigger === memory.lastTrigger && now - memory.lastAskedAt < SAME_TRIGGER_GAP_MS) {
+    return false;
+  }
   return true;
 }
 
+/** The price is at least half a band's width further outside the band than when the model was last asked. */
+function movedFurtherOut(memory: MandateMemory, priceUsd?: number, band?: { minUsd: number; maxUsd: number }): boolean {
+  if (priceUsd === undefined || !band || memory.lastAskedPrice === undefined || memory.lastTrigger !== "price_left_band") {
+    return false;
+  }
+  const outside = (price: number) => (price < band.minUsd ? band.minUsd - price : price > band.maxUsd ? price - band.maxUsd : 0);
+  return outside(priceUsd) - outside(memory.lastAskedPrice) >= (band.maxUsd - band.minUsd) / 2;
+}
+
 /** Records that the model was asked: an ask is also a review. */
-export function asked(memory: MandateMemory, trigger: Trigger, now: number): MandateMemory {
-  return { ...memory, lastAskedAt: now, lastTrigger: trigger, lastReviewAt: now };
+export function asked(memory: MandateMemory, trigger: Trigger, now: number, priceUsd?: number): MandateMemory {
+  return { ...memory, lastAskedAt: now, lastTrigger: trigger, lastReviewAt: now, lastAskedPrice: priceUsd };
 }
 
 /** The price recorded nearest to `ago` before now, if one is within 15 minutes of it. */

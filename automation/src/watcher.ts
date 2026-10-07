@@ -95,9 +95,11 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
 
       const runs = await recentRuns(db, mandate.id, now);
       if (!shouldAsk({ memory, trigger, now, openRun: runs.open, lastRunFinishedAt: runs.lastFinishedAt,
-        runsStartedToday: runs.startedToday, maxRunsPerDay: mandate.max_runs_per_day })) {
+        runsStartedToday: runs.startedToday, maxRunsPerDay: mandate.max_runs_per_day,
+        priceUsd: look.priceUsd, band: { minUsd: look.minUsd, maxUsd: look.maxUsd } })) {
         notAsking({ openRun: runs.open, runsStartedToday: runs.startedToday, maxRunsPerDay: mandate.max_runs_per_day,
-          lastRunFinishedAt: runs.lastFinishedAt, lastAskedAt: memory.lastAskedAt, lastTrigger: memory.lastTrigger });
+          lastRunFinishedAt: runs.lastFinishedAt, lastAskedAt: memory.lastAskedAt, lastTrigger: memory.lastTrigger,
+          lastAskedPrice: memory.lastAskedPrice, minUsd: look.minUsd, maxUsd: look.maxUsd });
         continue;
       }
 
@@ -127,7 +129,7 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
       }));
       // Out of calls for today: hold, and ask again once there are calls to spare.
       if (!result.decision && result.note === "daily_limit") continue;
-      memory = asked(memory, trigger, now);
+      memory = asked(memory, trigger, now, look.priceUsd);
       memories[mandate.id] = memory;
       const decision = result.decision;
       if (!decision || decision.action === "hold") {
