@@ -17,7 +17,6 @@ import { runFailureMessage, useAutomationRuns, useMandates } from '../lib/automa
 import { RecentreDialog } from '../components/pond/RecentreDialog'
 import { CareDialog } from '../components/pond/CareDialog'
 import { CloseDialog } from '../components/pond/CloseDialog'
-import { RecentRuns } from '../components/pond/RecentRuns'
 
 type Props = {
   user: AuthUser | null
@@ -176,6 +175,7 @@ export function PositionsPage({
             onAction={(pond, action) => void act(pond, action)}
             recentring={movingPonds}
             cared={caredPonds}
+            runs={automation.runs}
           />
         </motion.div>
       )}
@@ -196,7 +196,6 @@ export function PositionsPage({
           {v4.error}
         </p>
       ) : null}
-      <RecentRuns runs={automation.runs} ponds={ponds} />
       <AnimatePresence>
         {closing?.v4 ? (
           <CloseDialog

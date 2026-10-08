@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { reveal } from "../../lib/motion";
 import { formatUsd, type Pond } from "../../lib/ponds";
 import { ProtocolBadge } from "../PoolBadges";
+import { RecentRuns } from "./RecentRuns";
+import type { AutomationRun } from "../../lib/api-client";
 
 export type PondAction = "collect" | "close" | "add" | "remove" | "recentre" | "care";
 
@@ -16,6 +18,8 @@ type Props = {
   recentring?: ReadonlySet<string>;
   /** Ponds Tomo looks after, by key, and how. */
   cared?: ReadonlyMap<string, "ask" | "autopilot">;
+  /** Tomo's runs, newest first; each pond shows those in its own pool. */
+  runs?: AutomationRun[];
 };
 
 const ACTIONS: { id: PondAction; label: string; v3Only?: boolean }[] = [
@@ -30,7 +34,7 @@ const ACTIONS: { id: PondAction; label: string; v3Only?: boolean }[] = [
 const GHOST = "min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50";
 
 /** "Your positions": one row per position, with its actions behind Manage. */
-export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, recentring, cared }: Props) {
+export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, recentring, cared, runs = [] }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <section aria-labelledby="ponds-title" className="flex flex-col">
@@ -47,6 +51,7 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, r
         const feeding = pond.state === "feeding";
         const expanded = open === pond.key;
         const moving = recentring?.has(pond.key) ?? false;
+        const pondRuns = runs.filter((run) => run.poolId.toLowerCase() === pond.poolId.toLowerCase());
         return (
           <div key={pond.key} className="border-b border-line">
             <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,.8fr)_minmax(0,.7fr)_auto] items-center gap-4 py-6 text-[1.2rem] max-[760px]:grid-cols-[minmax(0,1fr)_auto] max-[760px]:gap-y-2">
@@ -85,6 +90,7 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, r
                   </button>
                 ))}
               </div>
+              {pondRuns.length > 0 ? <div className="pb-6"><RecentRuns runs={pondRuns} /></div> : null}
               </motion.div>
             ) : null}
             </AnimatePresence>
