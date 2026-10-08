@@ -2,10 +2,10 @@ import React from "react";
 import { useAccount } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import type { AuthUser } from "../lib/api-client";
-import { IconRipple } from "./Icons";
+import { IconBell, IconRipple } from "./Icons";
 import { Underline } from "./Underline";
 
-export type PageRoute = "pond" | "positions" | "explore" | "pool" | "swap";
+export type PageRoute = "pond" | "positions" | "explore" | "pool" | "swap" | "alerts";
 
 type Props = {
   user: AuthUser | null;
@@ -15,9 +15,11 @@ type Props = {
   onOpenAuthModal?: () => void;
   onOpenWallet: () => void;
   walletOpen?: boolean;
+  /** Tomo has alerts the user hasn't opened yet. */
+  alertsUnread?: boolean;
 };
 
-const NAV: { key: Exclude<PageRoute, "pool">; label: string }[] = [
+const NAV: { key: Exclude<PageRoute, "pool" | "alerts">; label: string }[] = [
   { key: "pond", label: "Pond" },
   { key: "positions", label: "Positions" },
   { key: "explore", label: "Explore pools" },
@@ -29,7 +31,7 @@ const PILL = "inline-flex min-h-11 items-center gap-2.5 rounded-full border bord
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 export const Header: React.FC<Props> = ({
-  user, walletAddress, activePage, onNavigate, onOpenAuthModal, onOpenWallet, walletOpen = false,
+  user, walletAddress, activePage, onNavigate, onOpenAuthModal, onOpenWallet, walletOpen = false, alertsUnread = false,
 }) => {
   const { open } = useAppKit();
   const { isConnected } = useAccount();
@@ -58,6 +60,14 @@ export const Header: React.FC<Props> = ({
         </nav>
 
         <div className="flex items-center justify-end gap-2.5">
+          {user ? (
+            <button type="button" onClick={() => onNavigate("alerts")} aria-current={activePage === "alerts" ? "page" : undefined}
+              aria-label={alertsUnread ? "Alerts, new" : "Alerts"}
+              className={`relative inline-flex size-11 items-center justify-center rounded-full border border-line transition-colors hover:bg-tint ${activePage === "alerts" ? "bg-tint text-ink" : "text-ink-muted"}`}>
+              <IconBell />
+              {alertsUnread ? <span aria-hidden="true" className="absolute top-2 right-2.5 size-2.5 rounded-full bg-koi ring-2 ring-paper" /> : null}
+            </button>
+          ) : null}
           {user ? (
             <button type="button" onClick={onOpenWallet} aria-haspopup="dialog" aria-expanded={walletOpen}
               aria-label="Open your Stillwater wallet" className={PILL}>

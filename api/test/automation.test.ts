@@ -432,3 +432,33 @@ describe("starting a re-centre by hand", () => {
     expect(await unavailable.json()).toEqual({ error: "AUTOMATION_UNAVAILABLE" });
   });
 });
+
+describe("Tomo's alerts", () => {
+  const wallet = { id: "wallet-1", address: owner, state: "active" };
+
+  it("lists the wallet's agent runs with their token, newest first, and when they were last seen", async () => {
+    const run = { id: "run-3", mandate_id: "mandate-1", pool_id: poolId, kind: "rebalance", status: "done",
+      band: "narrow", trigger: "price_left_band", reason: "Worth it.", provider: "openai", model: "m", failure_reason: null,
+      created_at: NOW - 60_000, started_at: NOW - 50_000, finished_at: NOW - 40_000, token_symbol: "TOLLY" };
+    const { request, statements } = await setup((sql) => sql.includes("FROM automation_runs ar") ? [run]
+      : sql.includes("alerts_seen_at") ? { alerts_seen_at: NOW - 100_000 }
+      : sql.includes("FROM managed_wallets") ? wallet : null);
+    const response = await request("/v1/automation/alerts", { headers: sessionHeaders });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ seenAt: NOW - 100_000, alerts: [expect.objectContaining({
+      id: "run-3", poolId, status: "done", reason: "Worth it.", finishedAt: NOW - 40_000, symbol: "TOLLY" })] });
+    const query = statements.find((statement) => statement.sql.includes("FROM automation_runs ar"))!;
+    expect(query.args).toEqual(["wallet-1"]);
+    // Runs the user started or turned down aren't news to them.
+    expect(query.sql).toContain("ar.trigger != 'user'");
+    expect(query.sql).toContain("ar.status != 'declined'");
+  });
+
+  it("marks the alerts seen for the signed-in user's wallet", async () => {
+    const { request, statements } = await setup((sql) => sql.includes("FROM managed_wallets") ? wallet : null);
+    const response = await request("/v1/automation/alerts/seen", { method: "POST", headers: sessionHeaders });
+    expect(await response.json()).toEqual({ seenAt: NOW });
+    const update = statements.find((statement) => statement.sql.includes("SET alerts_seen_at"))!;
+    expect(update.args).toEqual(["wallet-1", NOW]);
+  });
+});

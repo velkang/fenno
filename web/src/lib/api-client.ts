@@ -74,6 +74,9 @@ export type AutomationRun = {
   finishedAt: number | null;
 };
 
+/** One of Tomo's runs as an alert, with the pond's token. */
+export type AutomationAlert = AutomationRun & { symbol: string | null };
+
 export type Mandate = {
   id: string;
   poolId: string;
@@ -174,6 +177,12 @@ export const api = {
   },
   async listAutomationRuns() {
     return request<{ runs: AutomationRun[] }>("/v1/automation/runs");
+  },
+  async listAlerts() {
+    return request<{ alerts: AutomationAlert[]; seenAt: number | null }>("/v1/automation/alerts");
+  },
+  async markAlertsSeen() {
+    return request<{ seenAt: number }>("/v1/automation/alerts/seen", { method: "POST" });
   },
   async listV4Positions(page = 0) {
     return request<{ positions: V4Position[]; page: number; hasMore: boolean }>(`/v1/wallets/v4/positions?page=${page}`);

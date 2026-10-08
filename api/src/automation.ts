@@ -306,6 +306,38 @@ export function registerAutomationRoutes(
     return context.json({ runs: (rows.results ?? []).map(publicRun) });
   });
 
+  // Tomo's alerts: what it suggested, did, or couldn't finish. Runs the user started or turned
+  // down are left out, since the user already knows about those.
+  app.get("/v1/automation/alerts", async (context) => {
+    const wallet = await walletOf(context);
+    const [rows, seen] = await Promise.all([
+      context.env.DB.prepare(
+        `SELECT ar.id, ar.mandate_id, am.pool_id, ar.kind, ar.status, ar.band, ar.trigger, ar.reason,
+                ar.provider, ar.model, ar.failure_reason, ar.created_at, ar.started_at, ar.finished_at,
+                COALESCE(pd.token_symbol, vd.token_symbol) AS token_symbol
+         FROM automation_runs ar JOIN automation_mandates am ON am.id = ar.mandate_id
+         LEFT JOIN pool_directory pd ON pd.pool_address = am.pool_id
+         LEFT JOIN v4_pool_directory vd ON vd.pool_id = am.pool_id
+         WHERE am.wallet_id = ?1 AND ar.trigger != 'user' AND ar.status != 'declined'
+         ORDER BY COALESCE(ar.finished_at, ar.started_at, ar.created_at) DESC LIMIT 50`,
+      ).bind(wallet.id).all<RunRow & { token_symbol: string | null }>(),
+      context.env.DB.prepare("SELECT alerts_seen_at FROM managed_wallets WHERE id = ?1")
+        .bind(wallet.id).first<{ alerts_seen_at: number | null }>(),
+    ]);
+    return context.json({
+      alerts: (rows.results ?? []).map((row) => ({ ...publicRun(row), symbol: row.token_symbol })),
+      seenAt: seen?.alerts_seen_at ?? null,
+    });
+  });
+
+  app.post("/v1/automation/alerts/seen", async (context) => {
+    const wallet = await walletOf(context);
+    const timestamp = now();
+    await context.env.DB.prepare("UPDATE managed_wallets SET alerts_seen_at = ?2 WHERE id = ?1")
+      .bind(wallet.id, timestamp).run();
+    return context.json({ seenAt: timestamp });
+  });
+
   // Re-centres one of the wallet's v4 positions now, at the band the user picked.
   app.post("/v1/automation/runs", async (context) => {
     const body = await context.req.json().catch(() => null) as Record<string, unknown> | null;

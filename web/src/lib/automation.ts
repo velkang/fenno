@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type AutomationRun, type ManagedWalletRecord, type Mandate } from "./api-client";
+import { api, type AutomationAlert, type AutomationRun, type ManagedWalletRecord, type Mandate } from "./api-client";
 
 // Re-centring runs: what's going on, and what to tell people when one ends.
 
 const POLL_MS = 5_000;
+// Tomo looks every 5 minutes, so alerts are checked as often, and only while the tab is visible.
+const ALERTS_POLL_MS = 5 * 60_000;
 
 // Why a run stopped, in words people can act on. Everything else gets the fallback.
 const RUN_FAILURES: Record<string, string> = {
@@ -83,4 +85,50 @@ export function useMandates(wallet: ManagedWalletRecord | null) {
   }, [wallet]);
   useEffect(() => { void refresh(); }, [refresh]);
   return { mandates, refresh };
+}
+
+/** When an alert last changed: when its run ended, else started, else was suggested. */
+export const alertAt = (alert: AutomationRun) => alert.finishedAt ?? alert.startedAt ?? alert.createdAt;
+
+/** Tomo's alerts for the wallet, and whether any arrived since the user last opened them (on any device). */
+export function useAlerts(wallet: ManagedWalletRecord | null) {
+  const [alerts, setAlerts] = useState<AutomationAlert[]>([]);
+  const [seenAt, setSeenAt] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  // The wallet record is replaced on every wallet poll; only a different wallet means a new check.
+  const walletId = wallet?.id;
+
+  const refresh = useCallback(async () => {
+    if (!walletId) { setAlerts([]); setSeenAt(null); setLoaded(false); return; }
+    try {
+      const latest = await api.listAlerts();
+      setAlerts(latest.alerts);
+      setSeenAt(latest.seenAt);
+      setLoaded(true);
+    } catch {
+      // Alerts are extra information; the next check retries.
+    }
+  }, [walletId]);
+
+  useEffect(() => {
+    void refresh();
+    const refreshIfVisible = () => { if (!document.hidden) void refresh(); };
+    const timer = window.setInterval(refreshIfVisible, ALERTS_POLL_MS);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [refresh]);
+
+  const markSeen = useCallback(async () => {
+    try {
+      setSeenAt((await api.markAlertsSeen()).seenAt);
+    } catch {
+      // The dot stays until the next visit marks them seen.
+    }
+  }, []);
+
+  const unread = alerts.some((alert) => alertAt(alert) > (seenAt ?? 0));
+  return { alerts, seenAt, loaded, unread, refresh, markSeen };
 }

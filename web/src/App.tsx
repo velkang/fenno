@@ -8,6 +8,8 @@ import { SwapPage } from './pages/SwapPage'
 import { PoolPage } from './pages/PoolPage'
 import { PondPage } from './pages/PondPage'
 import { PositionsPage } from './pages/PositionsPage'
+import { AlertsPage } from './pages/AlertsPage'
+import { useAlerts } from './lib/automation'
 import { WalletPanel } from './components/WalletPanel'
 import {
   IntentActionModal,
@@ -24,6 +26,7 @@ function getPageFromLocation(): PageRoute {
   if (path === '/positions') return 'positions'
   if (path === '/explore') return 'explore'
   if (path === '/swap') return 'swap'
+  if (path === '/alerts') return 'alerts'
   if (/^\/pools\/0x(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(path)) return 'pool'
   // "/" and anything unknown open the Pond.
   return 'pond'
@@ -34,6 +37,7 @@ const PAGE_PATH: Record<Exclude<PageRoute, 'pool'>, string> = {
   positions: '/positions',
   explore: '/explore',
   swap: '/swap',
+  alerts: '/alerts',
 }
 
 function getWatersFromLocation(): Waters | '' {
@@ -117,6 +121,7 @@ export const App: React.FC = () => {
   const [summary, setSummary] = useState<WalletSummary | null>(null)
   const [modal, setModal] = useState<ModalType>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const alerts = useAlerts(wallet)
 
   const addToast = (
     type: 'success' | 'error' | 'info',
@@ -224,6 +229,7 @@ export const App: React.FC = () => {
         onOpenAuthModal={() => setShowAuthModal(true)}
         onOpenWallet={() => setShowWallet(true)}
         walletOpen={showWallet}
+        alertsUnread={alerts.unread}
       />
 
       <main
@@ -271,6 +277,15 @@ export const App: React.FC = () => {
             summary={summary}
             onRefresh={refreshData}
             onNotify={addToast}
+            onOpenAuth={() => setShowAuthModal(true)}
+          />
+        )}
+        {activePage === 'alerts' && (
+          <AlertsPage
+            user={user}
+            alerts={alerts}
+            onNotify={addToast}
+            onOpenPositions={() => handleNavigate('positions')}
             onOpenAuth={() => setShowAuthModal(true)}
           />
         )}
