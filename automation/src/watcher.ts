@@ -14,6 +14,7 @@ import { decide, type Decider } from "./decide/provider";
 import { isV3Pool, type RunPlan } from "./stepper";
 import {
   HOUR,
+  MIN,
   asked,
   emptyMemory,
   forSettings,
@@ -108,10 +109,11 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
         token: { symbol: look.symbol },
         feeTierPercent: look.feeTierPercent,
         priceUsd: look.priceUsd,
-        band: { minUsd: look.minUsd, maxUsd: look.maxUsd, priceIs: look.priceIs },
+        band: { minUsd: look.minUsd, maxUsd: look.maxUsd, priceIs: look.priceIs,
+          outsideForMinutes: memory.outsideSince === undefined ? 0 : Math.round((now - memory.outsideSince) / MIN) },
         priceHistoryUsd: { "1h": priceAgo(memory, now, HOUR), "6h": priceAgo(memory, now, 6 * HOUR),
           "24h": priceAgo(memory, now, DAY) },
-        position: { valueUsd: look.valueUsd, uncollectedFeesUsd: look.feesUsd },
+        position: { valueUsd: look.valueUsd, uncollectedFeesUsd: look.feesUsd, ...earnings(look.feesUsd, look.openedAt, now) },
         recentreCostUsd: look.recentreCostUsd,
         mandate: { mode: mandate.mode, band: mandate.band, maxPositionUsd: mandate.max_position_usd,
           runsLeftToday: Math.max(0, mandate.max_runs_per_day - runs.startedToday) },
@@ -126,6 +128,8 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
           confidence: result.decision.confidence, reason: result.decision.reason } : { action: null, note: result.note }),
         priceUsd: look.priceUsd, minUsd: look.minUsd, maxUsd: look.maxUsd, priceIs: look.priceIs,
         valueUsd: look.valueUsd, feesUsd: look.feesUsd, recentreCostUsd: look.recentreCostUsd,
+        openedHoursAgo: facts.position.openedHoursAgo, feesPerDayUsd: facts.position.feesPerDayUsd,
+        outsideForMinutes: facts.band.outsideForMinutes,
       }));
       // Out of calls for today: hold, and ask again once there are calls to spare.
       if (!result.decision && result.note === "daily_limit") continue;
@@ -172,23 +176,25 @@ export async function watchWallet(walletId: string, input: WatchState, deps: {
 
 /** The mandate's live position (the newest one with liquidity) and its numbers in dollars. */
 async function lookAt(mandate: Mandate, owner: Address, walletId: string, deps: { db: D1Database; chain: WatchChain }) {
-  return isV3Pool(mandate.pool_id) ? lookAtV3(mandate, owner, deps) : lookAtV4(mandate, owner, walletId, deps);
+  return isV3Pool(mandate.pool_id) ? lookAtV3(mandate, owner, walletId, deps) : lookAtV4(mandate, owner, walletId, deps);
 }
 
 async function lookAtV4(mandate: Mandate, owner: Address, walletId: string, deps: { db: D1Database; chain: WatchChain }) {
   const { db, chain } = deps;
   const ids = (await db.prepare(
-    `SELECT vmi.token_id FROM wallet_intents wi JOIN v4_mint_intents vmi ON vmi.intent_id = wi.id
+    `SELECT vmi.token_id, wi.updated_at AS opened_at FROM wallet_intents wi JOIN v4_mint_intents vmi ON vmi.intent_id = wi.id
      WHERE wi.wallet_id = ?1 AND wi.status = 'confirmed' AND vmi.token_id IS NOT NULL
        AND lower(vmi.pool_id) = lower(?2)
      ORDER BY wi.created_at DESC LIMIT 10`,
-  ).bind(walletId, mandate.pool_id).all<{ token_id: string }>()).results ?? [];
+  ).bind(walletId, mandate.pool_id).all<{ token_id: string; opened_at: number | null }>()).results ?? [];
   let position: Awaited<ReturnType<typeof readArcV4Position>> | null = null;
-  for (const { token_id } of ids) {
+  let openedAt: number | null = null;
+  for (const { token_id, opened_at } of ids) {
     try {
       const candidate = await readArcV4Position({ client: chain, tokenId: BigInt(token_id), owner });
       if (candidate.poolId.toLowerCase() === mandate.pool_id.toLowerCase() && candidate.liquidity > 0n) {
         position = candidate;
+        openedAt = opened_at ?? null;
         break;
       }
     } catch {
@@ -211,11 +217,12 @@ async function lookAtV4(mandate: Mandate, owner: Address, walletId: string, deps
   return describe({ tokenId: position.tokenId.toString(), symbol: token.token_symbol,
     feeTierPercent: pool.lpFee / 10_000, pool, tokenIsZero: pool.currency0.toLowerCase() === token.token_address.toLowerCase(),
     tokenDecimals: token.token_decimals, usdcDecimals: native ? NATIVE_USDC_DECIMALS : 6,
-    tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: position.liquidity, fees, gasPrice });
+    tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: position.liquidity, fees, gasPrice,
+    openedAt });
 }
 
 /** A v3 mandate's position: the newest one with liquidity that the wallet holds in that pool. */
-async function lookAtV3(mandate: Mandate, owner: Address, deps: { db: D1Database; chain: WatchChain }) {
+async function lookAtV3(mandate: Mandate, owner: Address, walletId: string, deps: { db: D1Database; chain: WatchChain }) {
   const { db, chain } = deps;
   const listed = await db.prepare(
     `SELECT token_address, token_symbol, token_decimals, token0_address, token1_address, fee
@@ -229,21 +236,30 @@ async function lookAtV3(mandate: Mandate, owner: Address, deps: { db: D1Database
     .filter((entry) => entry.pool.address.toLowerCase() === mandate.pool_id.toLowerCase() && BigInt(entry.liquidity) > 0n)
     .sort((a, b) => (BigInt(b.tokenId) > BigInt(a.tokenId) ? 1 : -1))[0];
   if (!position) return null;
-  const gasPrice = await chain.getGasPrice().catch(() => 0n);
+  // v3 positions aren't stored by number: the newest band this wallet opened in the pool is this one.
+  const [gasPrice, opened] = await Promise.all([
+    chain.getGasPrice().catch(() => 0n),
+    db.prepare(
+      `SELECT wi.updated_at AS opened_at FROM wallet_intents wi JOIN mint_intents mi ON mi.intent_id = wi.id
+       WHERE wi.wallet_id = ?1 AND wi.status = 'confirmed' AND lower(mi.pool_address) = lower(?2)
+       ORDER BY wi.updated_at DESC LIMIT 1`,
+    ).bind(walletId, mandate.pool_id).first<{ opened_at: number }>(),
+  ]);
   const pool = { currency0: position.pool.token0, currency1: position.pool.token1,
     sqrtPriceX96: position.pool.sqrtPriceX96, tick: position.pool.tick };
   return describe({ tokenId: position.tokenId, symbol: listed.token_symbol, feeTierPercent: listed.fee / 10_000, pool,
     tokenIsZero: pool.currency0.toLowerCase() === listed.token_address.toLowerCase(),
     tokenDecimals: listed.token_decimals, usdcDecimals: 6, tickLower: position.tickLower, tickUpper: position.tickUpper,
     liquidity: BigInt(position.liquidity),
-    fees: { amount0: BigInt(position.claimable0.raw), amount1: BigInt(position.claimable1.raw) }, gasPrice });
+    fees: { amount0: BigInt(position.claimable0.raw), amount1: BigInt(position.claimable1.raw) }, gasPrice,
+    openedAt: opened?.opened_at ?? null });
 }
 
 /** A position's numbers in dollars, the same for v3 and v4. */
 function describe(input: { tokenId: string; symbol: string; feeTierPercent: number;
   pool: { currency0: Address; currency1: Address; sqrtPriceX96: string; tick: number }; tokenIsZero: boolean;
   tokenDecimals: number; usdcDecimals: number; tickLower: number; tickUpper: number; liquidity: bigint;
-  fees: { amount0: bigint; amount1: bigint }; gasPrice: bigint }) {
+  fees: { amount0: bigint; amount1: bigint }; gasPrice: bigint; openedAt: number | null }) {
   const { pool, tokenIsZero, tokenDecimals, usdcDecimals, tickLower, tickUpper } = input;
   const usd = (raw0: bigint, raw1: bigint) => {
     const value = usdcValue({ pool, amount0: raw0, amount1: raw1 });
@@ -268,7 +284,18 @@ function describe(input: { tokenId: string; symbol: string; feeTierPercent: numb
     valueUsd: usd(BigInt(Math.floor(held.amount0)), BigInt(Math.floor(held.amount1))),
     feesUsd: usd(input.fees.amount0, input.fees.amount1),
     recentreCostUsd: Number(input.gasPrice * RECENTRE_GAS) / 10 ** NATIVE_USDC_DECIMALS,
+    openedAt: input.openedAt,
   };
+}
+
+/**
+ * How long the band has been open, and what it has earned per day since then. Too new a band
+ * (under 15 minutes) gives no rate rather than a wild one.
+ */
+function earnings(feesUsd: number, openedAt: number | null, now: number) {
+  if (openedAt === null || openedAt > now) return { openedHoursAgo: null, feesPerDayUsd: null };
+  const hours = (now - openedAt) / HOUR;
+  return { openedHoursAgo: Math.round(hours * 10) / 10, feesPerDayUsd: hours >= 0.25 ? (feesUsd / hours) * 24 : null };
 }
 
 /** Whether a proposal or run is open, when the last one ended, and how many started today. */

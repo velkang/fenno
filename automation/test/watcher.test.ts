@@ -4,6 +4,7 @@ import { ARC_TOKENS, UNISWAP_V3_ARC, v4PoolId } from "@stillwater/chain";
 import type { Decider } from "../src/decide/provider";
 import type { Decision } from "../src/decide/decision";
 import { reserveModelCall, watchWallet, type WatchChain } from "../src/watcher";
+import { HOUR } from "../src/watch";
 
 const NOW = 2_000_000_000_000;
 const wallet = "0x1111111111111111111111111111111111111111" as Address;
@@ -200,7 +201,8 @@ describe("the watcher", () => {
         if (functionName === "balanceOf" || functionName === "allowance") return 0n;
         throw new Error(`Unexpected ${functionName}`);
       },
-      async simulateContract() { return { result: [0n, 0n] }; },
+      // $0.01 of uncollected USDC fees.
+      async simulateContract() { return { result: [0n, 10_000n] }; },
       async getGasPrice() { return 20_000_000_000n; },
     } as unknown as WatchChain;
     const writes: Array<{ sql: string; args: unknown[] }> = [];
@@ -210,6 +212,8 @@ describe("the watcher", () => {
         band: "agent", max_position_usd: 500, max_runs_per_day: 2 }];
       if (sql.includes("FROM pool_directory")) return { token_address: token, token_symbol: "QUANTS", token_decimals: 6,
         token0_address: token, token1_address: usdc, fee: 3000 };
+      // The band was opened through Stillwater two hours ago.
+      if (sql.includes("JOIN mint_intents")) return { opened_at: NOW - 2 * HOUR };
       if (sql.includes("COUNT(*)")) return { runs: 0 };
       return null;
     };
@@ -234,6 +238,10 @@ describe("the watcher", () => {
     expect(band.maxUsd).toBeCloseTo(1.0618, 3);
     expect(position.valueUsd).toBeGreaterThan(50);
     expect(position.valueUsd).toBeLessThan(70);
+    // $0.01 earned in two hours open: about $0.12 a day.
+    expect(facts).toMatchObject({ position: { openedHoursAgo: 2, uncollectedFeesUsd: 0.01 } });
+    expect((facts as { position: { feesPerDayUsd: number } }).position.feesPerDayUsd).toBeCloseTo(0.12, 6);
+    expect((facts as { band: { outsideForMinutes: number } }).band.outsideForMinutes).toBe(0);
     const insert = writes.find((write) => write.sql.includes("INSERT INTO automation_runs"))!;
     expect(insert.args[9]).toBe("9");
   });

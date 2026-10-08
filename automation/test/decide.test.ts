@@ -11,9 +11,9 @@ const facts: DecisionFacts = {
   token: { symbol: "MEME" },
   feeTierPercent: 0.3,
   priceUsd: 1.2,
-  band: { minUsd: 0.9, maxUsd: 1.1, priceIs: "above" },
+  band: { minUsd: 0.9, maxUsd: 1.1, priceIs: "above", outsideForMinutes: 45 },
   priceHistoryUsd: { "1h": 1.15, "6h": 1.05, "24h": 1 },
-  position: { valueUsd: 120, uncollectedFeesUsd: 1.5 },
+  position: { valueUsd: 120, uncollectedFeesUsd: 1.5, openedHoursAgo: 30, feesPerDayUsd: 1.2 },
   recentreCostUsd: 0.05,
   mandate: { mode: "ask", band: "agent", maxPositionUsd: 200, runsLeftToday: 2 },
 };

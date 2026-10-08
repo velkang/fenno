@@ -24,6 +24,8 @@ export type MandateMemory = {
   settingsSavedAt?: number;
   /** The price when the model was last asked. */
   lastAskedPrice?: number;
+  /** When the price left the band, while it stays out. */
+  outsideSince?: number;
 };
 
 const KEEP_SAMPLES_MS = 25 * HOUR;
@@ -49,7 +51,8 @@ export function forSettings(memory: MandateMemory, savedAt: number): MandateMemo
 export function observe(memory: MandateMemory, look: { now: number; price: number; inBand: boolean }): MandateMemory {
   const samples = [...memory.samples, { at: look.now, price: look.price }]
     .filter((sample) => sample.at >= look.now - KEEP_SAMPLES_MS);
-  return { ...memory, outsideChecks: look.inBand ? 0 : memory.outsideChecks + 1, samples };
+  return { ...memory, outsideChecks: look.inBand ? 0 : memory.outsideChecks + 1, samples,
+    outsideSince: look.inBand ? undefined : memory.outsideSince ?? look.now };
 }
 
 export function triggerFor(memory: MandateMemory, now: number): Trigger | null {

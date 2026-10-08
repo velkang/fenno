@@ -24,6 +24,15 @@ describe("what makes the agent look", () => {
     expect(triggerFor(memory, NOW + 15 * MIN)).toBeNull();
   });
 
+  it("remembers when the price left the band, and forgets once it's back", () => {
+    let memory = observe(emptyMemory(), { now: NOW, price: 1, inBand: true });
+    expect(memory.outsideSince).toBeUndefined();
+    memory = observe(memory, { now: NOW + 5 * MIN, price: 2, inBand: false });
+    memory = observe(memory, { now: NOW + 10 * MIN, price: 2, inBand: false });
+    expect(memory.outsideSince).toBe(NOW + 5 * MIN);
+    expect(observe(memory, { now: NOW + 15 * MIN, price: 1, inBand: true }).outsideSince).toBeUndefined();
+  });
+
   it("keeps a day of prices and finds the one nearest a time ago", () => {
     let memory = emptyMemory();
     for (let minute = 0; minute <= 26 * 60; minute += 5) memory = look(memory, minute, minute, true);
