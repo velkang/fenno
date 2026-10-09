@@ -37,7 +37,7 @@ export const modal = createAppKit({
   defaultNetwork: arc,
   projectId,
   metadata: {
-    name: "Stillwater",
+    name: "Fenno",
     description: "Automated Uniswap Liquidity Management on Arc",
     url: typeof window !== "undefined" ? window.location.origin : "http://localhost:5173",
     icons: ["https://avatars.githubusercontent.com/u/179229932"],

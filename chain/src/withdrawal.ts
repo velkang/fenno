@@ -22,7 +22,7 @@ export const withdrawalTypes = {
 } as const;
 
 export const withdrawalDomain = {
-  name: "Stillwater",
+  name: "Fenno",
   version: "1",
   chainId: ARC_CHAIN_ID,
   verifyingContract: ARC_TOKENS.USDC.address,

@@ -591,8 +591,8 @@ export const DepositPage: React.FC<Props> = ({
                     ) : null}
                     {field.short ? (
                       <p className="text-[.95rem] leading-relaxed text-rest" role="alert">
-                        Not enough {field.symbol} in your Stillwater wallet.
-                        {field.isToken ? "" : " Add USDC to your Stillwater wallet first."}
+                        Not enough {field.symbol} in your Fenno wallet.
+                        {field.isToken ? "" : " Add USDC to your Fenno wallet first."}
                       </p>
                     ) : null}
                   </div>
@@ -643,7 +643,7 @@ export const DepositPage: React.FC<Props> = ({
                     ))}
                   </dl>
                   {!reviewing ? (
-                    <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater checks each step again before sending it. Nothing is sent until you confirm.</p>
+                    <p className="text-[.95rem] leading-relaxed text-ink-muted">Fenno checks each step again before sending it. Nothing is sent until you confirm.</p>
                   ) : null}
                   {wallet && reviewing ? (
                     <PositionReview

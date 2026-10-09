@@ -64,7 +64,7 @@ export function PositionsPage({
       onNotify('success', 'Band re-centred', 'Your pond earns around today’s price again.')
     } else {
       onNotify('error', 'Re-centring stopped',
-        `${runFailureMessage(run.failureReason)} Anything already taken out is in your Stillwater wallet.`)
+        `${runFailureMessage(run.failureReason)} Anything already taken out is in your Fenno wallet.`)
     }
     void Promise.all([v4.refresh(), onRefresh()])
   })

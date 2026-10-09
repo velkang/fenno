@@ -400,7 +400,7 @@ export const IntentActionModal: React.FC<Props> = ({
               const heading =
                 kind === "increase" ? "You'll add about"
                   : kind === "decrease" ? "You'll take out about"
-                    : "Your Stillwater wallet will receive about";
+                    : "Your Fenno wallet will receive about";
               return (
                 <div className="rounded-[18px] border border-line bg-field p-4 flex flex-col gap-2">
                   <div className="text-[.95rem] font-semibold text-ink">{heading}</div>

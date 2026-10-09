@@ -15,7 +15,7 @@ function headline(alert: AutomationAlert): string {
   const pond = alert.symbol ? `your ${alert.symbol} pond` : "a pond";
   const closing = alert.kind === "close";
   switch (alert.status) {
-    case "proposed": return `Tomo suggests ${closing ? "closing" : "re-centring"} ${pond}`;
+    case "proposed": return `Pip suggests ${closing ? "closing" : "re-centring"} ${pond}`;
     case "running": return `${closing ? "Closing" : "Re-centring"} ${pond}…`;
     case "done": return `${closing ? "Closed" : "Re-centred"} ${pond}`;
     case "failed": return `Couldn't ${closing ? "close" : "re-centre"} ${pond}`;
@@ -44,7 +44,7 @@ export function AlertsPage({ user, alerts: { alerts, seenAt, loaded, unread, ref
     try {
       await api.answerProposal(alert.id, approve);
       onNotify(approve ? "success" : "info", approve ? "Approved" : "Not now",
-        approve ? "Tomo is on it." : "Tomo will look again later.");
+        approve ? "Pip is on it." : "Pip will look again later.");
     } catch (error) {
       onNotify("error", "Couldn't answer", error instanceof ApiError ? runFailureMessage(error.code) : "Try again.");
     }
@@ -56,7 +56,7 @@ export function AlertsPage({ user, alerts: { alerts, seenAt, loaded, unread, ref
     return (
       <section className="mx-auto flex max-w-[820px] flex-col items-start gap-5">
         <h1 className="text-[2.4rem] font-semibold">Alerts</h1>
-        <p className="text-[1.1rem] text-ink-muted">Sign in to see what Tomo has been doing.</p>
+        <p className="text-[1.1rem] text-ink-muted">Sign in to see what Pip has been doing.</p>
         <button type="button" onClick={onOpenAuth}
           className="min-h-12 whitespace-nowrap rounded-full bg-accent px-7 font-semibold text-on-accent hover:bg-accent-hover">
           Sign in
@@ -75,7 +75,7 @@ export function AlertsPage({ user, alerts: { alerts, seenAt, loaded, unread, ref
           <Skeleton className="h-6 w-1/2" />
         </Loading>
       ) : alerts.length === 0 ? (
-        <p className="py-6 text-[1.1rem] text-ink-muted">Nothing yet. Tomo's suggestions and changes show up here.</p>
+        <p className="py-6 text-[1.1rem] text-ink-muted">Nothing yet. Pip's suggestions and changes show up here.</p>
       ) : (
         <ul className="flex flex-col">
           {alerts.map((alert) => {

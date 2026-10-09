@@ -335,7 +335,7 @@ export function SwapPage({
             </button>
           ) : null}
           <p className={`${NOTE_TEXT} leading-relaxed`}>
-            A listed pool works with Stillwater. It is not a judgement on
+            A listed pool works with Fenno. It is not a judgement on
             whether the token is safe.
           </p>
         </div>

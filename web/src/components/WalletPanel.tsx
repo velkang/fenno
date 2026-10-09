@@ -267,7 +267,7 @@ export function WalletPanel({
             <h2 id="wallet-panel-title" className="text-[2rem] font-semibold">
               Wallet
             </h2>
-            <p className={MUTED_TEXT}>Your Stillwater wallet on Arc</p>
+            <p className={MUTED_TEXT}>Your Fenno wallet on Arc</p>
           </div>
           <button
             ref={closeRef}
@@ -283,8 +283,8 @@ export function WalletPanel({
           <div className="grid gap-4 py-[30px]">
             <p>
               {canProvision
-                ? 'Create your Stillwater wallet to receive Arc USDC.'
-                : 'Sign in to create your Stillwater wallet.'}
+                ? 'Create your Fenno wallet to receive Arc USDC.'
+                : 'Sign in to create your Fenno wallet.'}
             </p>
             {!canProvision ? (
               <button
@@ -314,7 +314,7 @@ export function WalletPanel({
               </strong>
             </div>
             <div className="grid gap-2.5 border-b border-line py-6">
-              <span className={LABEL_TEXT}>Stillwater address</span>
+              <span className={LABEL_TEXT}>Fenno address</span>
               <code className="font-mono text-[.9rem] leading-normal wrap-anywhere text-ink">
                 {wallet.address}
               </code>

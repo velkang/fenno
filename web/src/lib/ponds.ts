@@ -123,7 +123,7 @@ function runNotes(ponds: Pond[], runs: AutomationRun[], now: number): TomoNote[]
       notes.push({ id: `run:${run.id}:proposed`, pond, proposal: { runId: run.id },
         message: closing ? `I'd suggest closing ${name}.${why}` : `I'd suggest re-centring ${name}.${why}`,
         advice: closing
-          ? "Closing brings its tokens and fees back to your Stillwater wallet. Nothing happens unless you approve; the suggestion lapses in a day."
+          ? "Closing brings its tokens and fees back to your Fenno wallet. Nothing happens unless you approve; the suggestion lapses in a day."
           : "Re-centring closes the band and opens a new one around today's price. Nothing happens unless you approve; the suggestion lapses in a day.",
         steps: [] });
     } else if (run.status === "running") {
@@ -133,12 +133,12 @@ function runNotes(ponds: Pond[], runs: AutomationRun[], now: number): TomoNote[]
     } else if (run.status === "failed" && recent) {
       notes.push({ id: `run:${run.id}:failed`, pond,
         message: `Re-centring ${name} stopped. ${runFailureMessage(run.failureReason)}`,
-        advice: "Anything already taken out is in your Stillwater wallet. You can open the pool and choose a band again.",
+        advice: "Anything already taken out is in your Fenno wallet. You can open the pool and choose a band again.",
         steps: [] });
     } else if (run.status === "done" && recent) {
       notes.push(closing
         ? { id: `run:${run.id}:done`, pond, message: `I closed ${name}.${why}`,
-          advice: "Its tokens and fees are back in your Stillwater wallet.", steps: [] }
+          advice: "Its tokens and fees are back in your Fenno wallet.", steps: [] }
         : { id: `run:${run.id}:done`, pond, message: `I re-centred ${name} around today's price.${why}`,
           advice: "It earns again while the price stays inside its new band.", steps: [] });
     }
@@ -156,7 +156,7 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number, runs: AutomationRu
         advice: "There's no rush. Many people wait a few days to see if the price drifts back before moving their band.",
         steps: [
           `Wait: if ${pond.symbol} rises back into your band, the pond starts earning again by itself.`,
-          "Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price.",
+          "Or re-centre it from Positions: Fenno closes it and opens a new band around today's price.",
         ] });
     } else if (pond.state === "resting-above") {
       notes.push({ id: `${pond.key}:above`, pond,
@@ -164,7 +164,7 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number, runs: AutomationRu
         advice: "Your pond sold its token on the way up. You can wait for the price to return, or start a new band higher up.",
         steps: [
           `Wait: if ${pond.symbol} falls back into your band, the pond starts earning again by itself.`,
-          "Or re-centre it from Positions: Stillwater closes it and opens a new band around today's price.",
+          "Or re-centre it from Positions: Fenno closes it and opens a new band around today's price.",
         ] });
     } else if (pond.nearEdge) {
       notes.push({ id: `${pond.key}:edge`, pond,
@@ -179,8 +179,8 @@ export function tomoNotes(ponds: Pond[], gatheredUsd: number, runs: AutomationRu
   }
   if (gatheredUsd >= 1) {
     notes.push({ id: "gathered", message: `Your ponds have gathered ${formatUsd(gatheredUsd)} in fees.`,
-      advice: "Collecting moves the fees to your Stillwater wallet. Your ponds keep earning either way.",
-      steps: ["Open Positions and press Collect.", "Each pond with fees is collected in turn.", "The fees land in your Stillwater wallet."] });
+      advice: "Collecting moves the fees to your Fenno wallet. Your ponds keep earning either way.",
+      steps: ["Open Positions and press Collect.", "Each pond with fees is collected in turn.", "The fees land in your Fenno wallet."] });
   }
   if (ponds.length > 0 && notes.length === 0) {
     notes.push({ id: "calm", message: "All your koi are feeding. Nothing needs you today.",

@@ -39,7 +39,7 @@ class ErrorBoundary extends React.Component<
               onClick={() => window.location.reload()}
               className="min-h-11 rounded-full bg-accent px-6 text-sm font-semibold text-on-accent hover:bg-accent-hover"
             >
-              Reload Stillwater
+              Reload Fenno
             </button>
           </div>
         </div>

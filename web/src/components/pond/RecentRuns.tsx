@@ -19,8 +19,8 @@ function what(run: AutomationRun): string {
 export function RecentRuns({ runs }: { runs: AutomationRun[] }) {
   if (runs.length === 0) return null;
   return (
-    <section aria-label="Tomo's recent work" className="flex flex-col gap-1 border-t border-line pt-4">
-      <h3 className="text-[1rem] font-semibold">Tomo's recent work</h3>
+    <section aria-label="Pip's recent work" className="flex flex-col gap-1 border-t border-line pt-4">
+      <h3 className="text-[1rem] font-semibold">Pip's recent work</h3>
       <ul className="flex flex-col">
         {runs.slice(0, SHOWN).map((run) => (
           <li key={run.id} className="flex flex-col gap-1 border-b border-line py-3 last:border-b-0">

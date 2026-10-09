@@ -83,7 +83,7 @@ export const AuthScreen: React.FC<Props> = ({
       } catch (provisionError) {
         console.error('Wallet creation failed', provisionError)
         onError(
-          "Signed in, but your Stillwater wallet couldn't be created. Open Wallet to try again.",
+          "Signed in, but your Fenno wallet couldn't be created. Open Wallet to try again.",
         )
       }
 
@@ -127,10 +127,10 @@ export const AuthScreen: React.FC<Props> = ({
           id="signin-title"
           className="text-[2.1rem] leading-tight font-semibold"
         >
-          Sign in to Stillwater
+          Sign in to Fenno
         </h2>
         <p className="max-w-[460px] text-[1.1rem] leading-relaxed text-ink-muted">
-          Sign in with email, Google or X. <br /> Your Stillwater wallet is made
+          Sign in with email, Google or X. <br /> Your Fenno wallet is made
           for you on your first sign-in.
         </p>
 

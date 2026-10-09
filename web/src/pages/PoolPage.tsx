@@ -52,7 +52,7 @@ export function PoolPage({ address, onBack, wallet, summary, onRefresh, onOpenAu
 
   if (error) return <section role="alert" className="mx-auto flex w-full max-w-[1280px] flex-col gap-3 pt-6">
     <h1 className={PAGE_TITLE}>This pool isn&apos;t available</h1>
-    <p className={PAGE_INTRO}>Stillwater couldn&apos;t read it just now ({error}). Try again in a moment, or pick another pool.</p>
+    <p className={PAGE_INTRO}>Fenno couldn&apos;t read it just now ({error}). Try again in a moment, or pick another pool.</p>
     {onBack ? <button type="button" onClick={onBack} className="mt-2 min-h-12 self-start rounded-full border border-line px-6 text-[1.05rem] font-medium hover:bg-tint">← All pools</button> : null}
   </section>;
   if (!pool) return <PoolSkeleton />;

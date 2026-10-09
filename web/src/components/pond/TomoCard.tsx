@@ -46,7 +46,7 @@ export function TomoCard({ notes, onOpenPond, onAnswer }: Props) {
       <div className="flex items-center gap-4">
         <Tomo size={72} sleepy={note.pond?.state !== "feeding"} />
         <div className="flex flex-col">
-          <h2 id="tomo-title" className="text-[1.75rem] font-semibold">Tomo</h2>
+          <h2 id="tomo-title" className="text-[1.75rem] font-semibold">Pip</h2>
           <span className="text-[1.05rem] text-ink-muted">a quiet note from your guide</span>
         </div>
       </div>

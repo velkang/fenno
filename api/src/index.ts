@@ -818,7 +818,7 @@ export function createApp(dependencies: AppDependencies = {}) {
         token: result.token,
         usdc: result.usdc,
         pools: result.pools,
-        liability: "Stillwater does not validate or endorse this token. You are responsible for the contract address and liquidity decision.",
+        liability: "Fenno does not validate or endorse this token. You are responsible for the contract address and liquidity decision.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";

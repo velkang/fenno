@@ -39,10 +39,10 @@ export const Header: React.FC<Props> = ({
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-paper/95 px-[clamp(16px,4vw,80px)] text-ink backdrop-blur">
       <div className="mx-auto grid min-h-[84px] max-w-[1440px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[clamp(16px,3.5vw,56px)] max-[760px]:min-h-0 max-[760px]:grid-cols-[minmax(0,1fr)_auto] max-[760px]:pt-3">
-        <button type="button" onClick={() => onNavigate("pond")} aria-label="Stillwater home"
+        <button type="button" onClick={() => onNavigate("pond")} aria-label="Fenno home"
           className="flex min-h-11 items-center gap-3 rounded-lg text-ink">
           <IconRipple size={36} className="text-link" />
-          <span className="text-[1.7rem] font-semibold tracking-[-0.01em] max-[760px]:text-[1.4rem]">Stillwater</span>
+          <span className="text-[1.7rem] font-semibold tracking-[-0.01em] max-[760px]:text-[1.4rem]">Fenno</span>
         </button>
 
         <nav aria-label="Main" className="flex items-center gap-[clamp(18px,2.8vw,40px)] max-[760px]:col-span-full max-[760px]:row-start-2 max-[760px]:justify-between max-[760px]:pt-1">
@@ -70,7 +70,7 @@ export const Header: React.FC<Props> = ({
           ) : null}
           {user ? (
             <button type="button" onClick={onOpenWallet} aria-haspopup="dialog" aria-expanded={walletOpen}
-              aria-label="Open your Stillwater wallet" className={PILL}>
+              aria-label="Open your Fenno wallet" className={PILL}>
               {walletAddress ? shortAddress(walletAddress) : "Wallet"}
             </button>
           ) : (

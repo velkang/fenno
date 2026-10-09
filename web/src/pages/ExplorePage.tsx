@@ -177,7 +177,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
       <span>Page {Math.floor(offset / 25) + 1}</span>
       <button type="button" className={`${OUTLINE_BUTTON} disabled:cursor-not-allowed disabled:opacity-40`} disabled={nextOffset === null} onClick={() => { setLoading(true); setOffset(nextOffset ?? offset); }}>Next</button>
     </div> : null}
-    <p className="text-[.95rem] leading-relaxed text-ink-muted">Stillwater lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
+    <p className="text-[.95rem] leading-relaxed text-ink-muted">Fenno lists any pool it can work with. That doesn’t mean the token has been reviewed or is safe, so only add tokens you trust.</p>
   </section>;
 }
 

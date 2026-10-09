@@ -1,19 +1,19 @@
-# Stillwater
+# Fenno
 
-Stillwater manages Uniswap liquidity positions on the Arc blockchain for people who don't want to deal with ticks, raw token units, or transaction plumbing. You pick a pool, choose a price range in dollars, and Stillwater opens, tracks, and closes the position for you.
+Fenno manages Uniswap liquidity positions on the Arc blockchain for people who don't want to deal with ticks, raw token units, or transaction plumbing. You pick a pool, choose a price range in dollars, and Fenno opens, tracks, and closes the position for you.
 
-It is a **custodial alpha**. Anyone who signs in with a wallet gets their own Stillwater-managed wallet, and Stillwater's signer can send transactions from it. Every action is capped at a small value, checked by an isolated signer, and can be halted with an emergency stop. Nothing is deployed to Cloudflare yet; the stack runs locally.
+It is a **custodial alpha**. Anyone who signs in with a wallet gets their own Fenno-managed wallet, and Fenno's signer can send transactions from it. Every action is capped at a small value, checked by an isolated signer, and can be halted with an emergency stop. Nothing is deployed to Cloudflare yet; the stack runs locally.
 
-Stillwater does not run its own exchange. It uses the existing Uniswap v3 and v4 deployments on Arc.
+Fenno does not run its own exchange. It uses the existing Uniswap v3 and v4 deployments on Arc.
 
 ## What it does
 
 - **Explore pools**: lists Arc token/USDC pools on Uniswap v3 and v4, or looks one up from a pasted token address.
 - **Add liquidity**: on a pool page, buy the token with USDC if needed, pick a range (Wide, Balanced, Narrow, or custom), and review the exact transactions before confirming.
 - **Positions**: see whether each position is earning, collect fees, add more, remove some, or close it.
-- **Wallet**: deposit Arc USDC to your Stillwater wallet and withdraw it with a signature from your own wallet.
+- **Wallet**: deposit Arc USDC to your Fenno wallet and withdraw it with a signature from your own wallet.
 
-Listing a pool only means Stillwater can work with it. Stillwater does not review tokens or judge whether they are safe.
+Listing a pool only means Fenno can work with it. Fenno does not review tokens or judge whether they are safe.
 
 ## How custody works
 
@@ -21,13 +21,13 @@ Listing a pool only means Stillwater can work with it. Stillwater does not revie
 Your owner wallet ── signs in (SIWE) and signs withdrawals
         │
         ▼
-Stillwater wallet (one EOA per user) ── holds funds and Uniswap positions
+Fenno wallet (one EOA per user) ── holds funds and Uniswap positions
         ▲
         │ signs only after its own policy checks
 Signer Worker (private, no public route)
 ```
 
-- The Stillwater wallet's private key is encrypted (AES-256-GCM, per-wallet data key wrapped by a signer-only key) and stored in D1. The API can't decrypt it and never returns it.
+- The Fenno wallet's private key is encrypted (AES-256-GCM, per-wallet data key wrapped by a signer-only key) and stored in D1. The API can't decrypt it and never returns it.
 - The signer re-checks every transaction on its own: target contract, calldata, amounts against the caps, recipient, slippage, deadline, and a fresh simulation.
 - One transaction per wallet is in flight at a time. Each signed transaction is recorded before it is broadcast, then reconciled against the chain.
 
@@ -39,7 +39,7 @@ Signer Worker (private, no public route)
 | `api/` | Hono API on Cloudflare Workers: sign-in, pools, intents, and the D1 migrations in `api/migrations/` |
 | `signer/` | Private Worker that holds the key-wrapping secret, enforces the mainnet policy, and signs. See [signer/README.md](./signer/README.md) |
 | `indexer/` | Worker that discovers Uniswap v3/v4 USDC pools as they are created (every ~10 s) and keeps a rolling 7-day list of them in D1 |
-| `automation/` | Worker that looks after v3 and v4 positions: one Durable Object per wallet watches the positions a user handed to Tomo, asks Claude or OpenAI what to do when something changes, and re-centres or closes them (ask-first or autopilot) through the API like any other request |
+| `automation/` | Worker that looks after v3 and v4 positions: one Durable Object per wallet watches the positions a user handed to Pip, asks Claude or OpenAI what to do when something changes, and re-centres or closes them (ask-first or autopilot) through the API like any other request |
 | `chain/` | Shared Arc and Uniswap addresses, reads, price math, and transaction builders |
 
 ## Running locally
@@ -62,7 +62,7 @@ Requires Node 22.13 or newer and pnpm 11.
 
    To run re-centring locally, put the same random value in `AGENT_SECRET` in `api/.dev.vars` and `automation/.dev.vars` (for example from `openssl rand -hex 32`). Without it, a re-centre stops before sending anything.
 
-   In `signer/.dev.vars`, set the three `CIRCLE_*` values (see [Circle wallets](#circle-wallets)). Anyone with the API key and entity secret controls every Stillwater wallet in that Circle account.
+   In `signer/.dev.vars`, set the three `CIRCLE_*` values (see [Circle wallets](#circle-wallets)). Anyone with the API key and entity secret controls every Fenno wallet in that Circle account.
 
 3. Create the local database:
 
@@ -89,7 +89,7 @@ Requires Node 22.13 or newer and pnpm 11.
 The indexer finds pools from their creation events (v3 `PoolCreated`, v4 `Initialize`), filtered to USDC pairs. The database holds only a rolling list of recent pools, because the chain can't answer "list the newest pools" or "find by symbol". Prices, liquidity, balances and positions are read from the chain when shown:
 
 - **Live:** a Durable Object (`PoolDiscovery`) checks for new pools every ~10 s, so a new pool is listed within seconds. It saves its position about once a minute.
-- **Refresh:** every 5 minutes (offset by 2), a slice of the list is re-checked. It records only when a pool's liquidity appears or disappears, and removes pools that have gone a week without that, unless someone has used them through Stillwater.
+- **Refresh:** every 5 minutes (offset by 2), a slice of the list is re-checked. It records only when a pool's liquidity appears or disappears, and removes pools that have gone a week without that, unless someone has used them through Fenno.
 - **Expired actions:** every 5 minutes, approved actions nobody confirmed in time are marked expired.
 
 Older pools are not stored. A contract address pasted into search that is not listed is looked up on chain at once (the API asks the indexer through a service binding) and listed again for a week. Search by symbol matches from the start of the symbol.
@@ -110,16 +110,16 @@ All variables and secrets live outside the repository: in the Cloudflare dashboa
 
 | Variable | Worker | Meaning |
 | --- | --- | --- |
-| `CIRCLE_API_KEY` | signer | **Required secret**: the Circle API key for the account that holds Stillwater wallets |
+| `CIRCLE_API_KEY` | signer | **Required secret**: the Circle API key for the account that holds Fenno wallets |
 | `CIRCLE_ENTITY_SECRET` | signer | **Required secret**: the registered 32-byte hex entity secret |
 | `CIRCLE_WALLET_SET_ID` | signer | **Required**: the Circle wallet set new wallets are created in |
 | `AUTH_URI` | api | **Required**: the web app's URL; sign-in messages are bound to its host |
 | `AUTH_COOKIE_SECURE` | api | Local only: `false` allows the session cookie over plain `http`. Never set it in production |
 | `AGENT_SECRET` | api, automation | **Required for re-centring** (secret): shared by the two, so the automation Worker can act for a wallet within its mandate |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | automation | Secrets for the decision providers. Without a key for the chosen provider, Tomo only watches and never decides |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | automation | Secrets for the decision providers. Without a key for the chosen provider, Pip only watches and never decides |
 | `AGENT_PROVIDER`, `AGENT_FALLBACK_PROVIDER` | automation | Optional: which provider decides (`claude` by default) and which to try when it fails or declines |
 | `AGENT_CLAUDE_MODEL`, `AGENT_OPENAI_MODEL` | automation | Optional model overrides; defaults `claude-opus-5-5` and `gpt-6-astra` |
-| `AGENT_DAILY_CALL_LIMIT` | automation | Optional: most model calls a day across all users (UTC days, default 200). Past it, Tomo holds until the next day |
+| `AGENT_DAILY_CALL_LIMIT` | automation | Optional: most model calls a day across all users (UTC days, default 200). Past it, Pip holds until the next day |
 | `EMERGENCY_STOP` | signer | Optional: `true` halts all signing except USDC withdrawals |
 | `ARC_RPC_URL` | api, signer, indexer, automation | Optional; without it, Blockdaemon's keyless Arc RPC (`https://rpc.blockdaemon.mainnet.arc.io`) is used |
 
@@ -129,7 +129,9 @@ Never commit `.dev.vars` files or the `.wrangler/` state directories. Both are g
 
 ## Deploying to Cloudflare
 
-Stillwater is deployed from the Cloudflare dashboard.
+Fenno is deployed from the Cloudflare dashboard.
+
+Fenno was called Stillwater, and its Workers, database, packages and internal headers keep the `stillwater` name: nobody sees them, and renaming a Worker means recreating it.
 
 There are five Workers:
 - **`stillwater-web`**, the website, serves the app and forwards `/v1` and `/health` to the API through a service binding. Each Worker keeps its own URL while the sign-in cookie stays on the website's host.
@@ -178,7 +180,7 @@ In production, Explore lists the last week's pools newest first, with live on-ch
 
 ## Circle wallets
 
-Stillwater wallets are Circle developer-controlled wallets: Circle holds the keys, and the signer asks Circle to sign each transaction it has checked, then broadcasts it itself. Set this up once in the Circle Developer Console, on mainnet:
+Fenno wallets are Circle developer-controlled wallets: Circle holds the keys, and the signer asks Circle to sign each transaction it has checked, then broadcasts it itself. Set this up once in the Circle Developer Console, on mainnet:
 
 1. Create an API key.
 2. Generate and register an entity secret, and keep the recovery file somewhere safe.

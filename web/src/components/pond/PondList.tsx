@@ -24,7 +24,7 @@ type Props = {
 
 const ACTIONS: { id: PondAction; label: string; v3Only?: boolean }[] = [
   { id: "recentre", label: "Re-centre band" },
-  { id: "care", label: "Tomo's care" },
+  { id: "care", label: "Pip's care" },
   { id: "collect", label: "Collect fees" },
   { id: "add", label: "Add more", v3Only: true },
   { id: "remove", label: "Remove some", v3Only: true },
@@ -60,7 +60,7 @@ export function PondList({ ponds, busy, collectAllUsd, onCollectAll, onAction, r
                 <ProtocolBadge v4={!!pond.v4} />
                 {cared?.has(pond.key) ? (
                   <span className="whitespace-nowrap rounded-full bg-tint px-2.5 py-0.5 text-[.85rem] font-medium text-ink-muted">
-                    {cared.get(pond.key) === "autopilot" ? "Tomo: autopilot" : "Tomo: asks first"}
+                    {cared.get(pond.key) === "autopilot" ? "Pip: autopilot" : "Pip: asks first"}
                   </span>
                 ) : null}
               </span>

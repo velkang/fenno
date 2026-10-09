@@ -17,12 +17,12 @@ type Props = {
 };
 
 const MODES: { id: Mode; name: string; line: string }[] = [
-  { id: "off", name: "Off", line: "Tomo leaves this pond to you." },
-  { id: "ask", name: "Ask me first", line: "Tomo suggests a change and waits for you to approve it." },
-  { id: "autopilot", name: "Autopilot", line: "Tomo makes the change and tells you afterwards." },
+  { id: "off", name: "Off", line: "Pip leaves this pond to you." },
+  { id: "ask", name: "Ask me first", line: "Pip suggests a change and waits for you to approve it." },
+  { id: "autopilot", name: "Autopilot", line: "Pip makes the change and tells you afterwards." },
 ];
 const BANDS: { id: BandChoice; name: string }[] = [
-  { id: "agent", name: "Tomo chooses" },
+  { id: "agent", name: "Pip chooses" },
   { id: "wide", name: "Wide ±25%" },
   { id: "balanced", name: "Balanced ±10%" },
   { id: "narrow", name: "Narrow ±3%" },
@@ -59,13 +59,13 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
     try {
       if (mode === "off") {
         if (mandate) await api.revokeMandate(mandate.id);
-        onSaved(`Tomo won't change your ${pond.symbol} pond.`);
+        onSaved(`Pip won't change your ${pond.symbol} pond.`);
         return;
       }
       await api.saveMandate({ poolId: pond.poolId, mode, band, maxPositionUsd: limitUsd, maxRunsPerDay: perDay });
       onSaved(mode === "ask"
-        ? `Tomo will suggest changes to your ${pond.symbol} pond for you to approve.`
-        : `Tomo will look after your ${pond.symbol} pond and tell you what it did.`);
+        ? `Pip will suggest changes to your ${pond.symbol} pond for you to approve.`
+        : `Pip will look after your ${pond.symbol} pond and tell you what it did.`);
     } catch (error) {
       onError(error instanceof ApiError ? runFailureMessage(error.code) : "Couldn't save. Try again.");
       setSaving(false);
@@ -78,14 +78,14 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
       <motion.div {...lift} role="dialog" aria-modal="true" aria-labelledby="care-title"
         className="flex max-h-[90vh] w-full max-w-[580px] flex-col gap-6 overflow-y-auto overscroll-contain rounded-[28px] border border-line bg-card p-8 text-ink shadow-2xl">
         <div className="flex flex-col gap-2">
-          <h2 id="care-title" className="text-[1.7rem] font-semibold">Let Tomo look after your {pond.symbol} pond</h2>
+          <h2 id="care-title" className="text-[1.7rem] font-semibold">Let Pip look after your {pond.symbol} pond</h2>
           <p className="text-[1.05rem] leading-relaxed text-ink-muted">
-            Tomo moves this pond when the price leaves its band.
+            Pip moves this pond when the price leaves its band.
           </p>
         </div>
 
         <fieldset className="flex flex-col gap-2.5">
-          <legend className="mb-2 text-[1rem] font-semibold">What Tomo may do</legend>
+          <legend className="mb-2 text-[1rem] font-semibold">What Pip may do</legend>
           {MODES.map((option) => (
             <label key={option.id} className={`${OPTION} ${chosen(mode === option.id)}`}>
               <input type="radio" name="care-mode" value={option.id} checked={mode === option.id}
@@ -131,7 +131,7 @@ export function CareDialog({ pond, mandate, onClose, onSaved, onError }: Props) 
             {!limitValid ? <p role="alert" className="text-[.9rem] text-danger">Enter a whole number of dollars.</p>
               : tooLow ? (
                 <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[.9rem] text-danger">
-                  <span>This pond holds about ${heldUsd!.toFixed(2)}, so with a ${limitUsd} limit Tomo could never re-centre it.
+                  <span>This pond holds about ${heldUsd!.toFixed(2)}, so with a ${limitUsd} limit Pip could never re-centre it.
                     It needs at least ${neededUsd}.</span>
                   <button type="button" onClick={() => setLimit(String(Math.max(neededUsd!, suggestedLimit)))}
                     className="min-h-10 whitespace-nowrap font-semibold text-link underline underline-offset-4">

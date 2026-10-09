@@ -30,7 +30,7 @@ const RUN_FAILURES: Record<string, string> = {
   POSITION_TOO_SMALL: "This band holds less than the network fees would cost.",
   RUN_EXPIRED: "That suggestion has lapsed.",
   RUN_NOT_PROPOSED: "That suggestion has already been answered.",
-  RUN_LOST: "Stillwater lost track of it partway.",
+  RUN_LOST: "Fenno lost track of it partway.",
 };
 
 export function runFailureMessage(code: string | null): string {

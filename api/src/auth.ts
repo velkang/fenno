@@ -118,7 +118,7 @@ export async function issueChallenge(
     uri: config.uri,
     version: "1",
     nonce,
-    statement: "Sign in to the Stillwater private alpha.",
+    statement: "Sign in to Fenno.",
     issuedAt: new Date(now),
     expirationTime: new Date(expiresAt),
   };

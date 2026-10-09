@@ -29,7 +29,7 @@ export function PondPage({ user, wallet, summary, onRefresh, onNotify, onOpenPos
     try {
       await api.answerProposal(note.proposal.runId, approve);
       onNotify(approve ? "success" : "info", approve ? "Approved" : "Not now",
-        approve ? "Tomo is on it." : "Tomo will look again later.");
+        approve ? "Pip is on it." : "Pip will look again later.");
     } catch (error) {
       onNotify("error", "Couldn't answer", error instanceof ApiError ? runFailureMessage(error.code) : "Try again.");
     }
