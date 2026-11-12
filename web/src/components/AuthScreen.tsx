@@ -3,6 +3,7 @@ import { useAccount, useSignMessage } from 'wagmi'
 import {
   useAppKit,
   useAppKitAccount,
+  useAppKitState,
   useDisconnect,
 } from '@reown/appkit/react'
 import { api, type AuthUser, ApiError } from '../lib/api-client'
@@ -25,7 +26,8 @@ export const AuthScreen: React.FC<Props> = ({
   onError,
   onClose,
 }) => {
-  const { open } = useAppKit()
+  const { open, close } = useAppKit()
+  const { open: reownOpen } = useAppKitState()
   const { address, isConnected } = useAccount()
   const { signMessageAsync } = useSignMessage()
   const { embeddedWalletInfo, status } = useAppKitAccount()
@@ -90,6 +92,12 @@ export const AuthScreen: React.FC<Props> = ({
       setStep(null)
     }
   }, [onAuthSuccess, onError, signMessageAsync, startOver])
+
+  // Once the email (or Google / X) step is done, close Reown before its own wallet screen shows:
+  // the Fenno wallet is the only wallet people see.
+  useEffect(() => {
+    if (live && reownOpen && step === null) void close()
+  }, [live, reownOpen, step, close])
 
   // As soon as Reown has an account, sign in to Fenno with it: no second click.
   useEffect(() => {

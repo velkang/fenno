@@ -50,6 +50,13 @@ export const modal = createAppKit({
     socials: ["google", "x"],
     emailShowWallets: false,
     connectMethodsOrder: ["social", "email"],
+    // Reown is only the sign-in: its own wallet screen (buy, swap, send, receive, activity) stays
+    // off, so the Fenno wallet is the only wallet people see.
+    swaps: false,
+    onramp: false,
+    send: false,
+    receive: false,
+    history: false,
   },
   enableWallets: false,
   defaultAccountTypes: { eip155: "eoa" },
