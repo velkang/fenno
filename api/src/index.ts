@@ -70,6 +70,8 @@ import {
   AuthError,
   hashOpaqueValue,
   issueChallenge,
+  SESSION_RENEW_AFTER_MS,
+  SESSION_TTL_MS,
   verifyChallenge,
   type AuthStore,
   type AuthUser,
@@ -177,6 +179,7 @@ type CombinedPoolRow = {
 
 const poolTokenAbi = parseAbi(["function token0() view returns (address)", "function token1() view returns (address)"]);
 const usdcBalanceAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
+const totalSupplyAbi = parseAbi(["function totalSupply() view returns (uint256)"]);
 const swapTokenAbi = parseAbi([
   "function balanceOf(address owner) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)",
@@ -263,14 +266,22 @@ async function withLiveState(client: MulticallClient, pools: ReturnType<typeof p
       { address: pool.address, abi: v3PoolStateAbi, functionName: "liquidity" },
       { address: ARC_TOKENS.USDC.address, abi: usdcBalanceAbi, functionName: "balanceOf", args: [pool.address] }]);
   if (contracts.length === 0) return pools;
-  const results = await client.multicall({ contracts, allowFailure: true });
+  // Each token's total supply, read once per token after every pool's state, for its market cap.
+  const tokens = [...new Set(pools.map((pool) => pool.token.address.toLowerCase()))];
+  const results = await client.multicall({ contracts: [...contracts,
+    ...tokens.map((token) => ({ address: token, abi: totalSupplyAbi, functionName: "totalSupply" }))], allowFailure: true });
+  const supplies = new Map(tokens.map((token, offset) => {
+    const supply = results[contracts.length + offset];
+    return [token, supply?.status === "success" ? String(supply.result) : null];
+  }));
   let index = 0;
   return pools.map((pool) => {
     const count = pool.protocol === "uniswap-v4" ? 2 : 3;
     const [slot0, liquidity, reserve] = results.slice(index, index += count);
+    const tokenSupply = supplies.get(pool.token.address.toLowerCase()) ?? null;
     const sqrtPriceX96 = slot0?.status === "success" ? (slot0.result as readonly [bigint, number])[0] : 0n;
-    if (sqrtPriceX96 === 0n || liquidity?.status !== "success") return pool;
-    return { ...pool, sqrtPriceX96: sqrtPriceX96.toString(),
+    if (sqrtPriceX96 === 0n || liquidity?.status !== "success") return { ...pool, tokenSupply };
+    return { ...pool, tokenSupply, sqrtPriceX96: sqrtPriceX96.toString(),
       tick: Number((slot0!.result as readonly [bigint, number])[1]), liquidity: String(liquidity.result),
       ...(reserve?.status === "success" ? { usdcReserve: String(reserve.result) } : {}) };
   });
@@ -608,13 +619,7 @@ export function createApp(dependencies: AppDependencies = {}) {
       },
       { now },
     );
-    setCookie(context, SESSION_COOKIE, result.sessionToken, {
-      httpOnly: true,
-      maxAge: Math.floor((result.sessionExpiresAt - now()) / 1_000),
-      path: "/",
-      sameSite: "Strict",
-      secure: context.env.AUTH_COOKIE_SECURE !== "false",
-    });
+    setSessionCookie(context, result.sessionToken, result.sessionExpiresAt - now());
     return context.json({
       user: result.user,
       sessionExpiresAt: result.sessionExpiresAt,
@@ -2341,6 +2346,16 @@ export function createApp(dependencies: AppDependencies = {}) {
   return app;
 }
 
+function setSessionCookie(context: Context<AppEnvironment>, token: string, lifetimeMs: number) {
+  setCookie(context, SESSION_COOKIE, token, {
+    httpOnly: true,
+    maxAge: Math.floor(lifetimeMs / 1_000),
+    path: "/",
+    sameSite: "Strict",
+    secure: context.env.AUTH_COOKIE_SECURE !== "false",
+  });
+}
+
 function requireSession(now: () => number) {
   return async (
     context: Context<AppEnvironment>,
@@ -2352,12 +2367,19 @@ function requireSession(now: () => number) {
     if (!token) return context.json({ error: "UNAUTHENTICATED" }, 401);
 
     const tokenHash = await hashOpaqueValue(token);
-    const user = await context
-      .get("authStore")
-      .findSessionUser(tokenHash, now());
-    if (!user) return context.json({ error: "UNAUTHENTICATED" }, 401);
+    const store = context.get("authStore");
+    const session = await store.findSessionUser(tokenHash, now());
+    if (!session) return context.json({ error: "UNAUTHENTICATED" }, 401);
 
-    context.set("user", user);
+    // Using the app keeps you signed in: 30 more days, renewed at most once a day.
+    const renewedUntil = now() + SESSION_TTL_MS;
+    if (session.sessionExpiresAt !== undefined && store.renewSession &&
+      session.sessionExpiresAt < renewedUntil - SESSION_RENEW_AFTER_MS) {
+      await store.renewSession(tokenHash, renewedUntil);
+      setSessionCookie(context, token, SESSION_TTL_MS);
+    }
+
+    context.set("user", { id: session.id, ownerAddress: session.ownerAddress });
     context.set("sessionTokenHash", tokenHash);
     await next();
   };

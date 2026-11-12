@@ -1,9 +1,8 @@
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
 import {
   useAppKit,
   useAppKitAccount,
-  useAppKitState,
   useDisconnect,
 } from '@reown/appkit/react'
 import { api, type AuthUser, ApiError } from '../lib/api-client'
@@ -15,6 +14,12 @@ type Props = {
   onClose?: () => void
 }
 
+/** The person closed or declined the signature in Reown's window. */
+const declined = (error: unknown) => {
+  const { code, name, message } = (error ?? {}) as { code?: number; name?: string; message?: string }
+  return code === 4001 || name === 'UserRejectedRequestError' || /reject|denied|cancel/i.test(message ?? '')
+}
+
 export const AuthScreen: React.FC<Props> = ({
   onAuthSuccess,
   onError,
@@ -23,95 +28,79 @@ export const AuthScreen: React.FC<Props> = ({
   const { open } = useAppKit()
   const { address, isConnected } = useAccount()
   const { signMessageAsync } = useSignMessage()
-  const { embeddedWalletInfo } = useAppKitAccount()
-  const { open: signInOpen } = useAppKitState()
+  const { embeddedWalletInfo, status } = useAppKitAccount()
   const { disconnect } = useDisconnect()
+  const [step, setStep] = useState<'signing' | 'creating' | null>(null)
+  // The account sign-in was last tried for, so a failure doesn't retry itself in a loop.
+  const tried = useRef<string | null>(null)
 
-  // "Change" signs the current account out, then asks for an email (or Google / X) again.
-  const changeAccount = async () => {
+  // Reown has a live email, Google or X session. After a long break the wallet library can still
+  // remember the last account while Reown's session has ended; that account has to sign in again.
+  const live = isConnected && !!address && status === 'connected' && !!embeddedWalletInfo?.user
+  const restoring = status === 'reconnecting' || status === 'connecting'
+  const account = embeddedWalletInfo?.user?.email ?? embeddedWalletInfo?.user?.username ?? address
+
+  // Clears whatever account is remembered and asks for an email (or Google / X) again.
+  const startOver = useCallback(async () => {
+    tried.current = null
     try {
       await disconnect()
     } catch (error) {
       console.error('Disconnect failed', error)
-      onError("Couldn't switch accounts. Try again.")
-      return
     }
     open({ view: 'Connect' })
-  }
-  const account =
-    embeddedWalletInfo?.user?.email ??
-    embeddedWalletInfo?.user?.username ??
-    address
+  }, [disconnect, open])
 
-  const [step, setStep] = useState<'signing' | 'creating' | null>(null)
-  // Once sign-in has started (the Reown window is open or we are signing),
-  // the guest exit goes away. It comes back if the Reown window is closed
-  // without signing in, so nobody is stuck in this dialog.
-  const signInStarted = signInOpen || step !== null
-  const [, setChallengeData] = useState<{
-    challengeId: string
-    message: string
-    expiresAt: number
-  } | null>(null)
-
-  const handleStartAuth = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!address) {
-      open()
-      return
-    }
+  const signIn = useCallback(async (owner: string) => {
+    tried.current = owner
     setStep('signing')
     try {
       // 1. Issue SIWE Challenge from API (first sign-in also creates the account)
-      const challenge = await api.issueChallenge(address)
-      setChallengeData(challenge)
-
+      const challenge = await api.issueChallenge(owner)
       // 2. The sign-in account (email, Google or X) signs the challenge
       const signature = await signMessageAsync({ message: challenge.message })
-
       // 3. Verify Challenge and create session
-      const verifyResult = await api.verifyChallenge(
-        challenge.challengeId,
-        challenge.message,
-        signature,
-      )
-
-      // 4. Create the Stillwater wallet as part of onboarding (returns the existing one on later sign-ins)
+      const verifyResult = await api.verifyChallenge(challenge.challengeId, challenge.message, signature)
+      // 4. Create the Fenno wallet as part of onboarding (returns the existing one on later sign-ins)
       setStep('creating')
       try {
         await api.provisionWallet()
       } catch (provisionError) {
         console.error('Wallet creation failed', provisionError)
-        onError(
-          "Signed in, but your Fenno wallet couldn't be created. Open Wallet to try again.",
-        )
+        onError("Signed in, but your Fenno wallet couldn't be created. Open Wallet to try again.")
       }
-
       onAuthSuccess(verifyResult.user)
     } catch (err: unknown) {
       console.error('Auth flow failed', err)
       if (err instanceof ApiError) {
         if (err.code === 'CHALLENGE_EXPIRED') {
-          onError('SIWE challenge expired. Please retry.')
-        } else if (
-          err.code === 'BACKEND_UNREACHABLE' ||
-          err.code === 'NETWORK_ERROR'
-        ) {
-          onError(
-            'Unable to connect to the backend server. Please verify the API worker is running.',
-          )
+          onError('That took too long. Press Continue to try again.')
+        } else if (err.code === 'BACKEND_UNREACHABLE' || err.code === 'NETWORK_ERROR') {
+          onError("Fenno can't be reached right now. Try again in a moment.")
         } else {
           onError(`Authentication failed: ${err.message || err.code}`)
         }
-      } else if (typeof err === 'object' && err !== null && 'message' in err) {
-        onError((err as { message: string }).message)
+      } else if (declined(err)) {
+        onError('Sign-in was cancelled.')
       } else {
-        onError('Sign-in was not completed.')
+        // The remembered account couldn't sign: start again from Reown rather than show its error.
+        await startOver()
       }
-      setChallengeData(null)
     } finally {
       setStep(null)
     }
+  }, [onAuthSuccess, onError, signMessageAsync, startOver])
+
+  // As soon as Reown has an account, sign in to Fenno with it: no second click.
+  useEffect(() => {
+    if (live && address && step === null && tried.current !== address) void signIn(address)
+  }, [live, address, step, signIn])
+
+  const handleContinue = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (live && address) void signIn(address)
+    else if (isConnected) void startOver()
+    else open({ view: 'Connect' })
   }
 
   return (
@@ -130,12 +119,12 @@ export const AuthScreen: React.FC<Props> = ({
           Sign in to Fenno
         </h2>
         <p className="max-w-[460px] text-[1.1rem] leading-relaxed text-ink-muted">
-          Sign in with email, Google or X. <br /> Your Fenno wallet is made
+          Sign in with Google, X or email. <br /> Your Fenno wallet is made
           for you on your first sign-in.
         </p>
 
-        <form onSubmit={handleStartAuth} className="flex w-full flex-col gap-3">
-          {isConnected && address ? (
+        <form onSubmit={handleContinue} className="flex w-full flex-col gap-3">
+          {live ? (
             <div className="flex items-center justify-between gap-3 rounded-[18px] border border-line bg-field px-4 py-3 text-left">
               <span className="flex min-w-0 items-center gap-2.5">
                 <span
@@ -151,7 +140,7 @@ export const AuthScreen: React.FC<Props> = ({
               </span>
               <button
                 type="button"
-                onClick={() => void changeAccount()}
+                onClick={() => void startOver()}
                 disabled={step !== null}
                 className="min-h-10 shrink-0 rounded-full border border-line px-4 text-[.95rem] font-medium hover:bg-tint disabled:opacity-50"
               >
@@ -161,18 +150,18 @@ export const AuthScreen: React.FC<Props> = ({
           ) : null}
           <button
             type="submit"
-            disabled={step !== null}
+            disabled={step !== null || restoring}
             className="flex min-h-[60px] w-full items-center justify-center gap-2.5 rounded-full bg-accent px-6 text-[1.1rem] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60"
           >
             {step === 'signing'
               ? 'Confirming your sign-in…'
               : step === 'creating'
                 ? 'Making your wallet…'
-                : isConnected
-                  ? 'Sign in'
+                : restoring
+                  ? 'One moment…'
                   : 'Continue'}
           </button>
-          {onClose && !signInStarted ? (
+          {onClose && step === null ? (
             <button
               type="button"
               onClick={onClose}

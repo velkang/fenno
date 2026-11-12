@@ -120,16 +120,23 @@ export class D1AuthStore implements AuthStore {
       .run();
   }
 
-  async findSessionUser(tokenHash: string, now: number): Promise<AuthUser | null> {
+  async findSessionUser(tokenHash: string, now: number): Promise<(AuthUser & { sessionExpiresAt: number }) | null> {
     const row = await this.database
       .prepare(
-        `SELECT users.id, users.owner_address
+        `SELECT users.id, users.owner_address, auth_sessions.expires_at
          FROM auth_sessions JOIN users ON users.id = auth_sessions.user_id
          WHERE auth_sessions.token_hash = ?1 AND auth_sessions.expires_at > ?2`,
       )
       .bind(tokenHash, now)
-      .first<UserRow>();
-    return row ? userFromRow(row) : null;
+      .first<UserRow & { expires_at: number }>();
+    return row ? { ...userFromRow(row), sessionExpiresAt: row.expires_at } : null;
+  }
+
+  async renewSession(tokenHash: string, expiresAt: number): Promise<void> {
+    await this.database
+      .prepare("UPDATE auth_sessions SET expires_at = ?2 WHERE token_hash = ?1")
+      .bind(tokenHash, expiresAt)
+      .run();
   }
 
   async deleteSession(tokenHash: string): Promise<void> {

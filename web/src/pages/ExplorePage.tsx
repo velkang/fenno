@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { FADE } from "../lib/motion";
 import { formatUnits, zeroAddress } from "viem";
-import { api, type PricedPool, type PublicPool } from "../lib/api-client";
-import { ARC_TOKENS, tokenWaters, type Waters } from "@stillwater/chain";
+import { api, type ManagedWalletRecord, type PricedPool, type PublicPool } from "../lib/api-client";
+import { ARC_TOKENS, tokenWaters, type WalletSummary, type Waters } from "@stillwater/chain";
 import { IconSearch } from "../components/Icons";
 import { usdcDecimals as poolUsdcDecimals } from "../lib/swap-actions";
 import { Loading, Skeleton } from "../components/Skeleton";
@@ -12,7 +12,7 @@ import { AlmostEmptyBadge, isAlmostEmpty, ProtocolBadge } from "../components/Po
 export const PAGE_TITLE = "text-[clamp(2.2rem,4.5vw,3.5rem)] leading-[1.1] font-semibold tracking-[-.02em]";
 export const PAGE_INTRO = "mt-2 max-w-[760px] text-[1.2rem] leading-relaxed text-ink-muted";
 const OUTLINE_BUTTON = "min-h-11 rounded-full border border-line px-5 text-[1rem] font-medium text-ink hover:bg-tint";
-const TABLE_GRID = "grid grid-cols-[minmax(240px,2.2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(90px,.8fr)_150px] items-center gap-4 px-8 py-5 max-[800px]:grid-cols-2 max-[800px]:gap-3 max-[800px]:px-5";
+const TABLE_GRID = "grid grid-cols-[minmax(240px,2.2fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(90px,.8fr)_150px] items-center gap-4 px-8 py-5 max-[800px]:grid-cols-2 max-[800px]:gap-3 max-[800px]:px-5";
 const STATE_TEXT = "px-6 py-16 text-center text-[1.1rem] text-ink-muted";
 const CELL_LABEL = "hidden max-[800px]:mb-1 max-[800px]:block max-[800px]:text-[.8rem] max-[800px]:text-ink-faint";
 
@@ -24,6 +24,16 @@ export function poolSpotPrice(pool: PricedPool): number {
     (tokenIsZero ? usdcDecimals : pool.token.decimals));
   return tokenIsZero ? token1PerToken0 : 1 / token1PerToken0;
 }
+
+/** Total supply times the pool's price, in dollars; null when the supply couldn't be read. */
+function marketCapUsd(pool: PublicPool): number | null {
+  if (!pool.tokenSupply) return null;
+  const value = Number(formatUnits(BigInt(pool.tokenSupply), pool.token.decimals)) * poolSpotPrice(pool);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+const formatMarketCap = (value: number | null) => value === null ? "—"
+  : `$${value.toLocaleString("en-US", { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: value >= 10_000 ? 2 : 0 })}`;
 
 const SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉";
 
@@ -64,12 +74,30 @@ const TIER_TAG: Record<Waters, { label: string; tone: string }> = {
 };
 
 type Props = {
+  wallet: ManagedWalletRecord | null;
+  summary: WalletSummary | null;
   waters: Waters | "";
   onWatersChange: (waters: Waters | "") => void;
   onSelectPool: (address: string) => void;
 };
 
-export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
+export function ExplorePage({ wallet, summary, waters, onWatersChange, onSelectPool }: Props) {
+  const [v4Pools, setV4Pools] = useState<string[]>([]);
+  // The wallet's v4 positions, so their pools can be marked; v3 ones come with the wallet summary.
+  const walletId = wallet?.id;
+  useEffect(() => {
+    if (!walletId) { setV4Pools([]); return; }
+    let current = true;
+    api.listV4Positions().then(({ positions }) => {
+      if (current) setV4Pools(positions.map((position) => position.pool.address));
+    }).catch(() => {
+      // Without them the list still works; v4 pools just aren't marked.
+    });
+    return () => { current = false; };
+  }, [walletId]);
+  const heldPools = useMemo(() => new Set([...v4Pools, ...(summary?.positions ?? []).map((position) => position.pool.address)]
+    .map((address) => address.toLowerCase())), [v4Pools, summary]);
+
   const [query, setQuery] = useState("");
   const [settledQuery, setSettledQuery] = useState("");
   const [pools, setPools] = useState<PublicPool[]>([]);
@@ -136,7 +164,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
     </div>
     <div className="overflow-hidden rounded-[28px] border border-line bg-card" role="region" aria-label="Arc liquidity pools">
       <div className={`${TABLE_GRID} border-b border-line text-[.85rem] font-semibold tracking-[.06em] text-ink-muted uppercase max-[800px]:hidden`} aria-hidden="true">
-        <span>Pool</span><span>Token price</span><span>USDC in pool</span><span>You earn</span><span />
+        <span>Pool</span><span>Token price</span><span>Market cap</span><span>USDC in pool</span><span>You earn</span><span />
       </div>
       {loading ? <PoolRowsSkeleton />
         : error ? <p className={`${STATE_TEXT} text-danger`} role="alert">{error} <button type="button" className="ml-2.5 text-link underline" onClick={() => { setError(null); setLoading(true); setRetry((value) => value + 1); }}>Try again</button></p>
@@ -145,12 +173,13 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
             : waters ? "No pools in these waters yet." : "No pools listed yet. Paste a token address to look it up directly."}</p>
             : pools.map((pool, index) => {
               const tier = TIER_TAG[tokenWaters(pool.token.address)];
+              const held = heldPools.has(pool.address.toLowerCase());
               // New rows fade up once as a list arrives; the stagger stops after ten rows.
               return <motion.button type="button" key={pool.address}
                 initial={{ opacity: 0, transform: "translateY(6px)" }} animate={{ opacity: 1, transform: "none" }}
                 transition={{ ...FADE, delay: Math.min(index, 10) * 0.03 }}
                 className={`${TABLE_GRID} min-h-[92px] w-full border-b border-line bg-transparent text-left text-[1.15rem] text-ink transition-colors last:border-b-0 hover:bg-tint/60`}
-                onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC pool`}>
+                onClick={() => onSelectPool(pool.address)} aria-label={`Add liquidity to the ${pool.token.symbol} / USDC pool${held ? ", where you have a position" : ""}`}>
                 <span className="flex min-w-0 items-center gap-4 max-[800px]:col-span-full">
                   <span className="grid size-12 flex-none place-items-center rounded-full bg-sage text-[.9rem] font-semibold text-hand" aria-hidden="true">{pool.token.symbol.slice(0, 2).toUpperCase()}</span>
                   <span className="flex min-w-0 flex-col gap-1">
@@ -158,6 +187,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
                       <strong className="overflow-hidden font-semibold text-ellipsis whitespace-nowrap">{pool.token.symbol} / USDC</strong>
                       <span className={`rounded-full border px-2.5 py-0.5 text-[.78rem] font-semibold whitespace-nowrap ${tier.tone}`}>{tier.label}</span>
                       <ProtocolBadge v4={pool.protocol === "uniswap-v4"} />
+                      {held ? <span className="rounded-full bg-accent px-2.5 py-0.5 text-[.78rem] font-semibold whitespace-nowrap text-on-accent">Your position</span> : null}
                       {isAlmostEmpty(pool) ? <AlmostEmptyBadge /> : null}
                     </span>
                     <small className="font-mono text-[.85rem] text-ink-muted">Token {pool.token.address.slice(0, 6)}…{pool.token.address.slice(-4)}
@@ -165,6 +195,7 @@ export function ExplorePage({ waters, onWatersChange, onSelectPool }: Props) {
                   </span>
                 </span>
                 <span className="tabular-nums"><small className={CELL_LABEL}>Token price</small>${formatPoolPrice(poolSpotPrice(pool))}</span>
+                <span className="tabular-nums"><small className={CELL_LABEL}>Market cap</small>{formatMarketCap(marketCapUsd(pool))}</span>
                 <span className="text-ink-muted tabular-nums"><small className={CELL_LABEL}>USDC in pool</small>{pool.usdcReserve === null ? "—" :
                   `$${Number(formatUnits(BigInt(pool.usdcReserve), ARC_TOKENS.USDC.decimals)).toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</span>
                 <span className="tabular-nums"><small className={CELL_LABEL}>You earn per trade</small>{formatFeeTier(pool.fee)}</span>
@@ -188,6 +219,7 @@ function PoolRowsSkeleton() {
         <Skeleton className="size-12 flex-none" />
         <span className="flex flex-col gap-2"><Skeleton className="h-4 w-36" /><Skeleton className="h-3 w-28" /></span>
       </span>
+      <Skeleton className="h-4 w-20" />
       <Skeleton className="h-4 w-20" />
       <Skeleton className="h-4 w-24" />
       <Skeleton className="h-4 w-14" />

@@ -380,6 +380,8 @@ describe("token pool discovery route", () => {
       { status: "success", result: [2n ** 96n, 5] }, { status: "success", result: 777n },
       { status: "success", result: 5_000_000n },
       { status: "success", result: [2n ** 96n, 9, 0, 3000] }, { status: "success", result: 888n },
+      // Then each listed token's total supply, once per token.
+      { status: "success", result: 10n ** 27n },
     ] } as unknown as ChainReadClient;
     const response = await createApp({ createChainClient: () => chainClient })
       .request("/v1/pools?q=MEME", {}, env);
@@ -387,9 +389,9 @@ describe("token pool discovery route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       pools: [{ address: pool, token: { address: token, symbol: "MEME" },
-        tick: 5, liquidity: "777", usdcReserve: "5000000", blockNumber: 123 },
+        tick: 5, liquidity: "777", usdcReserve: "5000000", blockNumber: 123, tokenSupply: "1000000000000000000000000000" },
       { protocol: "uniswap-v4", address: v4Id, tick: 9, liquidity: "888", usdcReserve: null,
-        blockNumber: 124 }],
+        blockNumber: 124, tokenSupply: "1000000000000000000000000000" }],
       nextOffset: null,
     });
     // A symbol is searched from its start, as a range the symbol index can serve.

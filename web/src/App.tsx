@@ -264,6 +264,8 @@ export const App: React.FC = () => {
         )}
         {activePage === 'explore' && (
           <ExplorePage
+            wallet={wallet}
+            summary={summary}
             waters={waters}
             onWatersChange={handleExplore}
             onSelectPool={handleSelectPool}

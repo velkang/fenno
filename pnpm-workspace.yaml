@@ -6,6 +6,12 @@ packages:
   - signer
   - web
 
+# Reown's wagmi adapter accepts any newer wagmi core; keep it on the one wagmi 2.19 uses, or the
+# adapter's connection and the app's wagmi hooks come from different major versions.
+overrides:
+  '@wagmi/core': 2.22.1
+  '@wagmi/connectors': 6.2.0
+
 allowBuilds:
   '@reown/appkit': true
   bufferutil: true

@@ -5,7 +5,9 @@ import {
 } from "viem/siwe";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
+/** A session lasts 30 days from its last renewal; using the app renews it, at most once a day. */
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
+export const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1_000;
 
 export type AuthUser = { id: string; ownerAddress: Address };
 
@@ -38,7 +40,9 @@ export interface AuthStore {
     expiresAt: number;
     createdAt: number;
   }): Promise<void>;
-  findSessionUser(tokenHash: string, now: number): Promise<AuthUser | null>;
+  /** The session's user, and when the session ends when the store knows it. */
+  findSessionUser(tokenHash: string, now: number): Promise<(AuthUser & { sessionExpiresAt?: number }) | null>;
+  renewSession?(tokenHash: string, expiresAt: number): Promise<void>;
   deleteSession(tokenHash: string): Promise<void>;
 }
 

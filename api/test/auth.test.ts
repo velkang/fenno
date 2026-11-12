@@ -64,9 +64,13 @@ class MemoryAuthStore implements AuthStore {
   async findSessionUser(tokenHash: string, now: number) {
     const session = this.sessions.get(tokenHash);
     if (!session || session.expiresAt <= now) return null;
-    return (
-      [...this.users.values()].find((user) => user.id === session.userId) ?? null
-    );
+    const user = [...this.users.values()].find((entry) => entry.id === session.userId);
+    return user ? { ...user, sessionExpiresAt: session.expiresAt } : null;
+  }
+
+  async renewSession(tokenHash: string, expiresAt: number) {
+    const session = this.sessions.get(tokenHash);
+    if (session) this.sessions.set(tokenHash, { ...session, expiresAt });
   }
 
   async deleteSession(tokenHash: string) {
@@ -257,6 +261,55 @@ describe("private-alpha authentication", () => {
     );
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "CHALLENGE_EXPIRED" });
+  });
+
+  describe("sessions", () => {
+    const DAY = 24 * 60 * 60 * 1_000;
+    const signIn = async (app: ReturnType<typeof createApp>) => {
+      const challengeResponse = await app.request("/v1/auth/challenge", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: account.address }) }, env);
+      const challenge = await challengeResponse.json<{ challengeId: string; message: string }>();
+      const signature = await account.signMessage({ message: challenge.message });
+      const response = await app.request("/v1/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...challenge, signature }) }, env);
+      return response.headers.get("set-cookie") ?? "";
+    };
+
+    it("last 30 days from sign-in", async () => {
+      const app = createApp({ createAuthStore: () => store, now: () => now });
+      const setCookie = await signIn(app);
+      expect(setCookie).toContain(`Max-Age=${30 * DAY / 1_000}`);
+      expect([...store.sessions.values()][0]!.expiresAt).toBe(startedAt + 30 * DAY);
+    });
+
+    it("renew for another 30 days when used, at most once a day", async () => {
+      const app = createApp({ createAuthStore: () => store, now: () => now });
+      const cookie = (await signIn(app)).split(";")[0]!;
+
+      // Used again the same day: nothing to renew.
+      now += 60 * 60 * 1_000;
+      const sameDay = await app.request("/v1/me", { headers: { cookie } }, env);
+      expect(sameDay.status).toBe(200);
+      expect(sameDay.headers.get("set-cookie")).toBeNull();
+
+      // Used three weeks later: the session and its cookie run 30 days from now.
+      now = startedAt + 21 * DAY;
+      const later = await app.request("/v1/me", { headers: { cookie } }, env);
+      expect(later.status).toBe(200);
+      expect(later.headers.get("set-cookie")).toContain(`Max-Age=${30 * DAY / 1_000}`);
+      expect([...store.sessions.values()][0]!.expiresAt).toBe(now + 30 * DAY);
+      expect(await later.json()).toEqual({ user: { id: expect.any(String), ownerAddress: account.address } });
+    });
+
+    it("end after 30 days unused", async () => {
+      const app = createApp({ createAuthStore: () => store, now: () => now });
+      const cookie = (await signIn(app)).split(";")[0]!;
+      now = startedAt + 30 * DAY;
+      const response = await app.request("/v1/me", { headers: { cookie } }, env);
+      expect(response.status).toBe(401);
+    });
   });
 
   it("rejects wallet provisioning without a session", async () => {

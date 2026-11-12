@@ -41,6 +41,8 @@ export type PublicPool = {
   updatedAt: number;
   // Block the pool was created in; null until the indexer's backfill reaches it.
   createdBlock?: number | null;
+  // The token's total supply in its smallest units, read live with the listing; null when unreadable.
+  tokenSupply?: string | null;
 };
 
 /** What working out a pool's token price needs. */
