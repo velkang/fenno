@@ -148,6 +148,19 @@ describe("v4 pool discovery from Initialize events", () => {
     expect(ranges).toEqual([]);
   });
 
+  it("skips ahead when the saved position is older than the RPC's log history", async () => {
+    // Stalled for weeks: the RPC keeps about 380k blocks of logs and refuses anything older.
+    const { db, checkpoint } = fakeDb({ checkpoints: { v4_pools_created: 1_000_000 } });
+    const oldest = safeBlock - 380_000n;
+    const { client, ranges } = fakeRpc({ failLogs: ({ fromBlock }) =>
+      fromBlock <= oldest ? new Error("pruned history unavailable") : null });
+    const position = await runLivePass({ db, dir: v4Directory, client, now: () => 100_000 });
+    // It resumes from the oldest block still served instead of failing at the same block forever.
+    expect(ranges[0]).toEqual([oldest + 1n, oldest + 10_000n]);
+    expect(position).toEqual({ block: oldest + 10_000n, savedAt: 100_000 });
+    expect(checkpoint("v4_pools_created")).toBe(Number(oldest + 10_000n));
+  });
+
   it("keeps the position in memory on quiet ticks and saves it once a minute", async () => {
     const { db, positionSaves, checkpoint } = fakeDb({ checkpoints: { v4_pools_created: 1_999_000 } });
     const { client } = fakeRpc({});
@@ -323,26 +336,45 @@ describe("v3 pool discovery from PoolCreated events", () => {
 });
 
 describe("PoolDiscovery Durable Object", () => {
-  function storage(initial: number | null) {
+  function storage(initial: number | null, lastTickAt?: number) {
     let alarm = initial;
-    return { get alarm() { return alarm; },
-      ctx: { storage: { getAlarm: async () => alarm, setAlarm: async (time: number) => { alarm = time; } } } };
+    const values = new Map<string, unknown>(lastTickAt === undefined ? [] : [["lastTickAt", lastTickAt]]);
+    return { get alarm() { return alarm; }, get lastTickAt() { return values.get("lastTickAt"); },
+      ctx: { storage: { getAlarm: async () => alarm, setAlarm: async (time: number) => { alarm = time; },
+        get: async (key: string) => values.get(key), put: async (key: string, value: unknown) => { values.set(key, value); } } } };
   }
+  const ensure = (state: ReturnType<typeof storage>) =>
+    new PoolDiscovery(state.ctx as never, {} as never).fetch(new Request("https://pool-discovery/ensure"));
 
-  it("starts the alarm loop only when none is scheduled", async () => {
+  it("starts the alarm loop when none is scheduled, and leaves a running one alone", async () => {
     const idle = storage(null);
-    await new PoolDiscovery(idle.ctx as never, {} as never).fetch(new Request("https://pool-discovery/ensure"));
+    await ensure(idle);
     expect(idle.alarm).not.toBeNull();
-    const running = storage(42);
-    await new PoolDiscovery(running.ctx as never, {} as never).fetch(new Request("https://pool-discovery/ensure"));
-    expect(running.alarm).toBe(42);
+    const running = storage(Date.now() + 5_000, Date.now() - 8_000);
+    const scheduled = running.alarm;
+    await ensure(running);
+    expect(running.alarm).toBe(scheduled);
   });
 
-  it("reschedules the next tick even when the RPC is down", async () => {
+  it("restarts a loop whose alarm is set but has stopped firing", async () => {
+    // Stuck since 1 Nov 2026 in production: an alarm was recorded but never fired again.
+    const stuck = storage(Date.now() + 5_000, Date.now() - 10 * 60_000);
+    const before = Date.now();
+    await ensure(stuck);
+    expect(stuck.alarm).toBeGreaterThanOrEqual(before);
+    expect(stuck.alarm).toBeLessThanOrEqual(Date.now());
+    // Deployed onto that stuck loop, no tick has been recorded yet: that counts as stalled too.
+    const neverTicked = storage(Date.now() + 5_000);
+    await ensure(neverTicked);
+    expect(neverTicked.alarm).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("records each tick and reschedules the next even when the RPC is down", async () => {
     const state = storage(null);
     const env = { DB: fakeDb().db, ARC_RPC_URL: "http://127.0.0.1:9" };
     const before = Date.now();
     await new PoolDiscovery(state.ctx as never, env as never).alarm();
+    expect(state.lastTickAt).toBeGreaterThanOrEqual(before);
     expect(state.alarm).toBeGreaterThanOrEqual(before + 10_000);
   }, 20_000);
 });

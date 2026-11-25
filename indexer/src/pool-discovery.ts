@@ -175,6 +175,14 @@ export async function runLivePass(input: { db: D1Database; dir: ProtocolDirector
     position = { block: saved, savedAt: 0 };
   }
   if (position.block >= latest.number) return position;
+  // After a long stall the RPC no longer serves the logs after the saved position, and asking for
+  // them fails the same way every tick. Resume from the oldest block it still keeps: older pools
+  // are past the listing's week anyway, or found by pasting their token address.
+  const oldest = latest.number > RECENT_RETENTION ? latest.number - RECENT_RETENTION : 0n;
+  if (position.block < oldest) {
+    console.warn(`${dir.name} live discovery fell ${latest.number - position.block} blocks behind; resuming from ${oldest}`);
+    position = { block: oldest, savedAt: 0 };
+  }
   const to = position.block + LIVE_WINDOW < latest.number ? position.block + LIVE_WINDOW : latest.number;
   const pools = await fetchCreated(dir, client, position.block + 1n, to);
   const { next } = await storeCreated(db, dir, client, pools, LIVE_CAP, latest.number, now());
