@@ -100,7 +100,7 @@ The indexer finds pools from their creation events (v3 `PoolCreated`, v4 `Initia
 
 Older pools are not stored. A contract address pasted into search that is not listed is looked up on chain at once (the API asks the indexer through a service binding) and listed again for a week. Search by symbol matches from the start of the symbol.
 
-Triggering the minute cron by hand also starts the live loop:
+All three run from one cron, every minute: the refresh takes minutes 2, 7, 12 and so on, the expiry minutes 0, 5, 10 and so on. Triggering it by hand starts the live loop (and runs whichever of the other two falls on that minute):
 
 ```bash
 curl 'http://127.0.0.1:8788/__scheduled?cron=*+*+*+*+*'

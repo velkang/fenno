@@ -346,3 +346,16 @@ describe("PoolDiscovery Durable Object", () => {
     expect(state.alarm).toBeGreaterThanOrEqual(before + 10_000);
   }, 20_000);
 });
+
+describe("the indexer's one cron", () => {
+  const at = (minute: number) => Date.UTC(2026, 10, 25, 14, minute, 3);
+
+  it("keeps live discovery running every minute and spreads the other jobs over five", async () => {
+    const { jobsAt } = await import("../src/index");
+    expect(jobsAt(at(0))).toEqual({ discovery: true, expireIntents: true, refresh: false });
+    expect(jobsAt(at(1))).toEqual({ discovery: true, expireIntents: false, refresh: false });
+    expect(jobsAt(at(2))).toEqual({ discovery: true, expireIntents: false, refresh: true });
+    expect(jobsAt(at(45))).toEqual({ discovery: true, expireIntents: true, refresh: false });
+    expect(jobsAt(at(57))).toEqual({ discovery: true, expireIntents: false, refresh: true });
+  });
+});
